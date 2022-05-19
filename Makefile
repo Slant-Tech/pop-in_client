@@ -46,12 +46,16 @@ CXXFLAGS.RELEASE= -O2
 #OPTIONS += -fif-conversion -fif-conversion2 -free -fexpensive-optimizations
 #OPTIONS += -fshrink-wrap -fhoist-adjacent-loads
 
+OPTIONS  += -std=c++11
+
 #Include Directories
 INC  = -I./
 INC	+= -I./include
-INC += `wx-config --cxxflags`
+INC += -I./imgui
+INC += -I./imgui/backends
+INC += `pkg-config --cflags glfw3`
 
-CXXFLAGS	+= $(INC)
+CXXFLAGS	+= $(INC)	
 
 #Add build type flags
 CXXFLAGS += ${CXXFLAGS.${BUILD}} 
@@ -59,10 +63,22 @@ CXXFLAGS += ${CXXFLAGS.${BUILD}}
 CXXFLAGS += $(OPTIONS)
 CXXFLAGS += $(WARNINGS)
 #LDFLAGS  = -lhiredis -ljson-c
-LDFLAGS += `wx-config --libs`
+LDFLAGS  += -lGL
+LDFLAGS  += `pkg-config --static --libs glfw3`
+
+# IMGUI Source files
+IMGUI = ./imgui
+SRC		+= $(IMGUI)/imgui.cpp
+SRC		+= $(IMGUI)/imgui_draw.cpp
+SRC		+= $(IMGUI)/imgui_tables.cpp
+SRC		+= $(IMGUI)/imgui_widgets.cpp
+SRC		+= $(IMGUI)/backends/imgui_impl_glfw.cpp
+SRC		+= $(IMGUI)/backends/imgui_impl_opengl3.cpp
+
 
 SRC_DIR	 = ./src
-SRC		 = $(wildcard $(SRC_DIR)/*.cpp)
+SRC		 += $(wildcard $(SRC_DIR)/*.cpp)
+
 OBJ		 = $(SRC:.cpp=.o)
 DEP		 = $(OBJ:.o=.d)
 
@@ -70,17 +86,16 @@ DEP		 = $(OBJ:.o=.d)
 all: $(PRGNAME)
 
 $(PRGNAME): $(OBJ)
-	echo $(CXXFLAGS)
-	$(CXX) $(CXXFLAGS) $(LDFLAGS) -o $@ $^
+	@echo "Linking $@"
+	@$(CXX) $(CXXFLAGS) $(LDFLAGS) -o $@ $^
 
 
 valgrind: $(PRGNAME)
 	valgrind --leak-check=yes --track-origins=yes --show-reachable=yes --log-file="valgrind.log" ./$(PRGNAME)
 
 %.d: %.cpp
-	echo $(CXXFLAGS)
-	$(CXX) $(CXXFLAGS) $< -MM -MT $(@:.d=.o) >$@
-
+	@echo "Building $^"
+	@$(CXX) $(CXXFLAGS) $< -MM -MT $(@:.d=.o) >$@
 
 .PHONY: clean
 clean:

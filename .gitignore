@@ -1,3 +1,4 @@
 *.d
 *.o
+imgui.ini
 pop
