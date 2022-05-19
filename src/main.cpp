@@ -5,13 +5,72 @@
 #include <GLFW/glfw3.h>
 
 
+/* Project structure */
+/* Dummy file system for projects */
+struct ProjectNode {
+	const char* name;
+	const char* date;
+	const char* version;
+	const char* author;
+	int 		childidx;
+	int			childcount;
+	static void DisplayNode(const ProjectNode* node, const ProjectNode* all_nodes){
+		ImGui::TableNextRow();
+		ImGui::TableNextColumn();
+		
+		/* Check if project contains subprojects */
+		if( node->childcount > 0 ){
+			bool open = ImGui::TreeNodeEx(node->name, ImGuiTreeNodeFlags_SpanFullWidth);
+			ImGui::TableNextColumn();
+			ImGui::Text(node->date);
+			ImGui::TableNextColumn();
+			ImGui::Text(node->version);
+			ImGui::TableNextColumn();
+			ImGui::TextUnformatted(node->author);
+			
+			/* Display subprojects if node is open */
+			if( open ){
+				for( int child_n = 0; child_n < node->childcount; child_n ++ ){
+					DisplayNode( &all_nodes[node->childidx + child_n], all_nodes );
+				}
+
+				ImGui::TreePop();
+			}
+
+		}
+		else {
+			ImGui::TreeNodeEx(node->name, ImGuiTreeNodeFlags_Leaf | \
+										  ImGuiTreeNodeFlags_NoTreePushOnOpen | \
+										  ImGuiTreeNodeFlags_SpanFullWidth);
+			ImGui::TableNextColumn();
+			ImGui::Text(node->date);
+			ImGui::TableNextColumn();
+			ImGui::Text(node->version);
+			ImGui::TableNextColumn();
+			ImGui::TextUnformatted(node->author);
+
+		}
+
+	}
+};
+
 static void glfw_error_callback(int error, const char* description){
 	fprintf(stderr, "GLFW Error %d: %s\n", error, description);
 }
 
+/* Pass structure of projects and number of projects inside of struct */
+static void show_project_select_window( int nprj, ProjectNode *projects);
 
 int main( int, char** ){
 
+	const int nprj = 4;
+	static ProjectNode projects[nprj] = {
+		/* Name						Date			Version	 Author		Child Index		Child Count */
+		{ "Project Top", 			"2022-05-01", 	"1.2.3", "Dylan",	1,				2},
+		{ "Subproject 1", 			"2022-05-02", 	"2.3.4", "Dylan",	3,				1},
+		{ "Subproject 2", 			"2022-05-03", 	"3.4.5", "Dylan",	1,				-1},
+		{ "subsubproject 1",		"2022-05-04", 	"4.5.6", "Dylan",	-1,				-1}
+	};
 
 	/* Setup window */
 	glfwSetErrorCallback(glfw_error_callback);
@@ -69,7 +128,6 @@ int main( int, char** ){
 
 	/* Main application loop */
 	while( !glfwWindowShouldClose(window) ) {
-		int open_action = -1;
 
 		/* Poll and handle events */
 		glfwPollEvents();
@@ -82,32 +140,11 @@ int main( int, char** ){
 
 		if( show_project_window ){
 			/* Setup windows, widgets */	
-			ImGui::Begin("Test Window");
-			ImGui::Text("Testing tree view");
+			ImGui::Begin("Project Selector");
+			show_project_select_window(nprj, projects);
 
-			const float TEXT_BASE_WIDTH = ImGui::CalcTextSize("A").x;
-
-
-			if( open_action != -1 ){
-				ImGui::SetNextItemOpen(open_action != 0);
-			}
-
-			/* Flags for Table */
-			static ImGuiTableFlags flags = ImGuiTableFlags_BordersV | \
-										   ImGuiTableFlags_BordersOuterH | \
-										   ImGuiTableFlags_Resizable | \
-										   ImGuiTableFlags_RowBg | \
-										   ImGuiTableFlags_NoBordersInBody;
-			/* Set colums, items in table */
-			if( ImGui::BeginTable("projects", 4, flags)){
-				/* First column will use default _WidthStrecth when ScrollX is
-				 * off and _WidthFixed when ScrollX is on */
-				ImGui::TableSetupColumn("Name",   	ImGuiTableColumnFlags_NoHide);
-				ImGui::TableSetupColumn("Date",   	ImGuiTableColumnFlags_WidthFixed, TEXT_BASE_WIDTH * 12.0f);
-				ImGui::TableSetupColumn("Version",	ImGuiTableColumnFlags_WidthFixed, TEXT_BASE_WIDTH * 12.0f);
-				ImGui::TableSetupColumn("Author", 	ImGuiTableColumnFlags_WidthFixed, TEXT_BASE_WIDTH * 18.0f);
-				ImGui::TableHeadersRow();
-
+			
+#if 0
 				/* Dummy file system for projects */
 				struct ProjectNode {
 					const char* name;
@@ -164,10 +201,7 @@ int main( int, char** ){
 					{ "subsubproject 1",		"2022-05-04", 	"4.5.6", "Dylan",	-1,				-1},
 
 				};
-
-				ProjectNode::DisplayNode( &projects[0], projects);
-				ImGui::EndTable();
-			}
+#endif
 
 			ImGui::End();
 		}
@@ -194,6 +228,48 @@ int main( int, char** ){
 
 	glfwDestroyWindow(window);
 	glfwTerminate();
+
+
+}
+
+
+
+static void show_project_select_window( int nprj, ProjectNode *projects){
+	
+	int open_action = -1;
+	ImGui::Text("Projects");
+
+	const float TEXT_BASE_WIDTH = ImGui::CalcTextSize("A").x;
+
+	if( open_action != -1 ){
+		ImGui::SetNextItemOpen(open_action != 0);
+	}
+
+	/* Flags for Table */
+	static ImGuiTableFlags flags = ImGuiTableFlags_BordersV | \
+								   ImGuiTableFlags_BordersOuterH | \
+								   ImGuiTableFlags_Resizable | \
+								   ImGuiTableFlags_RowBg | \
+								   ImGuiTableFlags_NoBordersInBody | \
+								   ImGuiTreeNodeFlags_OpenOnArrow | \
+								   ImGuiTreeNodeFlags_OpenOnDoubleClick | \
+								   ImGuiTreeNodeFlags_SpanFullWidth;
+
+	/* Set colums, items in table */
+	if( ImGui::BeginTable("projects", 4, flags)){
+		/* First column will use default _WidthStrecth when ScrollX is
+		 * off and _WidthFixed when ScrollX is on */
+		ImGui::TableSetupColumn("Name",   	ImGuiTableColumnFlags_NoHide);
+		ImGui::TableSetupColumn("Date",   	ImGuiTableColumnFlags_WidthFixed, TEXT_BASE_WIDTH * 12.0f);
+		ImGui::TableSetupColumn("Version",	ImGuiTableColumnFlags_WidthFixed, TEXT_BASE_WIDTH * 12.0f);
+		ImGui::TableSetupColumn("Author", 	ImGuiTableColumnFlags_WidthFixed, TEXT_BASE_WIDTH * 18.0f);
+		ImGui::TableHeadersRow();
+
+
+		ProjectNode::DisplayNode( &projects[0], projects);
+		ImGui::EndTable();
+	}
+
 
 
 }
