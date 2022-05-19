@@ -52,6 +52,7 @@ OPTIONS  += -std=c++11
 INC  = -I./
 INC	+= -I./include
 INC += -I./imgui
+INC += -I./imgui/backends
 INC += `pkg-config --cflags glfw3`
 
 CXXFLAGS	+= $(INC)	
@@ -66,16 +67,17 @@ LDFLAGS  += -lGL
 LDFLAGS  += `pkg-config --static --libs glfw3`
 
 # IMGUI Source files
-SRC		+= imgui/imgui.cpp
-SRC		+= imgui/imgui_draw.cpp
-SRC		+= imgui/imgui_tables.cpp
-SRC		+= imgui/imgui_widgets.cpp
-SRC		+= imgui/backends/imgui_impl_glfw.cpp
-SRC		+= imgui/backends/imgui_impl_opengl3.cpp
+IMGUI = ./imgui
+SRC		+= $(IMGUI)/imgui.cpp
+SRC		+= $(IMGUI)/imgui_draw.cpp
+SRC		+= $(IMGUI)/imgui_tables.cpp
+SRC		+= $(IMGUI)/imgui_widgets.cpp
+SRC		+= $(IMGUI)/backends/imgui_impl_glfw.cpp
+SRC		+= $(IMGUI)/backends/imgui_impl_opengl3.cpp
 
 
 SRC_DIR	 = ./src
-SRC		 = $(wildcard $(SRC_DIR)/*.cpp)
+SRC		 += $(wildcard $(SRC_DIR)/*.cpp)
 
 OBJ		 = $(SRC:.cpp=.o)
 DEP		 = $(OBJ:.o=.d)
@@ -84,17 +86,16 @@ DEP		 = $(OBJ:.o=.d)
 all: $(PRGNAME)
 
 $(PRGNAME): $(OBJ)
-	echo $(CXXFLAGS)
-	$(CXX) $(CXXFLAGS) $(LDFLAGS) -o $@ $^
+	@echo "Linking $@"
+	@$(CXX) $(CXXFLAGS) $(LDFLAGS) -o $@ $^
 
 
 valgrind: $(PRGNAME)
 	valgrind --leak-check=yes --track-origins=yes --show-reachable=yes --log-file="valgrind.log" ./$(PRGNAME)
 
 %.d: %.cpp
-	echo $(CXXFLAGS)
-	$(CXX) $(CXXFLAGS) $< -MM -MT $(@:.d=.o) >$@
-
+	@echo "Building $^"
+	@$(CXX) $(CXXFLAGS) $< -MM -MT $(@:.d=.o) >$@
 
 .PHONY: clean
 clean:
