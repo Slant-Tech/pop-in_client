@@ -299,6 +299,12 @@ static void show_root_window( ProjectNode *projects ){
 		/* Edit Menu */
 		if( ImGui::BeginMenu("Edit") ){
 			if( ImGui::MenuItem("Edit Project") ){
+			
+			}
+			else if( ImGui::MenuItem("Edit Part") ){
+
+			}
+			else if( ImGui::MenuItem("Application Settings")){
 
 			}
 			ImGui::EndMenu();
@@ -306,7 +312,15 @@ static void show_root_window( ProjectNode *projects ){
 
 		/* Project Menu */
 		if( ImGui::BeginMenu("Project") ){
+			if( ImGui::MenuItem("Generate Report") ){
+				
+			}
+			else if( ImGui::MenuItem("Manage Project BOM")){
 
+			}
+			else if( ImGui::MenuItem("Project Relations")){
+
+			}
 			ImGui::EndMenu();
 		}
 
