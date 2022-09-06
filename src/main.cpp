@@ -343,7 +343,15 @@ static void show_root_window( ProjectNode *projects ){
 
 		/* Network Menu */
 		if( ImGui::BeginMenu("Network") ){
-			
+			if( ImGui::MenuItem("Connect") ){
+				
+			}
+			else if( ImGui::MenuItem("Server Settings")){
+
+			}
+			else if( ImGui::MenuItem("Server Status")){
+
+			}		
 			ImGui::EndMenu();
 		}
 
