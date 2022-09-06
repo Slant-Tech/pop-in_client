@@ -113,6 +113,14 @@ static void glfw_error_callback(int error, const char* description){
 /* Pass structure of projects and number of projects inside of struct */
 static void show_project_select_window( ProjectNode *projects);
 
+static void show_root_window( ProjectNode *projects );
+
+#define DEFAULT_ROOT_W	1280
+#define DEFAULT_ROOT_H	720
+
+/* Variable to continue running */
+static bool run_flag = true;
+
 int main( int, char** ){
 
 	static ProjectNode projects[] = {
@@ -137,7 +145,7 @@ int main( int, char** ){
 	glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE);
 
 	/* Create window with graphics content */
-	GLFWwindow* window = glfwCreateWindow(1280, 720, "POP: Inventory Management", NULL, NULL);
+	GLFWwindow* window = glfwCreateWindow(DEFAULT_ROOT_W, DEFAULT_ROOT_H, "POP:In", NULL, NULL);
 	if( window == NULL ){
 		return 1;
 	}
@@ -174,26 +182,34 @@ int main( int, char** ){
 	/* Setup colors */
 	ImVec4 clear_color = ImVec4(0.45f, 0.55f, 0.60f, 1.00f);
 
-	/* Window states */
-	bool show_project_window = true;
+	/* Main viewport */
+	const ImGuiViewport* main_viewport = ImGui::GetMainViewport();
 
+	bool bool_root_window = true;
+	ImGuiWindowFlags root_window_flags = ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize
+									   | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_MenuBar;
 	/* Main application loop */
 	while( !glfwWindowShouldClose(window) ) {
 
 		/* Poll and handle events */
 		glfwPollEvents();
 
+		if( !run_flag ){
+			printf("Quit button pressed\n");
+			glfwSetWindowShouldClose(window, true);
+		}
 		/* Start ImGui frame */
 		ImGui_ImplOpenGL3_NewFrame();
 		ImGui_ImplGlfw_NewFrame();
 		ImGui::NewFrame();
 
-		if( show_project_window ){
-			/* Setup windows, widgets */	
-			ImGui::Begin("Project Selector", &show_project_window, window_flags);
-            show_project_select_window(projects);
-			ImGui::End();
-		}
+		/* Setup root window */
+		ImGui::SetNextWindowPos(ImVec2(main_viewport->WorkPos.x, main_viewport->WorkPos.y));
+		ImGui::SetNextWindowSize(ImVec2(DEFAULT_ROOT_W, DEFAULT_ROOT_H));
+		ImGui::Begin("Root", &bool_root_window, root_window_flags);
+		show_root_window(projects);
+		ImGui::End();
+
 		/* End Projects view creation */
 
 
@@ -259,6 +275,64 @@ static void show_project_select_window( ProjectNode *projects){
 		ImGui::EndTable();
 	}
 
+}
 
+/* Setup root window, child windows */
+static void show_root_window( ProjectNode *projects ){
+	
+	/* Create menu items */
+	if( ImGui::BeginMenuBar() ){
+		/* File Menu */
+		if( ImGui::BeginMenu("File") ) {
+			if( ImGui::MenuItem("New Project") ){
+				
+			}
+			else if( ImGui::MenuItem("Export Project") ){
+				
+			}
+			else if( ImGui::MenuItem("Quit") ){
+				run_flag = false;		
+			}
+			ImGui::EndMenu();
+		}
+
+		/* Edit Menu */
+		if( ImGui::BeginMenu("Edit") ){
+			if( ImGui::MenuItem("Edit Project") ){
+
+			}
+			ImGui::EndMenu();
+		}
+
+		/* Project Menu */
+		if( ImGui::BeginMenu("Project") ){
+
+			ImGui::EndMenu();
+		}
+
+		/* BOM Menu */
+		if( ImGui::BeginMenu("BOM") ){
+			
+			ImGui::EndMenu();
+		}
+
+		/* Network Menu */
+		if( ImGui::BeginMenu("Network") ){
+			
+			ImGui::EndMenu();
+		}
+
+		/* Help Menu */
+		if( ImGui::BeginMenu("Help") ){
+			
+			ImGui::EndMenu();
+		}
+
+		ImGui::EndMenuBar();
+	}
+	/* Show project view */
+	ImGui::BeginChild("Project Selector", ImVec2(ImGui::GetContentRegionAvail().x * 0.3f, ImGui::GetContentRegionAvail().y * 0.8f ));
+	show_project_select_window(projects);
+	ImGui::EndChild();
 
 }
