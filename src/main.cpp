@@ -357,7 +357,15 @@ static void show_root_window( ProjectNode *projects ){
 
 		/* Help Menu */
 		if( ImGui::BeginMenu("Help") ){
-			
+			if( ImGui::MenuItem("About") ){
+				
+			}
+			else if( ImGui::MenuItem("Documentation")){
+
+			}
+			else if( ImGui::MenuItem("Contact Support")){
+
+			}		
 			ImGui::EndMenu();
 		}
 
