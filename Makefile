@@ -72,6 +72,7 @@ SRC		+= $(IMGUI)/imgui.cpp
 SRC		+= $(IMGUI)/imgui_draw.cpp
 SRC		+= $(IMGUI)/imgui_tables.cpp
 SRC		+= $(IMGUI)/imgui_widgets.cpp
+SRC		+= $(IMGUI)/imgui_demo.cpp
 SRC		+= $(IMGUI)/backends/imgui_impl_glfw.cpp
 SRC		+= $(IMGUI)/backends/imgui_impl_opengl3.cpp
 

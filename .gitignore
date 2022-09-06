@@ -2,3 +2,5 @@
 *.o
 imgui.ini
 pop
+imgui/**/*.d
+imgui/**/*.o
