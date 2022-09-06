@@ -151,8 +151,11 @@ int main( int, char** ){
 	IMGUI_CHECKVERSION();
 	ImGui::CreateContext();
 	ImGuiIO& io = ImGui::GetIO(); (void)io;
+	io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
 
 	/* Set ImGui color style */
+	ImGui::StyleColorsLight();
+	/* Dark colors */
 	ImGui::StyleColorsDark();
 	/* Classic colors */
 	//ImGui::StyleColorsClassic();
@@ -167,9 +170,6 @@ int main( int, char** ){
 	if( font_hack == NULL ){
 		io.Fonts->AddFontDefault();
 	}
-
-	/* Setup font width */
-//	const float TEXT_BASE_WIDTH = ImGui::CalcTextSize("A").x;
 
 	/* Setup colors */
 	ImVec4 clear_color = ImVec4(0.45f, 0.55f, 0.60f, 1.00f);
@@ -188,72 +188,10 @@ int main( int, char** ){
 		ImGui_ImplGlfw_NewFrame();
 		ImGui::NewFrame();
 
-
 		if( show_project_window ){
 			/* Setup windows, widgets */	
-			ImGui::Begin("Project Selector");
-			show_project_select_window(projects);
-
-			
-#if 0
-				/* Dummy file system for projects */
-				struct ProjectNode {
-					const char* name;
-					const char* date;
-					const char* version;
-					const char* author;
-					int 		childidx;
-					int			childcount;
-					static void DisplayNode(const ProjectNode* node, const ProjectNode* all_nodes){
-						ImGui::TableNextRow();
-						ImGui::TableNextColumn();
-						
-						/* Check if project contains subprojects */
-						if( node->childcount > 0 ){
-							bool open = ImGui::TreeNodeEx(node->name, ImGuiTreeNodeFlags_SpanFullWidth);
-							ImGui::TableNextColumn();
-							ImGui::Text(node->date);
-							ImGui::TableNextColumn();
-							ImGui::Text(node->version);
-							ImGui::TableNextColumn();
-							ImGui::TextUnformatted(node->author);
-							
-							/* Display subprojects if node is open */
-							if( open ){
-								for( int child_n = 0; child_n < node->childcount; child_n ++ ){
-									DisplayNode( &all_nodes[node->childidx + child_n], all_nodes );
-								}
-
-								ImGui::TreePop();
-							}
-			
-						}
-						else {
-							ImGui::TreeNodeEx(node->name, ImGuiTreeNodeFlags_Leaf | \
-														  ImGuiTreeNodeFlags_NoTreePushOnOpen | \
-														  ImGuiTreeNodeFlags_SpanFullWidth);
-							ImGui::TableNextColumn();
-							ImGui::Text(node->date);
-							ImGui::TableNextColumn();
-							ImGui::Text(node->version);
-							ImGui::TableNextColumn();
-							ImGui::TextUnformatted(node->author);
-
-						}
-
-					}
-				};
-
-				static const ProjectNode projects[] = {
-					/* Name						Date			Version	 Author		Child Index		Child Count */
-					{ "Project Top", 			"2022-05-01", 	"1.2.3", "Dylan",	1,				2},
-					{ "Subproject 1", 			"2022-05-02", 	"2.3.4", "Dylan",	3,				1},
-					{ "Subproject 2", 			"2022-05-03", 	"3.4.5", "Dylan",	1,				-1},
-					{ "subsubproject 1",		"2022-05-04", 	"4.5.6", "Dylan",	-1,				-1},
-
-				};
-#endif
-
+			ImGui::Begin("Project Selector", &show_project_window, window_flags);
+            show_project_select_window(projects);
 			ImGui::End();
 		}
 		/* End Projects view creation */
