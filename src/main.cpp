@@ -326,7 +326,18 @@ static void show_root_window( ProjectNode *projects ){
 
 		/* BOM Menu */
 		if( ImGui::BeginMenu("BOM") ){
-			
+			if( ImGui::MenuItem("Export BOM") ){
+				
+			}
+			else if( ImGui::MenuItem("Import BOM")){
+
+			}
+			else if( ImGui::MenuItem("Export Part Library")){
+
+			}		
+			else if( ImGui::MenuItem("Import Part Library")){
+
+			}		
 			ImGui::EndMenu();
 		}
 
