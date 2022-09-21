@@ -46,7 +46,7 @@ CXXFLAGS.RELEASE= -O2
 #OPTIONS += -fif-conversion -fif-conversion2 -free -fexpensive-optimizations
 #OPTIONS += -fshrink-wrap -fhoist-adjacent-loads
 
-OPTIONS  += -std=c++11
+OPTIONS  += -std=c++14
 
 #Include Directories
 INC  = -I./
