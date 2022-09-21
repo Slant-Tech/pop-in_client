@@ -65,7 +65,7 @@ CXXFLAGS.RELEASE= -O2
 #OPTIONS += -fif-conversion -fif-conversion2 -free -fexpensive-optimizations
 #OPTIONS += -fshrink-wrap -fhoist-adjacent-loads
 
-OPTIONS  += -std=c++17
+CXXOPTIONS  += -std=c++17
 
 #Include Directories
 INC  = -I./
@@ -82,7 +82,7 @@ CFLAGS	+= $(INC)
 #Add build type flags
 CFLAGS += ${CFLAGS.${BUILD}} 
 
-CFLAGS += $(OPTIONS)
+CFLAGS += $(COPTIONS)
 CFLAGS += $(WARNINGS)
 
 CXXFLAGS	+= $(INC)	
@@ -90,10 +90,9 @@ CXXFLAGS	+= $(INC)
 #Add build type flags
 CXXFLAGS += ${CFLAGS.${BUILD}} 
 
-CXXFLAGS += $(OPTIONS)
+CXXFLAGS += $(CXXOPTIONS)
 CXXFLAGS += $(WARNINGS)
-
-LDFLAGS  = -lhiredis -ljson-c 
+LDFLAGS   = -lhiredis -ljson-c -lyder -L./redis -lredis-wrapper
 LDFLAGS  += -lGL
 LDFLAGS  += `pkg-config --static --libs glfw3`
 

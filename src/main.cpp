@@ -6,6 +6,8 @@
 #include <iterator>
 #include <GLFW/glfw3.h>
 #include <projectview.h>
+#include <yder.h>
+#include <db_handle.h>
 
 int selected_prj = -1; /* index that has been selected */
 
@@ -147,6 +149,27 @@ int main( int, char** ){
 	bool bool_root_window = true;
 	ImGuiWindowFlags root_window_flags = ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize
 									   | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_MenuBar;
+
+	if( redis_connect( NULL, 0 ) ){ /* Use defaults of localhost and default port */
+		/* Failed to init database connection, so quit */
+		run_flag = 0;
+	}
+	
+	/* Get a part to see if it works */
+	struct part_t* test_part = get_part_from_pn("part:GRM188R61E106KA73D");
+
+	/* Print out part number, mfg, internal part number */
+	printf("Redis database part:\n pn:\t%s, mfg:\t%s, internal#:\t%d \n", test_part->mpn, test_part->mfg, test_part->ipn);
+	printf("Info:\n");
+	for( unsigned int i = 0; i < test_part->info_len; i++ ){
+		printf("\t %s:\t%s\n", test_part->info[i].key, test_part->info[i].val );
+	}
+
+
+	/* Done with part, free it */
+	free_part_t( test_part );
+
+
 	/* Main application loop */
 	while( !glfwWindowShouldClose(window) ) {
 
@@ -183,6 +206,9 @@ int main( int, char** ){
 		glfwSwapBuffers(window);
 
 	}
+
+	/* Disconnect from database */
+	redis_disconnect();
 
 	/* Application cleanup */
 	ImGui_ImplOpenGL3_Shutdown();
@@ -386,7 +412,7 @@ static void show_bom_window( ProjectBom bom ){
 					/* BOM Line item */
 					ImGui::TableSetColumnIndex(0);
 					/* Selectable line item number */
-					snprintf(line_item_label, 64, "%d", bom.item[i].index, bom.item[i].mpn);
+					snprintf(line_item_label, 64, "%d, %s", bom.item[i].index, bom.item[i].mpn);
 					ImGui::Selectable(line_item_label, &item_sel[i], ImGuiSelectableFlags_SpanAllColumns);
 
 					/* Part number */
@@ -496,9 +522,5 @@ static void show_root_window( ProjectNode *projects, ProjectBom *boms ){
 		
 		ImGui::EndTable();	
 	}
-
-
-
-
 
 }
