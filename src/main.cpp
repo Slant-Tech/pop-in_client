@@ -2,108 +2,29 @@
 #include <imgui_impl_glfw.h>
 #include <imgui_impl_opengl3.h>
 #include <stdio.h>
+#include <vector>
 #include <iterator>
 #include <GLFW/glfw3.h>
+#include <projectview.h>
+
+int selected_prj = -1; /* index that has been selected */
 
 
-/* Project structure */
-/* Dummy file system for projects */
-struct ProjectNode {
-	const char* name;
-	const char* date;
-	const char* version;
-	const char* author;
-	int 		childidx;
-	int			childcount;
-	bool		selected;
+/* BOM Line item structure */
+struct BomLineItem {
+	const int int_pn; 	/* internal part number */
+	const int index;	/* Bom item index */
+	const char* mpn;	/* Manufacturer Part Number */
+	const char* mfg;	/* Manufacturer */
+	unsigned int q;		/* Quantity */
+	unsigned int type;	/* Part type */
+};
 
-	static void DisplayNode( ProjectNode* node, ProjectNode* all_nodes ){
+/* BOM Structure */
+struct ProjectBom {
+	const int id;					/* BOM id number */
+	std::vector<BomLineItem> item;	/* BOM Items */
 
-		/* Getting index for node; useful for selecting only one project at a
-		 * time */
-		int index = std::distance( all_nodes, node );
-		static int selected = 0; /* index that has been selected */
-
-		ProjectNode* node_clicked = NULL; /* Node that has been clicked */
-		ImGuiTreeNodeFlags node_flags = ImGuiTreeNodeFlags_OpenOnArrow | \
-								   		ImGuiTreeNodeFlags_OpenOnDoubleClick | \
-								   		ImGuiTreeNodeFlags_SpanFullWidth; 
-
-		ImGui::TableNextRow();
-		ImGui::TableNextColumn();
-		
-		/* Check if project contains subprojects */
-		if( node->childcount > 0 ){
-
-			/* Check if selected, display if selected */
-			if( node->selected && (index == selected ) ){
-				node_flags |= ImGuiTreeNodeFlags_Selected;
-			}
-
-			bool open = ImGui::TreeNodeEx(node->name, node_flags);
-			
-			/* Check if item has been clicked */
-			if( ImGui::IsItemClicked() && !ImGui::IsItemToggledOpen() ){
-				printf("In display: Node %s clicked\n", node->name);
-				node_clicked = node;	
-				selected = index;
-			}
-
-
-			ImGui::TableNextColumn();
-			ImGui::Text(node->date);
-			ImGui::TableNextColumn();
-			ImGui::Text(node->version);
-			ImGui::TableNextColumn();
-			ImGui::TextUnformatted(node->author);
-			
-			/* Display subprojects if node is open */
-			if( open ){
-				for( int child_n = 0; child_n < node->childcount; child_n ++ ){
-					DisplayNode( &all_nodes[node->childidx + child_n], all_nodes );
-				}
-
-				ImGui::TreePop();
-			}
-
-		}
-		else {
-
-			node_flags = ImGuiTreeNodeFlags_Leaf | \
-						 ImGuiTreeNodeFlags_NoTreePushOnOpen | \
-						 ImGuiTreeNodeFlags_SpanFullWidth;
-
-			if( node->selected && (index == selected) ){
-				node_flags |= ImGuiTreeNodeFlags_Selected;
-			}
-
-			ImGui::TreeNodeEx(node->name, node_flags );
-
-			/* Check if item has been clicked */
-			if( ImGui::IsItemClicked() && !ImGui::IsItemToggledOpen() ){
-				printf("In display: Node %s clicked\n", node->name);
-				node_clicked = node;	
-				selected = index;
-			}
-
-			ImGui::TableNextColumn();
-			ImGui::Text(node->date);
-			ImGui::TableNextColumn();
-			ImGui::Text(node->version);
-			ImGui::TableNextColumn();
-			ImGui::TextUnformatted(node->author);
-
-		}
-
-		/* Check if something was clicked */
-		if( node_clicked != NULL ){
-			printf("Project %s has been clicked\n", node_clicked->name);
-			/* toggle state */
-			node_clicked->selected = !(node_clicked->selected);
-			printf("Selection state: %d\n", node_clicked->selected);
-		}
-
-	}
 };
 
 static void glfw_error_callback(int error, const char* description){
@@ -113,7 +34,7 @@ static void glfw_error_callback(int error, const char* description){
 /* Pass structure of projects and number of projects inside of struct */
 static void show_project_select_window( ProjectNode *projects);
 
-static void show_root_window( ProjectNode *projects );
+static void show_root_window( ProjectNode *projects, ProjectBom *boms );
 
 #define DEFAULT_ROOT_W	1280
 #define DEFAULT_ROOT_H	720
@@ -123,12 +44,46 @@ static bool run_flag = true;
 
 int main( int, char** ){
 
+	/* Projects */
 	static ProjectNode projects[] = {
-		/* Name						Date			Version	 Author		Child Index		Child Count  	Selected */
-		{ "Project Top", 			"2022-05-01", 	"1.2.3", "Dylan",	1,				2,				true},
-		{ "Subproject 1", 			"2022-05-02", 	"2.3.4", "Dylan",	3,				1,				false},
-		{ "Subproject 2", 			"2022-05-03", 	"3.4.5", "Dylan",	1,				-1,				false},
-		{ "subsubproject 1",		"2022-05-04", 	"4.5.6", "Dylan",	-1,				-1,				false}
+		/* Name						Date			Version	 Author		BOM ID	Child Index		Child Count  	Selected */
+		{ "Project Top", 			"2022-05-01", 	"1.2.3", "Dylan",	0,	1,				2,				false},
+		{ "Subproject 1", 			"2022-05-02", 	"2.3.4", "Dylan",	1,	3,				1,				false},
+		{ "Subproject 2", 			"2022-05-03", 	"3.4.5", "Dylan",	2,	1,				-1,				false},
+		{ "subsubproject 1",		"2022-05-04", 	"4.5.6", "Dylan",	3,	-1,				-1,				false}
+	};
+
+	/* BOMs */	
+	static ProjectBom boms[] = {
+		/* BOM ID	BOM Line Items	*/
+		{ 0, 			{	
+								/* Internal Part Number		BOM Index	MPN					MFG								Quantity	Type */
+								{	1000,					0,			"CL10B104KB8NNNC",	"Samsung Electro-Mechanics",	5000,		1},
+								{	2001,					1,			"RC0603FR-071KL",	"Yageo",						1000,		2},
+								{	2002,					2,			"RC0603FR-0710K",	"Yageo",						250,		2},
+						}		
+		},
+		{ 1, 			{	
+								/* Internal Part Number		BOM Index	MPN					MFG								Quantity	Type */
+								{	1000,					0,			"CL10B104KB8NNNC",	"Samsung Electro-Mechanics",	5000,		1},
+								{	2002,					1,			"RC0603FR-0710KL",	"Yageo",						250,		2},
+								{	2001,					2,			"RC0603FR-071KL",	"Yageo",						1000,		2},
+						}		
+		},
+		{ 2, 			{	
+								/* Internal Part Number		BOM Index	MPN					MFG								Quantity	Type */
+								{	2001,					0,			"RC0603FR-071KL",	"Yageo",						1000,		2},
+								{	2002,					1,			"RC0603FR-0710KL",	"Yageo",						250,		2},
+								{	2003,					2,			"RC0603FR-074K7L",	"Yageo",						500,		2},
+						}		
+		},
+		{ 3, 			{	
+								/* Internal Part Number		BOM Index	MPN					MFG								Quantity	Type */
+								{	1000,					0,			"CL10B104KB8NNNC",	"Samsung Electro-Mechanics",	5000,		1},
+								{	2002,					1,			"RC0603FR-0710KL",	"Yageo",						250,		2},
+						}		
+		}
+
 	};
 
 	/* Setup window */
@@ -164,7 +119,7 @@ int main( int, char** ){
 	/* Set ImGui color style */
 	ImGui::StyleColorsLight();
 	/* Dark colors */
-	ImGui::StyleColorsDark();
+//	ImGui::StyleColorsDark();
 	/* Classic colors */
 	//ImGui::StyleColorsClassic();
 	
@@ -173,7 +128,7 @@ int main( int, char** ){
 	ImGui_ImplOpenGL3_Init(glsl_version);
 
 	/* Load fonts if possible  */
-	ImFont* font_hack = io.Fonts->AddFontFromFileTTF( "/usr/share/fonts/TTF/Hack-Regular.ttf", 11.0f);
+	ImFont* font_hack = io.Fonts->AddFontFromFileTTF( "/usr/share/fonts/TTF/Hack-Regular.ttf", 14.0f);
 	IM_ASSERT( font_hack != NULL );
 	if( font_hack == NULL ){
 		io.Fonts->AddFontDefault();
@@ -184,6 +139,10 @@ int main( int, char** ){
 
 	/* Main viewport */
 	const ImGuiViewport* main_viewport = ImGui::GetMainViewport();
+
+
+	/* Getting display width and height */
+	int display_w = DEFAULT_ROOT_W, display_h = DEFAULT_ROOT_H;
 
 	bool bool_root_window = true;
 	ImGuiWindowFlags root_window_flags = ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize
@@ -203,11 +162,11 @@ int main( int, char** ){
 		ImGui_ImplGlfw_NewFrame();
 		ImGui::NewFrame();
 
-		/* Setup root window */
+		/* Setup root window. Keep size dynamic to maximum area */
 		ImGui::SetNextWindowPos(ImVec2(main_viewport->WorkPos.x, main_viewport->WorkPos.y));
-		ImGui::SetNextWindowSize(ImVec2(DEFAULT_ROOT_W, DEFAULT_ROOT_H));
+		ImGui::SetNextWindowSize(ImVec2(display_w, display_h));
 		ImGui::Begin("Root", &bool_root_window, root_window_flags);
-		show_root_window(projects);
+		show_root_window(projects, boms);
 		ImGui::End();
 
 		/* End Projects view creation */
@@ -215,7 +174,6 @@ int main( int, char** ){
 
 		/* Rendering section */
 		ImGui::Render();
-		int display_w, display_h;
 		glfwGetFramebufferSize( window, &display_w, &display_h);
 		glViewport(0, 0, display_w, display_h);
 		glClearColor( clear_color.x * clear_color.w, clear_color.y * clear_color.w, clear_color.z * clear_color.w, clear_color.w);
@@ -271,16 +229,14 @@ static void show_project_select_window( ProjectNode *projects){
 		ImGui::TableHeadersRow();
 
 
-		ProjectNode::DisplayNode( &projects[0], projects );
+		projects[0].ProjectNode::DisplayNode( &projects[0], projects );
 		ImGui::EndTable();
 	}
 
 }
 
-/* Setup root window, child windows */
-static void show_root_window( ProjectNode *projects ){
-	
-	/* Create menu items */
+/* Menu items */
+static void show_menu_bar( void ){
 	if( ImGui::BeginMenuBar() ){
 		/* File Menu */
 		if( ImGui::BeginMenu("File") ) {
@@ -371,9 +327,178 @@ static void show_root_window( ProjectNode *projects ){
 
 		ImGui::EndMenuBar();
 	}
-	/* Show project view */
-	ImGui::BeginChild("Project Selector", ImVec2(ImGui::GetContentRegionAvail().x * 0.3f, ImGui::GetContentRegionAvail().y * 0.8f ));
-	show_project_select_window(projects);
-	ImGui::EndChild();
+
+}
+
+static void show_bom_window( ProjectBom bom ){
+
+	/* Show BOM/Information View */
+	ImGuiTabBarFlags tabbar_flags = ImGuiTabBarFlags_None;
+	if( ImGui::BeginTabBar("Project Info", tabbar_flags ) ){
+		if( ImGui::BeginTabItem("Info") ){
+			ImGui::Text("Project Information Tab");
+			ImGui::EndTabItem();
+		}
+		if( ImGui::BeginTabItem("BOM") ){
+			ImGui::Text("Project BOM Tab");
+
+			/* BOM Specific table view */
+
+			static ImGuiTableFlags table_flags = ImGuiTableFlags_SizingStretchProp | \
+												 ImGuiTableFlags_Resizable | \
+												 ImGuiTableFlags_NoSavedSettings | \
+												 ImGuiTableFlags_BordersOuter | \
+												 ImGuiTableFlags_Sortable | \
+												 ImGuiTableFlags_SortMulti | \
+												 ImGuiTableFlags_ScrollY | \
+												 ImGuiTableFlags_BordersV | \
+												 ImGuiTableFlags_Reorderable | \
+												 ImGuiTableFlags_ContextMenuInBody;
+
+			if( ImGui::BeginTable("BOM", 5, table_flags ) ){
+				ImGui::TableSetupColumn("#", ImGuiTableColumnFlags_DefaultSort);
+				ImGui::TableSetupColumn("P/N", ImGuiTableColumnFlags_PreferSortAscending);
+				ImGui::TableSetupColumn("Manufacturer", ImGuiTableColumnFlags_PreferSortAscending);
+				ImGui::TableSetupColumn("Quantitiy", ImGuiTableColumnFlags_PreferSortAscending);
+				ImGui::TableSetupColumn("Type", ImGuiTableColumnFlags_PreferSortAscending);
+
+				ImGui::TableHeadersRow();
+
+				/* Sort the bom items list based off of what is currently
+				 * selected for sorting */
+				if(ImGuiTableSortSpecs* bom_sort_specs = ImGui::TableGetSortSpecs()){
+					/* Criteria changed; need to resort */
+					if( bom_sort_specs->SpecsDirty ){
+						if( bom.item.size() > 1 ){
+							//qsort( &bom.item[0], (size_t)bom.item.size(), sizeof( bom.item[0] ) );	
+						}
+						bom_sort_specs->SpecsDirty = false;
+					}
+				}
+				
+				/* Used for selecting specific item in BOM */
+				bool item_sel[ bom.item.size() ] = {};
+				char line_item_label[64]; /* May need to change size at some point */
+				static BomLineItem *selected_item = NULL;	
+				for( int i = 0; i < bom.item.size(); i++){
+					ImGui::TableNextRow();
+
+					/* BOM Line item */
+					ImGui::TableSetColumnIndex(0);
+					/* Selectable line item number */
+					snprintf(line_item_label, 64, "%d", bom.item[i].index, bom.item[i].mpn);
+					ImGui::Selectable(line_item_label, &item_sel[i], ImGuiSelectableFlags_SpanAllColumns);
+
+					/* Part number */
+					ImGui::TableSetColumnIndex(1);
+					ImGui::Text("%s", bom.item[i].mpn );
+
+					/* Manufacturer */
+					ImGui::TableSetColumnIndex(2);
+					ImGui::Text("%s", bom.item[i].mfg );
+
+					/* Quantity */
+					ImGui::TableSetColumnIndex(3);
+					ImGui::Text("%d", bom.item[i].q );
+
+					/* Type */
+					ImGui::TableSetColumnIndex(4);
+					ImGui::Text("Part type #%d", bom.item[i].type);
+
+					if( item_sel[i] ){
+						/* Open popup for part info */
+						ImGui::OpenPopup("PartInfo");
+						printf("%s was selected\n", bom.item[i].mpn);
+						selected_item = &bom.item[i];
+					}
+
+				}
+				/* Popup window for Part info */
+				ImVec2 center = ImGui::GetMainViewport()->GetCenter();
+				ImGui::SetNextWindowPos(center, ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
+				if( ImGui::BeginPopupModal("PartInfo", NULL, ImGuiWindowFlags_AlwaysAutoResize) ){
+					ImGui::Text("Part Info");
+					ImGui::Separator();
+
+					if( selected_item != NULL ){
+						ImGui::Text("Part Number: %s", selected_item->mpn);
+					}
+					else{
+						ImGui::Text("Part Number not found");
+					}
+
+					ImGui::Separator();
+			
+					if( ImGui::Button("OK", ImVec2(120,0))){
+						ImGui::CloseCurrentPopup();
+					}
+					ImGui::SetItemDefaultFocus();
+					
+					ImGui::EndPopup();
+				}
+
+				ImGui::EndTable();
+			}
+
+			ImGui::EndTabItem();
+		}
+		ImGui::EndTabBar();
+	}
+
+
+
+}
+
+/* Setup root window, child windows */
+static void show_root_window( ProjectNode *projects, ProjectBom *boms ){
+	
+	/* Default empty BOM to show */
+	static const ProjectBom empty_default_bom = {
+		0, { {0, 0, "\0", "\0", 0, 0} }
+	};
+
+
+
+	/* Create menu items */
+	show_menu_bar();
+	
+	/* Put the different items into columns*/
+	static ImGuiTableFlags table_flags = ImGuiTableFlags_SizingStretchProp | \
+										 ImGuiTableFlags_Resizable | \
+										 ImGuiTableFlags_BordersOuter | \
+										 ImGuiTableFlags_BordersV | \
+										 ImGuiTableFlags_Reorderable | \
+										 ImGuiTableFlags_ContextMenuInBody;
+
+	if( ImGui::BeginTable("view_split", 2, table_flags) ){
+		ImGui::TableNextRow();
+
+		/* Project view on the left */
+		ImGui::TableSetColumnIndex(0);
+		/* Show project view */
+		ImGui::BeginChild("Project Selector", ImVec2(ImGui::GetContentRegionAvail().x * 0.95f, ImGui::GetContentRegionAvail().y * 0.95f ));
+		show_project_select_window(projects);
+		ImGui::EndChild();
+
+		/* Info view on the right */
+		ImGui::TableSetColumnIndex(1);
+		ImGui::BeginChild("Project Information", ImVec2(ImGui::GetContentRegionAvail().x * 0.95f, ImGui::GetContentRegionAvail().y*0.95f));
+
+		/* Get selected project */
+		if( selected_prj != -1 ){
+			ProjectBom selected_bom = boms[ projects[selected_prj].bomid ];
+			show_bom_window(selected_bom);
+		} else {
+			/* No projects selected, use empty bom */
+			show_bom_window(empty_default_bom);
+		}
+		ImGui::EndChild();
+		
+		ImGui::EndTable();	
+	}
+
+
+
+
 
 }
