@@ -6,8 +6,6 @@
 extern "C" {
 #endif
 
-#include <yder.h>
-
 /* Key Value pair for part info*/
 struct part_info_t {
 	char* key;	
@@ -30,6 +28,9 @@ struct part_t* get_part_from_pn( const char* pn );
 
 /* Free the part structure */
 void free_part_t( struct part_t* part );
+
+/* Write part to database */
+int redis_write_part( struct part_t* part );
 
 /* Connect to redis database */
 int redis_connect( const char* hostname, int port );

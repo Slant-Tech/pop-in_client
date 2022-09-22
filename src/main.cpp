@@ -35,8 +35,10 @@ static void glfw_error_callback(int error, const char* description){
 
 /* Pass structure of projects and number of projects inside of struct */
 static void show_project_select_window( ProjectNode *projects);
-
+static void show_new_part_popup( void );
 static void show_root_window( ProjectNode *projects, ProjectBom *boms );
+
+bool show_new_part_window = false;
 
 #define DEFAULT_ROOT_W	1280
 #define DEFAULT_ROOT_H	720
@@ -189,6 +191,9 @@ int main( int, char** ){
 		ImGui::SetNextWindowPos(ImVec2(main_viewport->WorkPos.x, main_viewport->WorkPos.y));
 		ImGui::SetNextWindowSize(ImVec2(display_w, display_h));
 		ImGui::Begin("Root", &bool_root_window, root_window_flags);
+		if( show_new_part_window ){
+			show_new_part_popup();
+		}
 		show_root_window(projects, boms);
 		ImGui::End();
 
@@ -261,12 +266,102 @@ static void show_project_select_window( ProjectNode *projects){
 
 }
 
+static void show_new_part_popup( void ){
+	static struct part_t part;
+
+	/* Buffers for text input. Can also be used for santizing inputs */
+	static char quantity[128] = {};
+	static char internal_pn[256] = {};
+	static char type[256] = {};
+	static char mfg[512] = {};
+	static char mpn[512] = {};
+
+
+	/* Ensure popup is in the center */
+	ImVec2 center = ImGui::GetMainViewport()->GetCenter();
+	ImGui::SetNextWindowPos(center, ImGuiCond_Appearing, ImVec2( 0.5f, 0.5f));
+
+	if( ImGui::Begin("NewPartPopup",&show_new_part_window, ImGuiWindowFlags_AlwaysAutoResize) ){
+		ImGui::Text("Enter part details below");
+		ImGui::Separator();
+
+		/* Text entry fields */
+		ImGui::InputText("Internal Part Number", internal_pn, 256, ImGuiInputTextFlags_CharsNoBlank | ImGuiInputTextFlags_CharsDecimal );
+		ImGui::InputText("Part Type", type, 256, ImGuiInputTextFlags_CharsNoBlank);
+		ImGui::InputText("Part Number", mpn, 512, ImGuiInputTextFlags_CharsNoBlank);	
+		ImGui::InputText("Manufacturer", mfg, 512);
+		ImGui::InputText("Local Stock", quantity, 128, ImGuiInputTextFlags_CharsNoBlank | ImGuiInputTextFlags_CharsDecimal );
+
+		/* Check if valid to copy */
+
+		/* No checks because I'll totally do it later (hopefully) */
+		part.q = atoi( quantity );
+		part.ipn = atoi( internal_pn ); 
+		part.mpn = mpn;
+		part.mfg = mfg;
+		part.type = type;
+
+		/* Figure out what the hell to do with the info section */
+
+		/* Save and cancel buttons */
+		if( ImGui::Button("Save", ImVec2(0,0)) ){
+
+			/* Check if can save first */
+
+			/* Perform the write */
+			redis_write_part( &part );
+			printf("Data written to database\n");
+			show_new_part_window = false;
+			
+			/* Clear all input data */
+			part.q = 0;
+			part.ipn = 0;
+			part.type = NULL;
+			part.mpn = NULL;
+			part.mfg = NULL;
+	
+			memset( quantity, 0, 128);
+			memset( internal_pn, 0, 256);
+			memset( type, 0, 256 );
+			memset( mfg, 0, 512 );
+			memset( mpn, 0, 512 );
+
+		}
+		ImGui::SetItemDefaultFocus();
+		ImGui::SameLine();
+		if ( ImGui::Button("Cancel", ImVec2(0, 0) )){
+			show_new_part_window = false;
+			/* Clear all input data */
+			part.q = 0;
+			part.ipn = 0;
+			part.type = NULL;
+			part.mpn = NULL;
+			part.mfg = NULL;
+			memset( quantity, 0, 128);
+			memset( internal_pn, 0, 256);
+			memset( type, 0, 256 );
+			memset( mfg, 0, 512 );
+			memset( mpn, 0, 512 );
+		}
+
+		ImGui::End();
+	}
+
+}
+
 /* Menu items */
 static void show_menu_bar( void ){
+
 	if( ImGui::BeginMenuBar() ){
 		/* File Menu */
 		if( ImGui::BeginMenu("File") ) {
 			if( ImGui::MenuItem("New Project") ){
+				
+			}
+			else if( ImGui::MenuItem("New Part") ){
+				/* Create part_t, then provide result to redis_write_part */
+				printf("New Part menu clicked\n");
+				show_new_part_window = true;
 				
 			}
 			else if( ImGui::MenuItem("Export Project") ){
@@ -353,6 +448,8 @@ static void show_menu_bar( void ){
 
 		ImGui::EndMenuBar();
 	}
+
+
 
 }
 

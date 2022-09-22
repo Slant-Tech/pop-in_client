@@ -2,6 +2,7 @@
 #include <redis-wrapper/redis-json.h>
 #include <json-c/json.h>
 #include <string.h>
+#include <yder.h>
 #include <db_handle.h>
 
 /* Redis Context for handling in database */
@@ -17,7 +18,7 @@ static int parse_json_part( struct part_t * part, struct json_object* restrict j
 	json_object *jipn, *jq, *jtype, *jmfg, *jmpn, *jinfo;
 	
 	jipn  = json_object_object_get( jpart, "ipn" );
-	jq    = json_object_object_get( jpart, "stock" );
+	jq    = json_object_object_get( jpart, "q" );
 	jtype = json_object_object_get( jpart, "type" );
 	jmfg  = json_object_object_get( jpart, "mfg" );
 	jmpn  = json_object_object_get( jpart, "mpn" );
@@ -85,10 +86,10 @@ static int parse_json_part( struct part_t * part, struct json_object* restrict j
 	json_object_object_foreach( jinfo, key, val ){
 
 		/* copy key; which is easier for some reason? */
-		part->info[count].key = malloc( strlen( key ) * sizeof( char ) );
+		part->info[count].key = malloc( (strlen( key ) + 1 ) * sizeof( char ) );
 		strcpy( part->info[count].key, key );
 
-		jstrlen = strlen( json_object_get_string( val ) );
+		jstrlen = strlen( json_object_get_string( val ) ) + 1;
 		part->info[count].val = malloc( jstrlen * sizeof( char ) );
 		strcpy( part->info[count].val, json_object_get_string( val ) );
 
@@ -138,6 +139,55 @@ void free_part_t( struct part_t* part ){
 		part->info = NULL;
 		part->info_len = 0;
 	}
+
+}
+
+/* Write part to database */
+int redis_write_part( struct part_t* part ){
+	/* Database part name */
+	char * dbpart_name = NULL;
+
+	/* Create json object to write */
+	json_object *part_root = json_object_new_object();
+	json_object *info = json_object_new_object();
+
+	/* Add all custom fields to info */
+	for( unsigned int i = 0; i < part->info_len; i++ ){
+		json_object_object_add( info, part->info[i].key, json_object_new_string(part->info[i].val) );
+	}
+	
+	/* Add all parts of the part struct to the json object */
+	json_object_object_add( part_root, "ipn", json_object_new_int64(part->ipn) ); /* This should be generated somehow */
+	json_object_object_add( part_root, "q", json_object_new_int64(part->q) );
+	json_object_object_add( part_root, "type", json_object_new_string( part->type ) );
+	json_object_object_add( part_root, "mfg", json_object_new_string( part->mfg ) );
+	json_object_object_add( part_root, "mpn", json_object_new_string( part->mpn ) );
+	json_object_object_add( part_root, "info", info );
+
+	dbpart_name = malloc( strlen(part->mpn) + strlen("part:") );
+
+	int retval = -1;
+	if( NULL ==  dbpart_name ){
+		y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate memory for dbpart_name");
+		retval = -1;
+
+	}
+	else{
+		/* create name */
+		sprintf( dbpart_name, "part:%s", part->mpn);
+
+		/* Write object to database */
+		retval = redis_json_set( rc, dbpart_name, "$", json_object_to_json_string(part_root) );
+	}
+
+
+
+	/* Cleanup json object */
+	free( dbpart_name );
+	json_object_put( info );
+	json_object_put( part_root );
+
+	return retval;
 
 }
 
