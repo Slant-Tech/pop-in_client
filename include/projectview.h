@@ -108,8 +108,9 @@ struct ProjectNode {
 				printf("Node %s is highlighted\n", node->name);
 			}
 			else {
-				/* Don't show anything if there is no highlight */
-				selected_prj = -1;	
+				/* Don't show anything if there is no highlight; second
+				 * thought, maybe not a good idea?  */
+				//selected_prj = -1;	
 			}
 		}
 

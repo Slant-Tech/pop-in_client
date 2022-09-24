@@ -9,7 +9,7 @@
 #include <yder.h>
 #include <db_handle.h>
 
-int selected_prj = -1; /* index that has been selected */
+int selected_prj = 0; /* index that has been selected */
 
 
 /* BOM Line item structure */
@@ -51,10 +51,10 @@ int main( int, char** ){
 	/* Projects */
 	static ProjectNode projects[] = {
 		/* Name						Date			Version	 Author		BOM ID	Child Index		Child Count  	Selected */
-		{ "Project Top", 			"2022-05-01", 	"1.2.3", "Dylan",	0,	1,				2,				false},
-		{ "Subproject 1", 			"2022-05-02", 	"2.3.4", "Dylan",	1,	3,				1,				false},
-		{ "Subproject 2", 			"2022-05-03", 	"3.4.5", "Dylan",	2,	1,				-1,				false},
-		{ "subsubproject 1",		"2022-05-04", 	"4.5.6", "Dylan",	3,	-1,				-1,				false}
+		{ "Project Top", 			"2022-05-01", 	"1.2.3", "Dylan",	0,		1,				2,				true},
+		{ "Subproject 1", 			"2022-05-02", 	"2.3.4", "Dylan",	1,		3,				1,				false},
+		{ "Subproject 2", 			"2022-05-03", 	"3.4.5", "Dylan",	2,		1,				-1,				false},
+		{ "subsubproject 1",		"2022-05-04", 	"4.5.6", "Dylan",	3,		-1,				-1,				false}
 	};
 
 	/* BOMs */	
@@ -251,7 +251,7 @@ static void show_project_select_window( ProjectNode *projects){
 
 	/* Set colums, items in table */
 	if( ImGui::BeginTable("projects", 4, flags)){
-		/* First column will use default _WidthStrecth when ScrollX is
+		/* First column will use default _WidthStretch when ScrollX is
 		 * off and _WidthFixed when ScrollX is on */
 		ImGui::TableSetupColumn("Name",   	ImGuiTableColumnFlags_NoHide);
 		ImGui::TableSetupColumn("Date",   	ImGuiTableColumnFlags_WidthFixed, TEXT_BASE_WIDTH * 12.0f);
@@ -509,7 +509,7 @@ static void show_bom_window( ProjectBom bom ){
 					/* BOM Line item */
 					ImGui::TableSetColumnIndex(0);
 					/* Selectable line item number */
-					snprintf(line_item_label, 64, "%d, %s", bom.item[i].index, bom.item[i].mpn);
+					snprintf(line_item_label, 64, "%d", bom.item[i].index);
 					ImGui::Selectable(line_item_label, &item_sel[i], ImGuiSelectableFlags_SpanAllColumns);
 
 					/* Part number */
