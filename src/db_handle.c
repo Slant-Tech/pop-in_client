@@ -147,15 +147,22 @@ int redis_write_part( struct part_t* part ){
 	/* Database part name */
 	char * dbpart_name = NULL;
 
+	printf("Creating json objects\n");
+
 	/* Create json object to write */
 	json_object *part_root = json_object_new_object();
 	json_object *info = json_object_new_object();
 
+	printf("Adding json objects \n");
+
 	/* Add all custom fields to info */
-	for( unsigned int i = 0; i < part->info_len; i++ ){
-		json_object_object_add( info, part->info[i].key, json_object_new_string(part->info[i].val) );
+	if( part->info_len != 0 ) {
+		for( unsigned int i = 0; i < part->info_len; i++ ){
+			json_object_object_add( info, part->info[i].key, json_object_new_string(part->info[i].val) );
+		}
 	}
-	
+	printf("Parsing \n");
+
 	/* Add all parts of the part struct to the json object */
 	json_object_object_add( part_root, "ipn", json_object_new_int64(part->ipn) ); /* This should be generated somehow */
 	json_object_object_add( part_root, "q", json_object_new_int64(part->q) );
@@ -164,17 +171,20 @@ int redis_write_part( struct part_t* part ){
 	json_object_object_add( part_root, "mpn", json_object_new_string( part->mpn ) );
 	json_object_object_add( part_root, "info", info );
 
-	dbpart_name = malloc( strlen(part->mpn) + strlen("part:") );
+	printf("Added items to object");
+
+	dbpart_name = malloc( strlen(part->mpn) + strlen("part:") + 2 );
 
 	int retval = -1;
-	if( NULL ==  dbpart_name ){
+	if( NULL == dbpart_name ){
 		y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate memory for dbpart_name");
 		retval = -1;
-
 	}
 	else{
 		/* create name */
 		sprintf( dbpart_name, "part:%s", part->mpn);
+
+		printf("Created name: %s\n", dbpart_name);
 
 		/* Write object to database */
 		retval = redis_json_set( rc, dbpart_name, "$", json_object_to_json_string(part_root) );
@@ -184,7 +194,9 @@ int redis_write_part( struct part_t* part ){
 
 	/* Cleanup json object */
 	free( dbpart_name );
-	json_object_put( info );
+	if( part->info_len != 0 ){
+		json_object_put( info );
+	}
 	json_object_put( part_root );
 
 	return retval;
@@ -246,6 +258,41 @@ struct part_t* get_part_from_pn( const char* pn ){
 
 	/* Get part number, store in json object */
 	redis_json_get( rc, pn, "$", &jpart );
+
+	/* Parse the json */
+	parse_json_part( part, jpart );
+
+	/* Free json */
+	json_object_put( jpart );
+
+	return part;
+
+}
+
+/* Create struct from parsed item in database, from internal part number */
+struct part_t* get_part_from_ipn( unsigned int pn ){
+	struct part_t * part = NULL;	
+	if( NULL == rc ){
+		y_log_message( Y_LOG_LEVEL_ERROR, "Database is not connected. Could not get info of part: %s", pn);
+		return NULL;
+	}
+
+	/* Allocate space for part */
+	part = malloc( sizeof( struct part_t ) );
+	if( NULL == part ){
+		y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate memory for part: %s", pn);
+		return NULL;
+	}
+
+	/* Memory has been allocated, begin actually doing stuff */
+
+	/* Query database for part number */
+	struct json_object* jpart;
+	
+	/* Sanitize input? */
+
+	/* Get part number from internal part number */
+//	redis_json_get( rc, pn, "$", &jpart );
 
 	/* Parse the json */
 	parse_json_part( part, jpart );

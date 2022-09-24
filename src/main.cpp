@@ -118,7 +118,7 @@ int main( int, char** ){
 	IMGUI_CHECKVERSION();
 	ImGui::CreateContext();
 	ImGuiIO& io = ImGui::GetIO(); (void)io;
-	io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
+//	io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
 
 	/* Set ImGui color style */
 	ImGui::StyleColorsLight();
@@ -157,6 +157,7 @@ int main( int, char** ){
 		run_flag = 0;
 	}
 	
+#if 0
 	/* Get a part to see if it works */
 	struct part_t* test_part = get_part_from_pn("part:GRM188R61E106KA73D");
 
@@ -170,7 +171,7 @@ int main( int, char** ){
 
 	/* Done with part, free it */
 	free_part_t( test_part );
-
+#endif
 
 	/* Main application loop */
 	while( !glfwWindowShouldClose(window) ) {
@@ -281,16 +282,16 @@ static void show_new_part_popup( void ){
 	ImVec2 center = ImGui::GetMainViewport()->GetCenter();
 	ImGui::SetNextWindowPos(center, ImGuiCond_Appearing, ImVec2( 0.5f, 0.5f));
 
-	if( ImGui::Begin("NewPartPopup",&show_new_part_window, ImGuiWindowFlags_AlwaysAutoResize) ){
+	if( ImGui::Begin("New Part Popup",&show_new_part_window, ImGuiWindowFlags_AlwaysAutoResize) ){
 		ImGui::Text("Enter part details below");
 		ImGui::Separator();
 
 		/* Text entry fields */
-		ImGui::InputText("Internal Part Number", internal_pn, 256, ImGuiInputTextFlags_CharsNoBlank | ImGuiInputTextFlags_CharsDecimal );
-		ImGui::InputText("Part Type", type, 256, ImGuiInputTextFlags_CharsNoBlank);
-		ImGui::InputText("Part Number", mpn, 512, ImGuiInputTextFlags_CharsNoBlank);	
-		ImGui::InputText("Manufacturer", mfg, 512);
-		ImGui::InputText("Local Stock", quantity, 128, ImGuiInputTextFlags_CharsNoBlank | ImGuiInputTextFlags_CharsDecimal );
+		ImGui::InputText("Internal Part Number", internal_pn, 255, ImGuiInputTextFlags_CharsNoBlank | ImGuiInputTextFlags_CharsDecimal );
+		ImGui::InputText("Part Type", type, 255, ImGuiInputTextFlags_CharsNoBlank);
+		ImGui::InputText("Part Number", mpn, 511, ImGuiInputTextFlags_CharsNoBlank);	
+		ImGui::InputText("Manufacturer", mfg, 511);
+		ImGui::InputText("Local Stock", quantity, 127, ImGuiInputTextFlags_CharsNoBlank | ImGuiInputTextFlags_CharsDecimal );
 
 		/* Check if valid to copy */
 
@@ -320,11 +321,13 @@ static void show_new_part_popup( void ){
 			part.mpn = NULL;
 			part.mfg = NULL;
 	
-			memset( quantity, 0, 128);
-			memset( internal_pn, 0, 256);
-			memset( type, 0, 256 );
-			memset( mfg, 0, 512 );
-			memset( mpn, 0, 512 );
+			memset( quantity, 0, 127);
+			memset( internal_pn, 0, 255);
+			memset( type, 0, 255 );
+			memset( mfg, 0, 511 );
+			memset( mpn, 0, 511 );
+			printf("Cleared out part, finished writing\n");
+//			show_new_part_window = false;
 
 		}
 		ImGui::SetItemDefaultFocus();
@@ -337,11 +340,12 @@ static void show_new_part_popup( void ){
 			part.type = NULL;
 			part.mpn = NULL;
 			part.mfg = NULL;
-			memset( quantity, 0, 128);
-			memset( internal_pn, 0, 256);
-			memset( type, 0, 256 );
-			memset( mfg, 0, 512 );
-			memset( mpn, 0, 512 );
+			memset( quantity, 0, 127);
+			memset( internal_pn, 0, 255);
+			memset( type, 0, 255 );
+			memset( mfg, 0, 511 );
+			memset( mpn, 0, 511 );
+			printf("Cleared out part, exiting window\n");
 		}
 
 		ImGui::End();

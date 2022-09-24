@@ -65,7 +65,7 @@ CXXFLAGS.RELEASE= -O2
 #OPTIONS += -fif-conversion -fif-conversion2 -free -fexpensive-optimizations
 #OPTIONS += -fshrink-wrap -fhoist-adjacent-loads
 
-CXXOPTIONS  += -std=c++17
+CXXOPTIONS  += -std=c++11
 
 #Include Directories
 INC  = -I./
@@ -126,7 +126,7 @@ $(PRGNAME): $(COBJ) $(CXXOBJ) ./redis/libredis-wrapper.a
 	@make -C ./redis all
 
 valgrind: $(PRGNAME)
-	valgrind --leak-check=yes --track-origins=yes --show-reachable=yes --log-file="valgrind.log" ./$(PRGNAME)
+	valgrind --leak-check=yes --track-origins=yes --show-reachable=yes --read-inline-info=yes --show-leak-kinds=possible --xtree-leak=yes --xtree-memory=full --gen-suppressions=all --xtree-memory-file="xtree_mem.log" --log-file="valgrind.log" ./$(PRGNAME)
 
 %.d: %.c
 	@$(CC) $(CFLAGS) $< -MM -MT $(@:.d=.o) >$@
