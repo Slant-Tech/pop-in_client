@@ -389,7 +389,7 @@ static void import_parts_window( void ){
 			/* Start importing */
 			printf("Path received: %s\n", filepath);
 
-			redis_import_part_file();
+			redis_import_part_file( filepath );
 
 			/* Cleanup path */
 			memset( filepath, 0, sizeof( filepath ) );

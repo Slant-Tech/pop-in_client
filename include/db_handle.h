@@ -48,6 +48,9 @@ void free_part_t( struct part_t* part );
 /* Write part to database */
 int redis_write_part( struct part_t* part );
 
+/* Import file to database */
+int redis_import_part_file( char* filepath );
+
 /* Connect to redis database */
 int redis_connect( const char* hostname, int port );
 

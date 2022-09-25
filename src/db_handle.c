@@ -29,10 +29,10 @@ static int parse_json_part( struct part_t * part, struct json_object* restrict j
 	/* Copy data from json objects */
 
 	/* Internal part number */
-	part->ipn = json_object_get_int( jipn );
+	part->ipn = json_object_get_int64( jipn );
 
 	/* Internal Stock */
-	part->q = json_object_get_int( jq );
+	part->q = json_object_get_int64( jq );
 
 	/* Part Type */
 	jstrlen = strlen( json_object_get_string( jtype ) );
@@ -153,6 +153,22 @@ int redis_write_part( struct part_t* part ){
 	json_object *part_root = json_object_new_object();
 	json_object *info = json_object_new_object();
 
+	if( NULL == part ){
+		y_log_message( Y_LOG_LEVEL_ERROR, "Part struct passed when writing to database was NULL" );
+		return -1;
+	}
+
+	if( NULL == part_root ){
+		y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate new root json object" );
+		return -1;
+	}
+
+	if( NULL == info ){
+		y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate new part info json object" );
+		json_object_put(part_root);
+		return -1;	
+	}
+
 	printf("Adding json objects \n");
 
 	/* Add all custom fields to info */
@@ -188,21 +204,98 @@ int redis_write_part( struct part_t* part ){
 
 		/* Write object to database */
 		retval = redis_json_set( rc, dbpart_name, "$", json_object_to_json_string(part_root) );
+		printf("JSON Object to send:\n%s\n", json_object_to_json_string_ext(part_root, JSON_C_TO_STRING_PRETTY));
 	}
 
 
 
 	/* Cleanup json object */
 	free( dbpart_name );
-	if( part->info_len != 0 ){
-		json_object_put( info );
-	}
 	json_object_put( part_root );
 
 	return retval;
 
 }
 
+/* Import file to database */
+int redis_import_part_file( char* filepath ){
+
+	/* Check if file is readable */
+	FILE* partfp = fopen(filepath, "r");
+	if( NULL == partfp ){
+		y_log_message(Y_LOG_LEVEL_ERROR, "File %s either does not exist or program does not have read permissions", filepath);
+		return -1;
+	}
+	/* Just using as test for permissions; json-c doesn't like passing the file
+	 * descriptor apparently */
+	fclose(partfp);
+
+	/* pass fd to importer */
+//	struct json_object* root = json_object_from_fd( partfp );
+	struct json_object* root = json_object_from_file( filepath );
+
+	if( NULL == root ){
+		/* Something wrong happened to the parsing */
+		y_log_message(Y_LOG_LEVEL_ERROR, "Could not parse import part file %s. Check syntax", filepath );
+//		fclose(partfp);
+		return -1;
+	}
+	
+	/* Get number of objects in array */	
+	size_t array_len = json_object_array_length( root );
+	struct json_object* jo_idx = NULL;
+	struct part_t* part = NULL;
+	int parse_part_retval = 0;
+
+
+	for( size_t i = 0; i < array_len; i++ ){
+		printf("\nJSON Index: %d\n", i);
+
+		/* Allocate space for part */
+		part = calloc( 1,  sizeof( struct part_t ) );
+		if( NULL == part ){
+			y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate memory for part while parsing input file: %s", filepath);
+		}
+		else {
+
+			/* Parse object from root at index; ensures that formatting is done
+			 * correctly, otherwise it would make sense to just pass the json
+			 * directly to the database */
+			jo_idx = json_object_array_get_idx( root, (int)i );
+			if( NULL == jo_idx ){
+				/* Parsing error */
+				y_log_message( Y_LOG_LEVEL_ERROR, "Error parsing file %s at array index %d", filepath, i );
+			}
+			else {
+				printf("JSON Object at index[%d]:\n%s\n", i, json_object_to_json_string_ext(jo_idx, JSON_C_TO_STRING_PRETTY));
+
+				/* Convert json object to part_t */
+				parse_part_retval = parse_json_part( part, jo_idx );
+				if( !parse_part_retval ){
+					/* No parsing errors, write to database */
+					if( redis_write_part( part ) ){
+						y_log_message( Y_LOG_LEVEL_ERROR, "Could not write part mpn: %s to database", part->mpn );
+					}
+					else{
+						y_log_message( Y_LOG_LEVEL_INFO, "Wrote part mpn: %s to database", part->mpn );
+					}
+					/* Cleanup part */
+					free_part_t( part );
+					part = NULL;
+					/* Cleanup object  */
+					jo_idx = NULL;
+					printf("Cleaned up objects\n");
+				}
+			}
+		}
+	}
+
+	/* Cleanup root object */
+	printf("Root object cleanup\n");
+	json_object_put(root);
+
+	return 0;
+}
 
 /* Connect to redis database */
 int redis_connect( const char* hostname, int port ){
