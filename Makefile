@@ -65,13 +65,14 @@ CXXFLAGS.RELEASE= -O2
 #OPTIONS += -fif-conversion -fif-conversion2 -free -fexpensive-optimizations
 #OPTIONS += -fshrink-wrap -fhoist-adjacent-loads
 
-CXXOPTIONS  += -std=c++11
+CXXOPTIONS  += -std=c++17
 
 #Include Directories
 INC  = -I./
 INC	+= -I./include
 INC += -I./imgui
 INC += -I./imgui/backends
+INC += -I./imgui-filedialog/L2DFileDialog/src
 INC += -I./redis
 INC += `pkg-config --cflags glfw3`
 

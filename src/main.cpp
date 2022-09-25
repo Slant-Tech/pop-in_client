@@ -8,6 +8,7 @@
 #include <projectview.h>
 #include <yder.h>
 #include <db_handle.h>
+#include <L2DFileDialog.h>
 
 int selected_prj = 0; /* index that has been selected */
 
@@ -37,8 +38,10 @@ static void glfw_error_callback(int error, const char* description){
 static void show_project_select_window( ProjectNode *projects);
 static void show_new_part_popup( void );
 static void show_root_window( ProjectNode *projects, ProjectBom *boms );
+static void import_parts_window( void );
 
 bool show_new_part_window = false;
+bool show_import_parts_window = false;
 
 #define DEFAULT_ROOT_W	1280
 #define DEFAULT_ROOT_H	720
@@ -194,6 +197,9 @@ int main( int, char** ){
 		ImGui::Begin("Root", &bool_root_window, root_window_flags);
 		if( show_new_part_window ){
 			show_new_part_popup();
+		}
+		if( show_import_parts_window ){
+			import_parts_window();
 		}
 		show_root_window(projects, boms);
 		ImGui::End();
@@ -353,6 +359,58 @@ static void show_new_part_popup( void ){
 
 }
 
+static void import_parts_window( void ){
+	static char filepath[(uint16_t)-1] = {}; /* Need to make sure this is large enough for some insane paths */
+	static char* file_dialog_buffer = nullptr;	
+
+
+	if( ImGui::Begin("Import Parts", &show_import_parts_window, ImGuiWindowFlags_AlwaysAutoResize) ){
+		
+		ImGui::Text("Select parts file to import");	
+		ImGui::Separator();
+
+		ImGui::InputText("##import_filepath", filepath, sizeof( filepath ) );
+		ImGui::SameLine();
+
+		/* Button to open filepicker dialog */
+		if( ImGui::Button("Browse##import_filepath") ){
+			file_dialog_buffer = filepath;
+			FileDialog::file_dialog_open = true; /* Need this to start the dialog */
+			FileDialog::file_dialog_open_type = FileDialog::FileDialogType::OpenFile;
+		}
+
+		/* Actual Dialog */
+		if( FileDialog::file_dialog_open ){
+			FileDialog::ShowFileDialog( &FileDialog::file_dialog_open, file_dialog_buffer, sizeof( file_dialog_buffer ), FileDialog::FileDialogType::OpenFile);
+		}
+
+		/* Button to start import */
+		if( ImGui::Button("Import") ){
+			/* Start importing */
+			printf("Path received: %s\n", filepath);
+
+			redis_import_part_file();
+
+			/* Cleanup path */
+			memset( filepath, 0, sizeof( filepath ) );
+			/* End of window */
+			show_import_parts_window = false;
+		}
+		ImGui::SameLine();
+
+		/* Button to cancel operation */
+		if( ImGui::Button("Cancel") ){
+			/* Cleanup and exit window */
+			/* End of window */
+			show_import_parts_window = false;
+		}
+
+		ImGui::End();
+
+	}
+
+}
+
 /* Menu items */
 static void show_menu_bar( void ){
 
@@ -366,7 +424,11 @@ static void show_menu_bar( void ){
 				/* Create part_t, then provide result to redis_write_part */
 				printf("New Part menu clicked\n");
 				show_new_part_window = true;
-				
+			}
+			else if( ImGui::MenuItem("Import Parts") ){
+				/* Read file from selection and add to database from selection */
+				printf("Import Parts menu clicked\n");
+				show_import_parts_window = true;
 			}
 			else if( ImGui::MenuItem("Export Project") ){
 				
@@ -547,7 +609,7 @@ static void show_bom_window( ProjectBom bom ){
 					ImGui::Text("Part Info");
 					ImGui::Separator();
 
-					if( selected_item != NULL ){
+					if( selected_item != NULL && selected_item->mpn != NULL ){
 						ImGui::Text("Part Number: %s", selected_item->mpn);
 					}
 					else{

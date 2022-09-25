@@ -4,3 +4,6 @@
 [submodule "redis"]
 	path = redis
 	url = git@gitlab.slant.tech:open-source/c-redis-wrapper.git
+[submodule "imgui-filedialog"]
+	path = imgui-filedialog
+	url = https://github.com/Limeoats/L2DFileDialog.git
