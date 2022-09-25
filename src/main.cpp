@@ -282,13 +282,25 @@ static void show_new_part_popup( void ){
 	static char type[256] = {};
 	static char mfg[512] = {};
 	static char mpn[512] = {};
+	static int selection_idx = -1;
+	const char* status_options[3] = {
+			"Production",
+			"NRND",
+			"Obsolete"
+	};
+	static const char* selection_str = NULL;
 
+	if( selection_idx >= 0 && selection_idx < 3 ){
+		selection_str = status_options[selection_idx];
+	}
 
 	/* Ensure popup is in the center */
 	ImVec2 center = ImGui::GetMainViewport()->GetCenter();
 	ImGui::SetNextWindowPos(center, ImGuiCond_Appearing, ImVec2( 0.5f, 0.5f));
 
-	if( ImGui::Begin("New Part Popup",&show_new_part_window, ImGuiWindowFlags_AlwaysAutoResize) ){
+	ImGuiWindowFlags flags =   ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoCollapse \
+							 | ImGuiWindowFlags_NoSavedSettings;
+	if( ImGui::Begin("New Part Popup",&show_new_part_window, flags ) ){
 		ImGui::Text("Enter part details below");
 		ImGui::Separator();
 
@@ -297,6 +309,19 @@ static void show_new_part_popup( void ){
 		ImGui::InputText("Part Type", type, 255, ImGuiInputTextFlags_CharsNoBlank);
 		ImGui::InputText("Part Number", mpn, 511, ImGuiInputTextFlags_CharsNoBlank);	
 		ImGui::InputText("Manufacturer", mfg, 511);
+		if( ImGui::BeginCombo("new-part-status", selection_str, 0 ) ){
+			for( int i = 0; i < IM_ARRAYSIZE( status_options ); i++){
+				const bool is_selected = ( selection_idx == i );
+				if( ImGui::Selectable(status_options[i], is_selected ) ){
+					selection_idx = i;
+				}
+				if( is_selected ){
+
+					ImGui::SetItemDefaultFocus();
+				}
+			}
+			ImGui::EndCombo();
+		}
 		ImGui::InputText("Local Stock", quantity, 127, ImGuiInputTextFlags_CharsNoBlank | ImGuiInputTextFlags_CharsDecimal );
 
 		/* Check if valid to copy */
@@ -307,6 +332,18 @@ static void show_new_part_popup( void ){
 		part.mpn = mpn;
 		part.mfg = mfg;
 		part.type = type;
+		if( 0 == selection_idx ){
+			part.status = pstat_prod;
+		}
+		else if( 1 == selection_idx ){
+			part.status = pstat_nrnd;
+		}
+		else if( 2 == selection_idx ){
+			part.status = pstat_obsolete;
+		}
+		else {
+			part.status = pstat_unknown;
+		}
 
 		/* Figure out what the hell to do with the info section */
 
@@ -363,8 +400,13 @@ static void import_parts_window( void ){
 	static char filepath[(uint16_t)-1] = {}; /* Need to make sure this is large enough for some insane paths */
 	static char* file_dialog_buffer = nullptr;	
 
+	/* Ensure popup is in the center */
+	ImVec2 center = ImGui::GetMainViewport()->GetCenter();
+	ImGui::SetNextWindowPos(center, ImGuiCond_Appearing, ImVec2( 0.5f, 0.5f));
 
-	if( ImGui::Begin("Import Parts", &show_import_parts_window, ImGuiWindowFlags_AlwaysAutoResize) ){
+	ImGuiWindowFlags flags =   ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoCollapse \
+							 | ImGuiWindowFlags_NoSavedSettings;
+	if( ImGui::Begin("Import Parts", &show_import_parts_window, flags) ){
 		
 		ImGui::Text("Select parts file to import");	
 		ImGui::Separator();

@@ -16,13 +16,18 @@ static int parse_json_part( struct part_t * part, struct json_object* restrict j
 
 	/* Need to create a bunch of json structs to parse everything out */
 	json_object *jipn, *jq, *jtype, *jmfg, *jmpn, *jinfo;
+	json_object *jprice, *jdist, *jstatus;
+	json_object *jitr, *jkey, *jval;
 	
-	jipn  = json_object_object_get( jpart, "ipn" );
-	jq    = json_object_object_get( jpart, "q" );
-	jtype = json_object_object_get( jpart, "type" );
-	jmfg  = json_object_object_get( jpart, "mfg" );
-	jmpn  = json_object_object_get( jpart, "mpn" );
-	jinfo = json_object_object_get( jpart, "info" );
+	jipn    = json_object_object_get( jpart, "ipn" );
+	jq      = json_object_object_get( jpart, "q" );
+	jtype   = json_object_object_get( jpart, "type" );
+	jmfg    = json_object_object_get( jpart, "mfg" );
+	jmpn    = json_object_object_get( jpart, "mpn" );
+	jstatus = json_object_object_get( jpart, "status" );
+	jinfo   = json_object_object_get( jpart, "info" );
+	jprice  = json_object_object_get( jpart, "price" ); 
+	jdist   = json_object_object_get( jpart, "dist" );
 	
 
 
@@ -67,6 +72,9 @@ static int parse_json_part( struct part_t * part, struct json_object* restrict j
 	}
 	strncpy( part->mpn, json_object_get_string( jmpn ), jstrlen );
 
+	/* Part status */
+	part->status = (enum part_status_t)json_object_get_int64( jstatus );
+
 	/* Get number of elements in info key value array */
 	part->info_len = json_object_object_length( jinfo );
 
@@ -74,7 +82,7 @@ static int parse_json_part( struct part_t * part, struct json_object* restrict j
 	part->info = malloc( sizeof( struct part_info_t ) * part->info_len );
 	if( NULL == part->info ){
 		y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate memory for info of part");
-		free( part );
+		free_part_t( part );
 		part = NULL;
 		return -1;
 	}
@@ -96,8 +104,77 @@ static int parse_json_part( struct part_t * part, struct json_object* restrict j
 		count++;
 	}
 
+	/* Get distributor information from array */
+	part->dist_len = (unsigned int)json_object_array_length( jdist );
+	if( part->dist_len > 0 ){
+		part->dist = calloc( part->dist_len, sizeof( struct part_dist_t ) );	
+		if( NULL == part->dist ){
+			y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate memory for distributor structure for part: %s", part->mpn );
+			free_part_t( part );
+			part = NULL;
+			return -1;
+		}
+		for( unsigned int i = 0; i < part->dist_len; i++){
+			/* Retrieve price object */
+			jitr = json_object_array_get_idx( jdist, (int)i );
 
+			/* Parse it out to get the required data */
+			jkey = json_object_object_get( jitr, "name" );
+			jval = json_object_object_get( jitr, "pn" );
 
+			/* Distributor Name  */
+			jstrlen = strlen( json_object_get_string( jkey ) );
+			part->dist[i].name = calloc( jstrlen + 1, sizeof( char ) );
+			if( NULL == part->dist[i].name ){
+				y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate memory in distributor name" );
+				free_part_t( part );
+				part = NULL;
+				return -1;
+			}
+			strcpy( part->dist[i].name, json_object_get_string( jkey ) );
+
+			/* Distributor part number */
+			jstrlen = strlen( json_object_get_string( jval ) );
+			part->dist[i].pn = calloc( jstrlen + 1, sizeof( char ) );
+			if( NULL == part->dist[i].pn ){
+				y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate memory in price break" );
+				free_part_t( part );
+				part = NULL;
+				return -1;
+			}
+			strcpy( part->dist[i].pn, json_object_get_string( jval ) );
+
+		}
+	}
+
+	/* Get price information from array */
+	part->price_len = (unsigned int)json_object_array_length( jprice );
+	if( part->price_len > 0 ){
+		part->price = calloc( part->price_len, sizeof( struct part_price_t ) );	
+		if( NULL == part->price ){
+			y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate memory for price structure for part: %s", part->mpn );
+			free_part_t( part );
+			part = NULL;
+			return -1;
+		}
+		for( unsigned int i = 0; i < part->price_len; i++){
+			/* Retrieve price object */
+			jitr = json_object_array_get_idx( jprice, (int)i );
+
+			/* Parse it out to get the required data */
+			jkey = json_object_object_get( jitr, "break" );
+			jval = json_object_object_get( jitr, "price" );
+
+			/* price break quantity  */
+			part->price[i].quantity = json_object_get_int64( jkey );
+
+			/* price break price (sounds weird, but can't think of a better
+			 * name */
+			part->price[i].price = json_object_get_double( jval );
+		}
+	}
+
+	return 0;
 }
 
 /* Free the part structure */
@@ -106,6 +183,7 @@ void free_part_t( struct part_t* part ){
 	/* Zero out other data */
 	part->ipn = 0;
 	part->q = 0;
+	part->status = pstat_unknown;
 	
 	/* Free all the strings if not NULL */
 	if( NULL !=  part->type ){
@@ -140,6 +218,36 @@ void free_part_t( struct part_t* part ){
 		part->info_len = 0;
 	}
 
+	if( NULL != part->dist ){
+		for( unsigned int i = 0; i < part->dist_len; i++ ){
+			if( NULL != part->dist[i].name ){
+				free( part->dist[i].name );
+				part->dist[i].name = NULL;
+			}
+			if( NULL != part->dist[i].pn ){
+				free( part->dist[i].pn );
+				part->dist[i].pn = NULL;
+			}
+		}
+
+		/* Finished iteration, free array pointer */
+		free( part->dist );
+		part->dist = NULL;
+		part->dist_len = 0;
+	}
+
+	if( NULL != part->price ){
+		for( unsigned int i = 0; i < part->price_len; i++ ){
+			part->price[i].quantity = 0;
+			part->price[i].price = 0.0;
+		}
+
+		/* Finished iteration, free array pointer */
+		free( part->price );
+		part->price = NULL;
+		part->price_len = 0;
+	}
+
 }
 
 /* Write part to database */
@@ -147,16 +255,18 @@ int redis_write_part( struct part_t* part ){
 	/* Database part name */
 	char * dbpart_name = NULL;
 
+	if( NULL == part ){
+		y_log_message( Y_LOG_LEVEL_ERROR, "Part struct passed when writing to database was NULL" );
+		return -1;
+	}
+
 	printf("Creating json objects\n");
 
 	/* Create json object to write */
 	json_object *part_root = json_object_new_object();
 	json_object *info = json_object_new_object();
-
-	if( NULL == part ){
-		y_log_message( Y_LOG_LEVEL_ERROR, "Part struct passed when writing to database was NULL" );
-		return -1;
-	}
+	json_object *dist = json_object_new_array_ext(part->dist_len);
+	json_object *price = json_object_new_array_ext(part->price_len);
 
 	if( NULL == part_root ){
 		y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate new root json object" );
@@ -169,6 +279,18 @@ int redis_write_part( struct part_t* part ){
 		return -1;	
 	}
 
+	if( NULL == dist ){
+		y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate new part distributor info json object" );
+		json_object_put(part_root);
+		return -1;	
+	}
+
+	if( NULL == price ){
+		y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate new part price info json object" );
+		json_object_put(part_root);
+		return -1;	
+	}
+
 	printf("Adding json objects \n");
 
 	/* Add all custom fields to info */
@@ -177,15 +299,39 @@ int redis_write_part( struct part_t* part ){
 			json_object_object_add( info, part->info[i].key, json_object_new_string(part->info[i].val) );
 		}
 	}
+
+	/* Distributor information */
+	if( part->dist_len != 0 ) {
+		json_object* dist_itr = json_object_new_object();
+		for( unsigned int i = 0; i < part->dist_len; i++ ){
+			json_object_object_add( dist_itr, "name", json_object_new_string(part->dist[i].name) );
+			json_object_object_add( dist_itr, "pn", json_object_new_string(part->dist[i].pn) );
+			json_object_array_add( dist, dist_itr );
+		}
+	}
+
+	/* Price information */
+	if( part->price_len != 0 ) {
+		json_object* price_itr = json_object_new_object();
+		for( unsigned int i = 0; i < part->price_len; i++ ){
+			json_object_object_add( price_itr, "break", json_object_new_int64(part->price[i].quantity) );
+			json_object_object_add( price_itr, "price", json_object_new_double(part->price[i].price) );
+			json_object_array_add( price, price_itr );
+		}
+	}
+
 	printf("Parsing \n");
 
 	/* Add all parts of the part struct to the json object */
 	json_object_object_add( part_root, "ipn", json_object_new_int64(part->ipn) ); /* This should be generated somehow */
 	json_object_object_add( part_root, "q", json_object_new_int64(part->q) );
+	json_object_object_add( part_root, "status", json_object_new_int64(part->status) );
 	json_object_object_add( part_root, "type", json_object_new_string( part->type ) );
 	json_object_object_add( part_root, "mfg", json_object_new_string( part->mfg ) );
 	json_object_object_add( part_root, "mpn", json_object_new_string( part->mpn ) );
 	json_object_object_add( part_root, "info", info );
+	json_object_object_add( part_root, "dist", dist );
+	json_object_object_add( part_root, "price", price );
 
 	printf("Added items to object");
 

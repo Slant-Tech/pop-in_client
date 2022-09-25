@@ -25,15 +25,42 @@ struct part_info_t {
 	char* val;
 };
 
+/* Key Value pair for distributor info */
+struct part_dist_t {
+	char* name;
+	char* pn;
+};
+
+/* Key Value pair for pricing */
+struct part_price_t {
+	int quantity;	/* Price break quantity */
+	double price;	/* Price in native currency. Dollars, need to figure out setting for this later */
+};
+
+/* Part status information */
+enum part_status_t {
+	pstat_unknown,
+	pstat_prod,
+	pstat_low_stock,
+	pstat_unavailable,
+	pstat_nrnd,
+	pstat_obsolete
+};
+
 /* Structure for parts */
 struct part_t {
-	unsigned int ipn;			/* Internal part number */
-	unsigned int q;				/* Quantity/Stock */
-	unsigned int info_len;		/* Number of key value pairs in info */
-	char* type;					/* Part type */
-	char* mfg;					/* Manufacturer */
-	char* mpn;					/* Manufacturer Part Number */
-	struct part_info_t* info; 	/* Key Value info for dynamic part definitions */
+	unsigned int ipn;				/* Internal part number */
+	unsigned int q;					/* Quantity/Stock */
+	enum part_status_t status;		/* Part production status */
+	unsigned int info_len;			/* Number of key value pairs in info */
+	unsigned int price_len; 		/* Number of price breaks in price */
+	unsigned int dist_len;			/* Number of distributors */
+	char* type;						/* Part type */
+	char* mfg;						/* Manufacturer */
+	char* mpn;						/* Manufacturer Part Number */
+	struct part_info_t* info; 		/* Key Value info for dynamic part definitions */
+	struct part_dist_t* dist;	/* Key Value distributor info */
+	struct part_price_t* price;		/* Key Value price break info */
 };
 
 /* Create struct from parsed item in database, from part number */
