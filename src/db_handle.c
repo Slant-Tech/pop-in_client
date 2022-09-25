@@ -268,6 +268,10 @@ int redis_write_part( struct part_t* part ){
 	json_object *dist = json_object_new_array_ext(part->dist_len);
 	json_object *price = json_object_new_array_ext(part->price_len);
 
+
+	json_object* dist_itr = json_object_new_object();
+	json_object* price_itr = json_object_new_object();
+
 	if( NULL == part_root ){
 		y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate new root json object" );
 		return -1;
@@ -291,6 +295,18 @@ int redis_write_part( struct part_t* part ){
 		return -1;	
 	}
 
+	if( NULL == dist_itr ){
+		y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate new part distributor iterator json object" );	
+		json_object_put( part_root );
+		return -1;
+	}
+	
+	if( NULL == price_itr ){
+		y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate new part price iterator json object" );	
+		json_object_put( part_root );
+		return -1;
+	}
+
 	printf("Adding json objects \n");
 
 	/* Add all custom fields to info */
@@ -302,22 +318,22 @@ int redis_write_part( struct part_t* part ){
 
 	/* Distributor information */
 	if( part->dist_len != 0 ) {
-		json_object* dist_itr = json_object_new_object();
 		for( unsigned int i = 0; i < part->dist_len; i++ ){
 			json_object_object_add( dist_itr, "name", json_object_new_string(part->dist[i].name) );
 			json_object_object_add( dist_itr, "pn", json_object_new_string(part->dist[i].pn) );
-			json_object_array_add( dist, dist_itr );
 		}
+
+		json_object_array_add( dist, dist_itr );
 	}
 
 	/* Price information */
 	if( part->price_len != 0 ) {
-		json_object* price_itr = json_object_new_object();
 		for( unsigned int i = 0; i < part->price_len; i++ ){
 			json_object_object_add( price_itr, "break", json_object_new_int64(part->price[i].quantity) );
 			json_object_object_add( price_itr, "price", json_object_new_double(part->price[i].price) );
-			json_object_array_add( price, price_itr );
 		}
+
+		json_object_array_add( price, price_itr );
 	}
 
 	printf("Parsing \n");
@@ -350,7 +366,7 @@ int redis_write_part( struct part_t* part ){
 
 		/* Write object to database */
 		retval = redis_json_set( rc, dbpart_name, "$", json_object_to_json_string(part_root) );
-		printf("JSON Object to send:\n%s\n", json_object_to_json_string_ext(part_root, JSON_C_TO_STRING_PRETTY));
+//		printf("JSON Object to send:\n%s\n", json_object_to_json_string_ext(part_root, JSON_C_TO_STRING_PRETTY));
 	}
 
 
@@ -413,7 +429,7 @@ int redis_import_part_file( char* filepath ){
 				y_log_message( Y_LOG_LEVEL_ERROR, "Error parsing file %s at array index %d", filepath, i );
 			}
 			else {
-				printf("JSON Object at index[%d]:\n%s\n", i, json_object_to_json_string_ext(jo_idx, JSON_C_TO_STRING_PRETTY));
+		//		printf("JSON Object at index[%d]:\n%s\n", i, json_object_to_json_string_ext(jo_idx, JSON_C_TO_STRING_PRETTY));
 
 				/* Convert json object to part_t */
 				parse_part_retval = parse_json_part( part, jo_idx );

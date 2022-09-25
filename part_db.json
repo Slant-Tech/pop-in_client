@@ -12,15 +12,15 @@
 			"Voltage Rating": "50V",
 			"Tolerance": "±10%",
 			"Temperature Coefficient": "X7R",
-			"Composition": "MLCC",
-			"price": {
-				"1000": 0.006990 
-			},
-			"distrib": [
-				{"name": "Digi-Key", "pn":"1276-1000-1-ND"},
-				{"name": "Mouser", "pn":"187-CL10B104KB8NNNC"}
-			]
-		}
+			"Composition": "MLCC"
+		},
+		"price": [
+			{"break":1000, "price":0.006990}
+		],
+		"dist": [
+			{"name": "Digi-Key", "pn":"1276-1000-1-ND"},
+			{"name": "Mouser", "pn":"187-CL10B104KB8NNNC"}
+		]
 	},
 	{
 		"ipn": 10000002,
@@ -35,15 +35,15 @@
 			"Voltage Rating": "25V",
 			"Tolerance": "±10%",
 			"Temperature Coefficient": "X7R",
-			"Composition": "MLCC",
-			"price": {
-				"1000": 0.01036
-			},
-			"distrib": [
-				{"name": "Digi-Key", "pn":"1276-1184-1-ND"},
-				{"name": "Mouser", "pn":"187-CL10B105KA8NNNC"}
-			]
-		}
+			"Composition": "MLCC"
+		},
+		"price": [
+			{"break":1000, "price": 0.01036}
+		],
+		"dist": [
+			{"name": "Digi-Key", "pn":"1276-1184-1-ND"},
+			{"name": "Mouser", "pn":"187-CL10B105KA8NNNC"}
+		]
 	},
 	{
 		"ipn": 10000003,
@@ -58,14 +58,38 @@
 			"Voltage Rating": "50V",
 			"Tolerance": "±1%",
 			"Temperature Coefficient": "C0G/NP0",
-			"Composition": "MLCC",
-			"price": {
-				"1000": 0.095950 
-			},
-			"distrib": [
-				{"name": "Digi-Key", "pn":"478-6031-1-ND"},
-				{"name": "Mouser", "pn":"581-06035A331FAT2A"}
-			]
-		}
+			"Composition": "MLCC"
+		},
+		"price": [
+				{"break":1000, "price": 0.095950}
+		],
+		"dist": [
+			{"name": "Digi-Key", "pn":"478-6031-1-ND"},
+			{"name": "Mouser", "pn":"581-06035A331FAT2A"}
+		]
+	},
+	{
+		"ipn": 10000004,
+		"q": 0,
+		"type": "Capacitor",
+		"mfg": "KEMET",
+		"mpn": "C0603C471J5GAC7867",
+		"info": {
+			"value": 470,
+			"value-unit": "pF",
+			"Package": "0603",
+			"Voltage Rating": "50V",
+			"Tolerance": "±5%",
+			"Temperature Coefficient": "C0G/NP0",
+			"Composition": "MLCC"
+
+		},
+		"price": [
+				{"break":1000, "price": 0.013330}
+		],
+		"dist": [
+			{"name": "Digi-Key", "pn":"399-C0603C471J5GAC7867CT-ND"},
+			{"name": "Mouser", "pn":"80-C0603C471J5G"}
+		]
 	}
 ]
