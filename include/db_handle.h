@@ -63,17 +63,35 @@ struct part_t {
 	struct part_price_t* price;		/* Key Value price break info */
 };
 
+/* Structure for bill of materials */
+struct bom_t {
+	int ipn;						/* BOM Internal Part Number */
+	unsigned int nitems;			/* Number of bom line items */
+	unsigned int* part_ipns;		/* Internal Part numbers */
+	char* ver;						/* Version */
+	struct part_t* parts;			/* Parts array (cached values for parts) */
+};
+
 /* Create struct from parsed item in database, from part number */
 struct part_t* get_part_from_pn( const char* pn );
 
-/* Create struct from parsed item in database, from internal part number */
-struct part_t* get_part_from_ipn( unsigned int pn );
+/* Create part struct from parsed item in database, from internal part number */
+struct part_t* get_part_from_ipn( unsigned int ipn );
+
+/* Create bom struct from parsed item in database, from internal part number */
+struct bom_t* get_bom_from_ipn( unsigned int ipn );
 
 /* Free the part structure */
 void free_part_t( struct part_t* part );
 
+/* Free the bom structure */
+void free_bom_t( struct bom_t* bom );
+
 /* Write part to database */
 int redis_write_part( struct part_t* part );
+
+/* Write bom to database */
+int redis_write_bom( struct bom_t* bom );
 
 /* Import file to database */
 int redis_import_part_file( char* filepath );

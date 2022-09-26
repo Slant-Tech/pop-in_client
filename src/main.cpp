@@ -650,9 +650,21 @@ static void show_bom_window( ProjectBom bom ){
 				if( ImGui::BeginPopupModal("PartInfo", NULL, ImGuiWindowFlags_AlwaysAutoResize) ){
 					ImGui::Text("Part Info");
 					ImGui::Separator();
+					
+					static bool initialized = false;
 
-					if( selected_item != NULL && selected_item->mpn != NULL ){
-						ImGui::Text("Part Number: %s", selected_item->mpn);
+					/* Query database for part */
+					static struct part_t* part;
+					if( !initialized && NULL != selected_item ){
+							part = get_part_from_pn(selected_item->mpn);
+							initialized = true;
+					}
+					else if( part != NULL && part->mpn != NULL ){
+						ImGui::Text("Part Number: %s", part->mpn);
+						ImGui::Text("Price Breaks:");
+						for( unsigned int i = 0; i <  part->price_len; i++ ){
+							ImGui::Text("%ld:\t$%0.6lf", part->price[i].quantity, part->price[i].price );	
+						}
 					}
 					else{
 						ImGui::Text("Part Number not found");
@@ -661,6 +673,11 @@ static void show_bom_window( ProjectBom bom ){
 					ImGui::Separator();
 			
 					if( ImGui::Button("OK", ImVec2(120,0))){
+						if( NULL != part ){
+							free_part_t( part );
+							part = NULL;
+						}
+						initialized = false;
 						ImGui::CloseCurrentPopup();
 					}
 					ImGui::SetItemDefaultFocus();
