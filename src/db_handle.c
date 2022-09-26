@@ -260,7 +260,7 @@ int redis_write_part( struct part_t* part ){
 		return -1;
 	}
 
-	printf("Creating json objects\n");
+	y_log_message(Y_LOG_LEVEL_DEBUG, "Creating json objects");
 
 	/* Create json object to write */
 	json_object *part_root = json_object_new_object();
@@ -307,7 +307,7 @@ int redis_write_part( struct part_t* part ){
 		return -1;
 	}
 
-	printf("Adding json objects \n");
+	y_log_message(Y_LOG_LEVEL_DEBUG, "Adding json objects");
 
 	/* Add all custom fields to info */
 	if( part->info_len != 0 ) {
@@ -336,7 +336,7 @@ int redis_write_part( struct part_t* part ){
 		json_object_array_add( price, price_itr );
 	}
 
-	printf("Parsing \n");
+	y_log_message(Y_LOG_LEVEL_DEBUG, "Parsing");
 
 	/* Add all parts of the part struct to the json object */
 	json_object_object_add( part_root, "ipn", json_object_new_int64(part->ipn) ); /* This should be generated somehow */
@@ -349,7 +349,7 @@ int redis_write_part( struct part_t* part ){
 	json_object_object_add( part_root, "dist", dist );
 	json_object_object_add( part_root, "price", price );
 
-	printf("Added items to object");
+	y_log_message(Y_LOG_LEVEL_DEBUG, "Added items to object");
 
 	dbpart_name = malloc( strlen(part->mpn) + strlen("part:") + 2 );
 
@@ -362,11 +362,11 @@ int redis_write_part( struct part_t* part ){
 		/* create name */
 		sprintf( dbpart_name, "part:%s", part->mpn);
 
-		printf("Created name: %s\n", dbpart_name);
+		y_log_message(Y_LOG_LEVEL_DEBUG, "Created name: %s", dbpart_name);
 
 		/* Write object to database */
 		retval = redis_json_set( rc, dbpart_name, "$", json_object_to_json_string(part_root) );
-//		printf("JSON Object to send:\n%s\n", json_object_to_json_string_ext(part_root, JSON_C_TO_STRING_PRETTY));
+		y_log_message(Y_LOG_LEVEL_DEBUG, "JSON Object to send:\n%s\n", json_object_to_json_string_ext(part_root, JSON_C_TO_STRING_PRETTY));
 	}
 
 
@@ -411,7 +411,7 @@ int redis_import_part_file( char* filepath ){
 
 
 	for( size_t i = 0; i < array_len; i++ ){
-		printf("\nJSON Index: %d\n", i);
+		y_log_message(Y_LOG_LEVEL_DEBUG, "JSON Index: %d", i);
 
 		/* Allocate space for part */
 		part = calloc( 1,  sizeof( struct part_t ) );
@@ -429,7 +429,7 @@ int redis_import_part_file( char* filepath ){
 				y_log_message( Y_LOG_LEVEL_ERROR, "Error parsing file %s at array index %d", filepath, i );
 			}
 			else {
-		//		printf("JSON Object at index[%d]:\n%s\n", i, json_object_to_json_string_ext(jo_idx, JSON_C_TO_STRING_PRETTY));
+				y_log_message(Y_LOG_LEVEL_DEBUG, "JSON Object at index[%d]:\n%s\n", i, json_object_to_json_string_ext(jo_idx, JSON_C_TO_STRING_PRETTY));
 
 				/* Convert json object to part_t */
 				parse_part_retval = parse_json_part( part, jo_idx );
@@ -446,14 +446,14 @@ int redis_import_part_file( char* filepath ){
 					part = NULL;
 					/* Cleanup object  */
 					jo_idx = NULL;
-					printf("Cleaned up objects\n");
+					y_log_message(Y_LOG_LEVEL_DEBUG, "Cleaned up objects");
 				}
 			}
 		}
 	}
 
 	/* Cleanup root object */
-	printf("Root object cleanup\n");
+	y_log_message(Y_LOG_LEVEL_DEBUG, "Root object cleanup");
 	json_object_put(root);
 
 	return 0;

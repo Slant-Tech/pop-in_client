@@ -31,7 +31,7 @@ struct ProjectBom {
 };
 
 static void glfw_error_callback(int error, const char* description){
-	fprintf(stderr, "GLFW Error %d: %s\n", error, description);
+	y_log_message(Y_LOG_LEVEL_ERROR, "GLFW Error %d: %s", error, description);
 }
 
 /* Pass structure of projects and number of projects inside of struct */
@@ -183,7 +183,7 @@ int main( int, char** ){
 		glfwPollEvents();
 
 		if( !run_flag ){
-			printf("Quit button pressed\n");
+			y_log_message(Y_LOG_LEVEL_DEBUG, "Quit button pressed");
 			glfwSetWindowShouldClose(window, true);
 		}
 		/* Start ImGui frame */
@@ -354,7 +354,7 @@ static void show_new_part_popup( void ){
 
 			/* Perform the write */
 			redis_write_part( &part );
-			printf("Data written to database\n");
+			y_log_message(Y_LOG_LEVEL_DEBUG, "Data written to database");
 			show_new_part_window = false;
 			
 			/* Clear all input data */
@@ -369,7 +369,7 @@ static void show_new_part_popup( void ){
 			memset( type, 0, 255 );
 			memset( mfg, 0, 511 );
 			memset( mpn, 0, 511 );
-			printf("Cleared out part, finished writing\n");
+			y_log_message(Y_LOG_LEVEL_DEBUG, "Cleared out part, finished writing");
 //			show_new_part_window = false;
 
 		}
@@ -388,7 +388,7 @@ static void show_new_part_popup( void ){
 			memset( type, 0, 255 );
 			memset( mfg, 0, 511 );
 			memset( mpn, 0, 511 );
-			printf("Cleared out part, exiting window\n");
+			y_log_message(Y_LOG_LEVEL_DEBUG, "Cleared out part, exiting window");
 		}
 
 		ImGui::End();
@@ -429,7 +429,7 @@ static void import_parts_window( void ){
 		/* Button to start import */
 		if( ImGui::Button("Import") ){
 			/* Start importing */
-			printf("Path received: %s\n", filepath);
+			y_log_message(Y_LOG_LEVEL_DEBUG, "Path received: %s", filepath);
 
 			redis_import_part_file( filepath );
 
@@ -464,12 +464,12 @@ static void show_menu_bar( void ){
 			}
 			else if( ImGui::MenuItem("New Part") ){
 				/* Create part_t, then provide result to redis_write_part */
-				printf("New Part menu clicked\n");
+				y_log_message(Y_LOG_LEVEL_DEBUG, "New Part menu clicked");
 				show_new_part_window = true;
 			}
 			else if( ImGui::MenuItem("Import Parts") ){
 				/* Read file from selection and add to database from selection */
-				printf("Import Parts menu clicked\n");
+				y_log_message(Y_LOG_LEVEL_DEBUG, "Import Parts menu clicked");
 				show_import_parts_window = true;
 			}
 			else if( ImGui::MenuItem("Export Project") ){
@@ -639,7 +639,7 @@ static void show_bom_window( ProjectBom bom ){
 					if( item_sel[i] ){
 						/* Open popup for part info */
 						ImGui::OpenPopup("PartInfo");
-						printf("%s was selected\n", bom.item[i].mpn);
+						y_log_message(Y_LOG_LEVEL_DEBUG, "%s was selected", bom.item[i].mpn);
 						selected_item = &bom.item[i];
 					}
 
