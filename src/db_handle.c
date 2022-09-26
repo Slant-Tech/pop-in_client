@@ -359,8 +359,8 @@ int redis_write_part( struct part_t* part ){
 	json_object *price = json_object_new_array_ext(part->price_len);
 
 
-	json_object* dist_itr = json_object_new_object();
-	json_object* price_itr = json_object_new_object();
+	json_object* dist_itr;
+	json_object* price_itr;
 
 	if( NULL == part_root ){
 		y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate new root json object" );
@@ -419,21 +419,23 @@ int redis_write_part( struct part_t* part ){
 	/* Distributor information */
 	if( part->dist_len != 0 ) {
 		for( unsigned int i = 0; i < part->dist_len; i++ ){
+			dist_itr = json_object_new_object();
 			json_object_object_add( dist_itr, "name", json_object_new_string(part->dist[i].name) );
 			json_object_object_add( dist_itr, "pn", json_object_new_string(part->dist[i].pn) );
+			json_object_array_put_idx( dist, i, dist_itr );
 		}
 
-		json_object_array_add( dist, json_object_get( dist_itr ) );
 	}
 
 	/* Price information */
 	if( part->price_len != 0 ) {
 		for( unsigned int i = 0; i < part->price_len; i++ ){
+			dist_itr = json_object_new_object();
 			json_object_object_add( price_itr, "break", json_object_new_int64(part->price[i].quantity) );
 			json_object_object_add( price_itr, "price", json_object_new_double(part->price[i].price) );
+			json_object_array_put_idx( price, i, json_object_get( price_itr ) );
 		}
 
-		json_object_array_add( price, json_object_get( price_itr ) );
 	}
 
 	y_log_message(Y_LOG_LEVEL_DEBUG, "Parsing");
