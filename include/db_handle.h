@@ -69,7 +69,7 @@ struct bom_t {
 	unsigned int nitems;			/* Number of bom line items */
 	unsigned int* part_ipns;		/* Internal Part numbers */
 	char* ver;						/* Version */
-	struct part_t* parts;			/* Parts array (cached values for parts) */
+	struct part_t** parts;			/* Parts array (cached values for parts) */
 };
 
 /* Create struct from parsed item in database, from part number */

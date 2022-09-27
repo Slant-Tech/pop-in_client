@@ -13,22 +13,21 @@
 int selected_prj = 0; /* index that has been selected */
 
 
-/* BOM Line item structure */
-struct BomLineItem {
-	const int int_pn; 	/* internal part number */
-	const int index;	/* Bom item index */
-	const char* mpn;	/* Manufacturer Part Number */
-	const char* mfg;	/* Manufacturer */
-	unsigned int q;		/* Quantity */
-	unsigned int type;	/* Part type */
-};
+///* BOM Line item structure */
+//struct BomLineItem {
+//	int int_pn; 	/* internal part number */
+//	int index;	/* Bom item index */
+//	char* mpn;	/* Manufacturer Part Number */
+//	char* mfg;	/* Manufacturer */
+//	unsigned int q;		/* Quantity */
+//	unsigned int type;	/* Part type */
+//};
 
 /* BOM Structure */
-struct ProjectBom {
-	const int id;					/* BOM id number */
-	std::vector<BomLineItem> item;	/* BOM Items */
-
-};
+//struct ProjectBom {
+//	int id;					/* BOM id number */
+//	struct part_t*  item;	/* BOM Items */
+//};
 
 static void glfw_error_callback(int error, const char* description){
 	y_log_message(Y_LOG_LEVEL_ERROR, "GLFW Error %d: %s", error, description);
@@ -37,7 +36,7 @@ static void glfw_error_callback(int error, const char* description){
 /* Pass structure of projects and number of projects inside of struct */
 static void show_project_select_window( ProjectNode *projects);
 static void show_new_part_popup( void );
-static void show_root_window( ProjectNode *projects, ProjectBom *boms );
+static void show_root_window( ProjectNode *projects, bom_t** boms );
 static void import_parts_window( void );
 
 bool show_new_part_window = false;
@@ -54,44 +53,48 @@ int main( int, char** ){
 	/* Projects */
 	static ProjectNode projects[] = {
 		/* Name						Date			Version	 Author		BOM ID	Child Index		Child Count  	Selected */
-		{ "Project Top", 			"2022-05-01", 	"1.2.3", "Dylan",	0,		1,				2,				true},
-		{ "Subproject 1", 			"2022-05-02", 	"2.3.4", "Dylan",	1,		3,				1,				false},
-		{ "Subproject 2", 			"2022-05-03", 	"3.4.5", "Dylan",	2,		1,				-1,				false},
-		{ "subsubproject 1",		"2022-05-04", 	"4.5.6", "Dylan",	3,		-1,				-1,				false}
+		{ "Project Top\0", 			"2022-05-01\0", 	"1.2.3\0", "Dylan\0",	0,		1,				2,				true},
+		{ "Subproject 1\0", 		"2022-05-02\0", 	"2.3.4\0", "Dylan\0",	1,		3,				1,				false},
+		{ "Subproject 2\0", 		"2022-05-03\0", 	"3.4.5\0", "Dylan\0",	2,		1,				-1,				false},
+		{ "subsubproject 1\0",		"2022-05-04\0", 	"4.5.6\0", "Dylan\0",	3,		-1,				-1,				false}
 	};
 
 	/* BOMs */	
+	static bom_t* boms[4] = {};
+#if 0
 	static ProjectBom boms[] = {
 		/* BOM ID	BOM Line Items	*/
 		{ 0, 			{	
-								/* Internal Part Number		BOM Index	MPN					MFG								Quantity	Type */
-								{	1000,					0,			"CL10B104KB8NNNC",	"Samsung Electro-Mechanics",	5000,		1},
-								{	2001,					1,			"RC0603FR-071KL",	"Yageo",						1000,		2},
-								{	2002,					2,			"RC0603FR-0710K",	"Yageo",						250,		2},
-						}		
+								/* Internal Part Number		BOM Index	MPN						MFG								Quantity	Type */
+								{	1000,					0,			"CL10B104KB8NNNC\0",	"Samsung Electro-Mechanics\0",	5000,		1},
+								{	2001,					1,			"RC0603FR-071KL\0",		"Yageo\0",						1000,		2},
+								{	2002,					2,			"RC0603FR-0710K\0",		"Yageo\0",						250,		2},
+								{	2006,					3,			"RC0603FR-0720K\0",		"Yageo\0",						250,		2},
+						}		                                                       
 		},
 		{ 1, 			{	
-								/* Internal Part Number		BOM Index	MPN					MFG								Quantity	Type */
-								{	1000,					0,			"CL10B104KB8NNNC",	"Samsung Electro-Mechanics",	5000,		1},
-								{	2002,					1,			"RC0603FR-0710KL",	"Yageo",						250,		2},
-								{	2001,					2,			"RC0603FR-071KL",	"Yageo",						1000,		2},
+								/* Internal Part Number		BOM Index	MPN						MFG								Quantity	Type */
+								{	1000,					0,			"CL10B104KB8NNNC\0",	"Samsung Electro-Mechanics\0",	5000,		1},
+								{	2002,					1,			"RC0603FR-0710KL\0",	"Yageo\0",						250,		2},
+								{	2001,					2,			"RC0603FR-071KL\0",		"Yageo\0",						1000,		2},
 						}		
 		},
 		{ 2, 			{	
-								/* Internal Part Number		BOM Index	MPN					MFG								Quantity	Type */
-								{	2001,					0,			"RC0603FR-071KL",	"Yageo",						1000,		2},
-								{	2002,					1,			"RC0603FR-0710KL",	"Yageo",						250,		2},
-								{	2003,					2,			"RC0603FR-074K7L",	"Yageo",						500,		2},
+								/* Internal Part Number		BOM Index	MPN						MFG								Quantity	Type */
+								{	2001,					0,			"RC0603FR-071KL\0",		"Yageo\0",						1000,		2},
+								{	2002,					1,			"RC0603FR-0710KL\0",	"Yageo\0",						250,		2},
+								{	2003,					2,			"RC0603FR-074K7L\0",	"Yageo\0",						500,		2},
 						}		
 		},
 		{ 3, 			{	
-								/* Internal Part Number		BOM Index	MPN					MFG								Quantity	Type */
-								{	1000,					0,			"CL10B104KB8NNNC",	"Samsung Electro-Mechanics",	5000,		1},
-								{	2002,					1,			"RC0603FR-0710KL",	"Yageo",						250,		2},
+								/* Internal Part Number		BOM Index	MPN						MFG								Quantity	Type */
+								{	1000,					0,			"CL10B104KB8NNNC\0",	"Samsung Electro-Mechanics\0",	5000,		1},
+								{	2002,					1,			"RC0603FR-0710KL\0",	"Yageo\0",						250,		2},
 						}		
 		}
 
 	};
+#endif
 
 	/* Setup window */
 	glfwSetErrorCallback(glfw_error_callback);
@@ -176,6 +179,12 @@ int main( int, char** ){
 	free_part_t( test_part );
 #endif
 
+	/* Get BOM from database to overwrite BOM 0*/
+	boms[0] = get_bom_from_ipn(0);
+	if( NULL == boms[0] ){
+		y_log_message( Y_LOG_LEVEL_ERROR, "Could not get index bom" );
+	}
+
 	/* Main application loop */
 	while( !glfwWindowShouldClose(window) ) {
 
@@ -221,6 +230,9 @@ int main( int, char** ){
 
 	/* Disconnect from database */
 	redis_disconnect();
+
+	/* Cleanup boms */
+	free_bom_t(boms[0]);
 
 	/* Application cleanup */
 	ImGui_ImplOpenGL3_Shutdown();
@@ -561,7 +573,7 @@ static void show_menu_bar( void ){
 
 }
 
-static void show_bom_window( ProjectBom bom ){
+static void show_bom_window( bom_t* bom ){
 
 	/* Show BOM/Information View */
 	ImGuiTabBarFlags tabbar_flags = ImGuiTabBarFlags_None;
@@ -595,6 +607,7 @@ static void show_bom_window( ProjectBom bom ){
 
 				ImGui::TableHeadersRow();
 
+#if 0
 				/* Sort the bom items list based off of what is currently
 				 * selected for sorting */
 				if(ImGuiTableSortSpecs* bom_sort_specs = ImGui::TableGetSortSpecs()){
@@ -606,41 +619,42 @@ static void show_bom_window( ProjectBom bom ){
 						bom_sort_specs->SpecsDirty = false;
 					}
 				}
+#endif
 				
 				/* Used for selecting specific item in BOM */
-				bool item_sel[ bom.item.size() ] = {};
+				bool item_sel[ bom->nitems ] = {};
 				char line_item_label[64]; /* May need to change size at some point */
-				static BomLineItem *selected_item = NULL;	
-				for( int i = 0; i < bom.item.size(); i++){
+				static part_t *selected_item = NULL;	
+				for( int i = 0; i < bom->nitems; i++){
 					ImGui::TableNextRow();
 
 					/* BOM Line item */
 					ImGui::TableSetColumnIndex(0);
 					/* Selectable line item number */
-					snprintf(line_item_label, 64, "%d", bom.item[i].index);
+					snprintf(line_item_label, 64, "%d", i);
 					ImGui::Selectable(line_item_label, &item_sel[i], ImGuiSelectableFlags_SpanAllColumns);
 
 					/* Part number */
 					ImGui::TableSetColumnIndex(1);
-					ImGui::Text("%s", bom.item[i].mpn );
+					ImGui::Text("%s", bom->parts[i]->mpn );
 
 					/* Manufacturer */
 					ImGui::TableSetColumnIndex(2);
-					ImGui::Text("%s", bom.item[i].mfg );
+					ImGui::Text("%s", bom->parts[i]->mfg );
 
 					/* Quantity */
 					ImGui::TableSetColumnIndex(3);
-					ImGui::Text("%d", bom.item[i].q );
+					ImGui::Text("%d", bom->parts[i]->q );
 
 					/* Type */
 					ImGui::TableSetColumnIndex(4);
-					ImGui::Text("Part type #%d", bom.item[i].type);
+					ImGui::Text("%s", bom->parts[i]->type);
 
 					if( item_sel[i] ){
 						/* Open popup for part info */
 						ImGui::OpenPopup("PartInfo");
-						y_log_message(Y_LOG_LEVEL_DEBUG, "%s was selected", bom.item[i].mpn);
-						selected_item = &bom.item[i];
+						y_log_message(Y_LOG_LEVEL_DEBUG, "%s was selected", bom->parts[i]->mpn);
+						selected_item = bom->parts[i];
 					}
 
 				}
@@ -651,19 +665,11 @@ static void show_bom_window( ProjectBom bom ){
 					ImGui::Text("Part Info");
 					ImGui::Separator();
 					
-					static bool initialized = false;
-
-					/* Query database for part */
-					static struct part_t* part;
-					if( !initialized && NULL != selected_item ){
-							part = get_part_from_pn(selected_item->mpn);
-							initialized = true;
-					}
-					else if( part != NULL && part->mpn != NULL ){
-						ImGui::Text("Part Number: %s", part->mpn);
+					if( NULL != selected_item ){
+						ImGui::Text("Part Number: %s", selected_item->mpn);
 						ImGui::Text("Price Breaks:");
-						for( unsigned int i = 0; i <  part->price_len; i++ ){
-							ImGui::Text("%ld:\t$%0.6lf", part->price[i].quantity, part->price[i].price );	
+						for( unsigned int i = 0; i <  selected_item->price_len; i++ ){
+							ImGui::Text("%ld:\t$%0.6lf", selected_item->price[i].quantity, selected_item->price[i].price );	
 						}
 					}
 					else{
@@ -673,11 +679,6 @@ static void show_bom_window( ProjectBom bom ){
 					ImGui::Separator();
 			
 					if( ImGui::Button("OK", ImVec2(120,0))){
-						if( NULL != part ){
-							free_part_t( part );
-							part = NULL;
-						}
-						initialized = false;
 						ImGui::CloseCurrentPopup();
 					}
 					ImGui::SetItemDefaultFocus();
@@ -698,14 +699,7 @@ static void show_bom_window( ProjectBom bom ){
 }
 
 /* Setup root window, child windows */
-static void show_root_window( ProjectNode *projects, ProjectBom *boms ){
-	
-	/* Default empty BOM to show */
-	static const ProjectBom empty_default_bom = {
-		0, { {0, 0, "\0", "\0", 0, 0} }
-	};
-
-
+static void show_root_window( ProjectNode *projects, bom_t** boms ){
 
 	/* Create menu items */
 	show_menu_bar();
@@ -734,11 +728,11 @@ static void show_root_window( ProjectNode *projects, ProjectBom *boms ){
 
 		/* Get selected project */
 		if( selected_prj != -1 ){
-			ProjectBom selected_bom = boms[ projects[selected_prj].bomid ];
+			bom_t* selected_bom = boms[ projects[selected_prj].bomid ];
 			show_bom_window(selected_bom);
 		} else {
 			/* No projects selected, use empty bom */
-			show_bom_window(empty_default_bom);
+//			show_bom_window(empty_default_bom);
 		}
 		ImGui::EndChild();
 		
