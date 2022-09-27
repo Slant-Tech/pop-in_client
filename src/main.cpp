@@ -2,39 +2,47 @@
 #include <imgui_impl_glfw.h>
 #include <imgui_impl_opengl3.h>
 #include <stdio.h>
+#include <time.h>
 #include <vector>
 #include <iterator>
 #include <GLFW/glfw3.h>
-#include <projectview.h>
+//#include <projectview.h>
+#include <yder.h>
+#include <db_handle.h>
+#include <L2DFileDialog.h>
 
-int selected_prj = -1; /* index that has been selected */
+static struct proj_t* selected_prj = 0; /* index that has been selected */
 
 
-/* BOM Line item structure */
-struct BomLineItem {
-	const int int_pn; 	/* internal part number */
-	const int index;	/* Bom item index */
-	const char* mpn;	/* Manufacturer Part Number */
-	const char* mfg;	/* Manufacturer */
-	unsigned int q;		/* Quantity */
-	unsigned int type;	/* Part type */
-};
+///* BOM Line item structure */
+//struct BomLineItem {
+//	int int_pn; 	/* internal part number */
+//	int index;	/* Bom item index */
+//	char* mpn;	/* Manufacturer Part Number */
+//	char* mfg;	/* Manufacturer */
+//	unsigned int q;		/* Quantity */
+//	unsigned int type;	/* Part type */
+//};
 
 /* BOM Structure */
-struct ProjectBom {
-	const int id;					/* BOM id number */
-	std::vector<BomLineItem> item;	/* BOM Items */
-
-};
+//struct ProjectBom {
+//	int id;					/* BOM id number */
+//	struct part_t*  item;	/* BOM Items */
+//};
 
 static void glfw_error_callback(int error, const char* description){
-	fprintf(stderr, "GLFW Error %d: %s\n", error, description);
+	y_log_message(Y_LOG_LEVEL_ERROR, "GLFW Error %d: %s", error, description);
 }
 
 /* Pass structure of projects and number of projects inside of struct */
-static void show_project_select_window( ProjectNode *projects);
+static void show_project_select_window( struct proj_t** projects);
+static void show_new_part_popup( void );
+static void show_root_window( struct proj_t** projects, struct bom_t** boms );
+static void import_parts_window( void );
+void DisplayNode( struct proj_t* node );
 
-static void show_root_window( ProjectNode *projects, ProjectBom *boms );
+bool show_new_part_window = false;
+bool show_import_parts_window = false;
 
 #define DEFAULT_ROOT_W	1280
 #define DEFAULT_ROOT_H	720
@@ -45,46 +53,52 @@ static bool run_flag = true;
 int main( int, char** ){
 
 	/* Projects */
+	static proj_t* projects[4] = {};
+#if 0
 	static ProjectNode projects[] = {
 		/* Name						Date			Version	 Author		BOM ID	Child Index		Child Count  	Selected */
-		{ "Project Top", 			"2022-05-01", 	"1.2.3", "Dylan",	0,	1,				2,				false},
-		{ "Subproject 1", 			"2022-05-02", 	"2.3.4", "Dylan",	1,	3,				1,				false},
-		{ "Subproject 2", 			"2022-05-03", 	"3.4.5", "Dylan",	2,	1,				-1,				false},
-		{ "subsubproject 1",		"2022-05-04", 	"4.5.6", "Dylan",	3,	-1,				-1,				false}
+		{ "Project Top\0", 			"2022-05-01\0", 	"1.2.3\0", "Dylan\0",	0,		1,				2,				true},
+		{ "Subproject 1\0", 		"2022-05-02\0", 	"2.3.4\0", "Dylan\0",	1,		3,				1,				false},
+		{ "Subproject 2\0", 		"2022-05-03\0", 	"3.4.5\0", "Dylan\0",	2,		1,				-1,				false},
+		{ "subsubproject 1\0",		"2022-05-04\0", 	"4.5.6\0", "Dylan\0",	3,		-1,				-1,				false}
 	};
-
+#endif
 	/* BOMs */	
+	static bom_t* boms[4] = {};
+#if 0
 	static ProjectBom boms[] = {
 		/* BOM ID	BOM Line Items	*/
 		{ 0, 			{	
-								/* Internal Part Number		BOM Index	MPN					MFG								Quantity	Type */
-								{	1000,					0,			"CL10B104KB8NNNC",	"Samsung Electro-Mechanics",	5000,		1},
-								{	2001,					1,			"RC0603FR-071KL",	"Yageo",						1000,		2},
-								{	2002,					2,			"RC0603FR-0710K",	"Yageo",						250,		2},
-						}		
+								/* Internal Part Number		BOM Index	MPN						MFG								Quantity	Type */
+								{	1000,					0,			"CL10B104KB8NNNC\0",	"Samsung Electro-Mechanics\0",	5000,		1},
+								{	2001,					1,			"RC0603FR-071KL\0",		"Yageo\0",						1000,		2},
+								{	2002,					2,			"RC0603FR-0710K\0",		"Yageo\0",						250,		2},
+								{	2006,					3,			"RC0603FR-0720K\0",		"Yageo\0",						250,		2},
+						}		                                                       
 		},
 		{ 1, 			{	
-								/* Internal Part Number		BOM Index	MPN					MFG								Quantity	Type */
-								{	1000,					0,			"CL10B104KB8NNNC",	"Samsung Electro-Mechanics",	5000,		1},
-								{	2002,					1,			"RC0603FR-0710KL",	"Yageo",						250,		2},
-								{	2001,					2,			"RC0603FR-071KL",	"Yageo",						1000,		2},
+								/* Internal Part Number		BOM Index	MPN						MFG								Quantity	Type */
+								{	1000,					0,			"CL10B104KB8NNNC\0",	"Samsung Electro-Mechanics\0",	5000,		1},
+								{	2002,					1,			"RC0603FR-0710KL\0",	"Yageo\0",						250,		2},
+								{	2001,					2,			"RC0603FR-071KL\0",		"Yageo\0",						1000,		2},
 						}		
 		},
 		{ 2, 			{	
-								/* Internal Part Number		BOM Index	MPN					MFG								Quantity	Type */
-								{	2001,					0,			"RC0603FR-071KL",	"Yageo",						1000,		2},
-								{	2002,					1,			"RC0603FR-0710KL",	"Yageo",						250,		2},
-								{	2003,					2,			"RC0603FR-074K7L",	"Yageo",						500,		2},
+								/* Internal Part Number		BOM Index	MPN						MFG								Quantity	Type */
+								{	2001,					0,			"RC0603FR-071KL\0",		"Yageo\0",						1000,		2},
+								{	2002,					1,			"RC0603FR-0710KL\0",	"Yageo\0",						250,		2},
+								{	2003,					2,			"RC0603FR-074K7L\0",	"Yageo\0",						500,		2},
 						}		
 		},
 		{ 3, 			{	
-								/* Internal Part Number		BOM Index	MPN					MFG								Quantity	Type */
-								{	1000,					0,			"CL10B104KB8NNNC",	"Samsung Electro-Mechanics",	5000,		1},
-								{	2002,					1,			"RC0603FR-0710KL",	"Yageo",						250,		2},
+								/* Internal Part Number		BOM Index	MPN						MFG								Quantity	Type */
+								{	1000,					0,			"CL10B104KB8NNNC\0",	"Samsung Electro-Mechanics\0",	5000,		1},
+								{	2002,					1,			"RC0603FR-0710KL\0",	"Yageo\0",						250,		2},
 						}		
 		}
 
 	};
+#endif
 
 	/* Setup window */
 	glfwSetErrorCallback(glfw_error_callback);
@@ -114,7 +128,7 @@ int main( int, char** ){
 	IMGUI_CHECKVERSION();
 	ImGui::CreateContext();
 	ImGuiIO& io = ImGui::GetIO(); (void)io;
-	io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
+//	io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
 
 	/* Set ImGui color style */
 	ImGui::StyleColorsLight();
@@ -147,6 +161,42 @@ int main( int, char** ){
 	bool bool_root_window = true;
 	ImGuiWindowFlags root_window_flags = ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize
 									   | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_MenuBar;
+
+	if( redis_connect( NULL, 0 ) ){ /* Use defaults of localhost and default port */
+		/* Failed to init database connection, so quit */
+		run_flag = 0;
+	}
+	
+#if 0
+	/* Get a part to see if it works */
+	struct part_t* test_part = get_part_from_pn("part:GRM188R61E106KA73D");
+
+	/* Print out part number, mfg, internal part number */
+	printf("Redis database part:\n pn:\t%s, mfg:\t%s, internal#:\t%d \n", test_part->mpn, test_part->mfg, test_part->ipn);
+	printf("Info:\n");
+	for( unsigned int i = 0; i < test_part->info_len; i++ ){
+		printf("\t %s:\t%s\n", test_part->info[i].key, test_part->info[i].val );
+	}
+
+
+	/* Done with part, free it */
+	free_part_t( test_part );
+#endif
+
+	/* Get projects from database; has to start from 1 */
+	for( int i = 1; i <= 4; i++ ){
+		projects[i-1] = get_proj_from_ipn(i);
+		if( NULL == projects[i-1] ){
+			y_log_message( Y_LOG_LEVEL_ERROR, "Could not get index project" );
+		}
+		else{
+			y_log_message( Y_LOG_LEVEL_DEBUG, "Read project %d from database", i);
+		}
+	}
+
+	/* Use first project as first selected node */
+	selected_prj = projects[0];
+
 	/* Main application loop */
 	while( !glfwWindowShouldClose(window) ) {
 
@@ -154,7 +204,7 @@ int main( int, char** ){
 		glfwPollEvents();
 
 		if( !run_flag ){
-			printf("Quit button pressed\n");
+			y_log_message(Y_LOG_LEVEL_DEBUG, "Quit button pressed");
 			glfwSetWindowShouldClose(window, true);
 		}
 		/* Start ImGui frame */
@@ -166,6 +216,12 @@ int main( int, char** ){
 		ImGui::SetNextWindowPos(ImVec2(main_viewport->WorkPos.x, main_viewport->WorkPos.y));
 		ImGui::SetNextWindowSize(ImVec2(display_w, display_h));
 		ImGui::Begin("Root", &bool_root_window, root_window_flags);
+		if( show_new_part_window ){
+			show_new_part_popup();
+		}
+		if( show_import_parts_window ){
+			import_parts_window();
+		}
 		show_root_window(projects, boms);
 		ImGui::End();
 
@@ -184,6 +240,14 @@ int main( int, char** ){
 
 	}
 
+	/* Disconnect from database */
+	redis_disconnect();
+
+	/* Cleanup projects */
+	for( int i = 0; i < 4; i++ ){
+		free_proj_t(projects[i]);
+	}
+
 	/* Application cleanup */
 	ImGui_ImplOpenGL3_Shutdown();
 	ImGui_ImplGlfw_Shutdown();
@@ -197,7 +261,7 @@ int main( int, char** ){
 
 
 
-static void show_project_select_window( ProjectNode *projects){
+static void show_project_select_window( struct proj_t **projects ){
 	
 	int open_action = -1;
 	ImGui::Text("Projects");
@@ -220,7 +284,7 @@ static void show_project_select_window( ProjectNode *projects){
 
 	/* Set colums, items in table */
 	if( ImGui::BeginTable("projects", 4, flags)){
-		/* First column will use default _WidthStrecth when ScrollX is
+		/* First column will use default _WidthStretch when ScrollX is
 		 * off and _WidthFixed when ScrollX is on */
 		ImGui::TableSetupColumn("Name",   	ImGuiTableColumnFlags_NoHide);
 		ImGui::TableSetupColumn("Date",   	ImGuiTableColumnFlags_WidthFixed, TEXT_BASE_WIDTH * 12.0f);
@@ -229,19 +293,213 @@ static void show_project_select_window( ProjectNode *projects){
 		ImGui::TableHeadersRow();
 
 
-		projects[0].ProjectNode::DisplayNode( &projects[0], projects );
+//		projects[0].ProjectNode::DisplayNode( &projects[0], projects );
+		for( int i = 0; i < 4; i++ ){
+			DisplayNode( projects[i] );
+		}
 		ImGui::EndTable();
+	}
+
+}
+
+static void show_new_part_popup( void ){
+	static struct part_t part;
+
+	/* Buffers for text input. Can also be used for santizing inputs */
+	static char quantity[128] = {};
+	static char internal_pn[256] = {};
+	static char type[256] = {};
+	static char mfg[512] = {};
+	static char mpn[512] = {};
+	static int selection_idx = -1;
+	const char* status_options[3] = {
+			"Production",
+			"NRND",
+			"Obsolete"
+	};
+	static const char* selection_str = NULL;
+
+	if( selection_idx >= 0 && selection_idx < 3 ){
+		selection_str = status_options[selection_idx];
+	}
+
+	/* Ensure popup is in the center */
+	ImVec2 center = ImGui::GetMainViewport()->GetCenter();
+	ImGui::SetNextWindowPos(center, ImGuiCond_Appearing, ImVec2( 0.5f, 0.5f));
+
+	ImGuiWindowFlags flags =   ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoCollapse \
+							 | ImGuiWindowFlags_NoSavedSettings;
+	if( ImGui::Begin("New Part Popup",&show_new_part_window, flags ) ){
+		ImGui::Text("Enter part details below");
+		ImGui::Separator();
+
+		/* Text entry fields */
+		ImGui::InputText("Internal Part Number", internal_pn, 255, ImGuiInputTextFlags_CharsNoBlank | ImGuiInputTextFlags_CharsDecimal );
+		ImGui::InputText("Part Type", type, 255, ImGuiInputTextFlags_CharsNoBlank);
+		ImGui::InputText("Part Number", mpn, 511, ImGuiInputTextFlags_CharsNoBlank);	
+		ImGui::InputText("Manufacturer", mfg, 511);
+		if( ImGui::BeginCombo("new-part-status", selection_str, 0 ) ){
+			for( int i = 0; i < IM_ARRAYSIZE( status_options ); i++){
+				const bool is_selected = ( selection_idx == i );
+				if( ImGui::Selectable(status_options[i], is_selected ) ){
+					selection_idx = i;
+				}
+				if( is_selected ){
+
+					ImGui::SetItemDefaultFocus();
+				}
+			}
+			ImGui::EndCombo();
+		}
+		ImGui::InputText("Local Stock", quantity, 127, ImGuiInputTextFlags_CharsNoBlank | ImGuiInputTextFlags_CharsDecimal );
+
+		/* Check if valid to copy */
+
+		/* No checks because I'll totally do it later (hopefully) */
+		part.q = atoi( quantity );
+		part.ipn = atoi( internal_pn ); 
+		part.mpn = mpn;
+		part.mfg = mfg;
+		part.type = type;
+		if( 0 == selection_idx ){
+			part.status = pstat_prod;
+		}
+		else if( 1 == selection_idx ){
+			part.status = pstat_nrnd;
+		}
+		else if( 2 == selection_idx ){
+			part.status = pstat_obsolete;
+		}
+		else {
+			part.status = pstat_unknown;
+		}
+
+		/* Figure out what the hell to do with the info section */
+
+		/* Save and cancel buttons */
+		if( ImGui::Button("Save", ImVec2(0,0)) ){
+
+			/* Check if can save first */
+
+			/* Perform the write */
+			redis_write_part( &part );
+			y_log_message(Y_LOG_LEVEL_DEBUG, "Data written to database");
+			show_new_part_window = false;
+			
+			/* Clear all input data */
+			part.q = 0;
+			part.ipn = 0;
+			part.type = NULL;
+			part.mpn = NULL;
+			part.mfg = NULL;
+	
+			memset( quantity, 0, 127);
+			memset( internal_pn, 0, 255);
+			memset( type, 0, 255 );
+			memset( mfg, 0, 511 );
+			memset( mpn, 0, 511 );
+			y_log_message(Y_LOG_LEVEL_DEBUG, "Cleared out part, finished writing");
+//			show_new_part_window = false;
+
+		}
+		ImGui::SetItemDefaultFocus();
+		ImGui::SameLine();
+		if ( ImGui::Button("Cancel", ImVec2(0, 0) )){
+			show_new_part_window = false;
+			/* Clear all input data */
+			part.q = 0;
+			part.ipn = 0;
+			part.type = NULL;
+			part.mpn = NULL;
+			part.mfg = NULL;
+			memset( quantity, 0, 127);
+			memset( internal_pn, 0, 255);
+			memset( type, 0, 255 );
+			memset( mfg, 0, 511 );
+			memset( mpn, 0, 511 );
+			y_log_message(Y_LOG_LEVEL_DEBUG, "Cleared out part, exiting window");
+		}
+
+		ImGui::End();
+	}
+
+}
+
+static void import_parts_window( void ){
+	static char filepath[(uint16_t)-1] = {}; /* Need to make sure this is large enough for some insane paths */
+	static char* file_dialog_buffer = nullptr;	
+
+	/* Ensure popup is in the center */
+	ImVec2 center = ImGui::GetMainViewport()->GetCenter();
+	ImGui::SetNextWindowPos(center, ImGuiCond_Appearing, ImVec2( 0.5f, 0.5f));
+
+	ImGuiWindowFlags flags =   ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoCollapse \
+							 | ImGuiWindowFlags_NoSavedSettings;
+	if( ImGui::Begin("Import Parts", &show_import_parts_window, flags) ){
+		
+		ImGui::Text("Select parts file to import");	
+		ImGui::Separator();
+
+		ImGui::InputText("##import_filepath", filepath, sizeof( filepath ) );
+		ImGui::SameLine();
+
+		/* Button to open filepicker dialog */
+		if( ImGui::Button("Browse##import_filepath") ){
+			file_dialog_buffer = filepath;
+			FileDialog::file_dialog_open = true; /* Need this to start the dialog */
+			FileDialog::file_dialog_open_type = FileDialog::FileDialogType::OpenFile;
+		}
+
+		/* Actual Dialog */
+		if( FileDialog::file_dialog_open ){
+			FileDialog::ShowFileDialog( &FileDialog::file_dialog_open, file_dialog_buffer, sizeof( file_dialog_buffer ), FileDialog::FileDialogType::OpenFile);
+		}
+
+		/* Button to start import */
+		if( ImGui::Button("Import") ){
+			/* Start importing */
+			y_log_message(Y_LOG_LEVEL_DEBUG, "Path received: %s", filepath);
+
+			redis_import_part_file( filepath );
+
+			/* Cleanup path */
+			memset( filepath, 0, sizeof( filepath ) );
+			/* End of window */
+			show_import_parts_window = false;
+		}
+		ImGui::SameLine();
+
+		/* Button to cancel operation */
+		if( ImGui::Button("Cancel") ){
+			/* Cleanup and exit window */
+			/* End of window */
+			show_import_parts_window = false;
+		}
+
+		ImGui::End();
+
 	}
 
 }
 
 /* Menu items */
 static void show_menu_bar( void ){
+
 	if( ImGui::BeginMenuBar() ){
 		/* File Menu */
 		if( ImGui::BeginMenu("File") ) {
 			if( ImGui::MenuItem("New Project") ){
 				
+			}
+			else if( ImGui::MenuItem("New Part") ){
+				/* Create part_t, then provide result to redis_write_part */
+				y_log_message(Y_LOG_LEVEL_DEBUG, "New Part menu clicked");
+				show_new_part_window = true;
+			}
+			else if( ImGui::MenuItem("Import Parts") ){
+				/* Read file from selection and add to database from selection */
+				y_log_message(Y_LOG_LEVEL_DEBUG, "Import Parts menu clicked");
+				show_import_parts_window = true;
 			}
 			else if( ImGui::MenuItem("Export Project") ){
 				
@@ -328,9 +586,11 @@ static void show_menu_bar( void ){
 		ImGui::EndMenuBar();
 	}
 
+
+
 }
 
-static void show_bom_window( ProjectBom bom ){
+static void show_bom_window( bom_t* bom ){
 
 	/* Show BOM/Information View */
 	ImGuiTabBarFlags tabbar_flags = ImGuiTabBarFlags_None;
@@ -364,6 +624,7 @@ static void show_bom_window( ProjectBom bom ){
 
 				ImGui::TableHeadersRow();
 
+#if 0 
 				/* Sort the bom items list based off of what is currently
 				 * selected for sorting */
 				if(ImGuiTableSortSpecs* bom_sort_specs = ImGui::TableGetSortSpecs()){
@@ -375,41 +636,42 @@ static void show_bom_window( ProjectBom bom ){
 						bom_sort_specs->SpecsDirty = false;
 					}
 				}
+#endif
 				
 				/* Used for selecting specific item in BOM */
-				bool item_sel[ bom.item.size() ] = {};
+				bool item_sel[ bom->nitems ] = {};
 				char line_item_label[64]; /* May need to change size at some point */
-				static BomLineItem *selected_item = NULL;	
-				for( int i = 0; i < bom.item.size(); i++){
+				static part_t *selected_item = NULL;	
+				for( int i = 0; i < bom->nitems; i++){
 					ImGui::TableNextRow();
 
 					/* BOM Line item */
 					ImGui::TableSetColumnIndex(0);
 					/* Selectable line item number */
-					snprintf(line_item_label, 64, "%d", bom.item[i].index, bom.item[i].mpn);
+					snprintf(line_item_label, 64, "%d", i);
 					ImGui::Selectable(line_item_label, &item_sel[i], ImGuiSelectableFlags_SpanAllColumns);
 
 					/* Part number */
 					ImGui::TableSetColumnIndex(1);
-					ImGui::Text("%s", bom.item[i].mpn );
+					ImGui::Text("%s", bom->parts[i]->mpn );
 
 					/* Manufacturer */
 					ImGui::TableSetColumnIndex(2);
-					ImGui::Text("%s", bom.item[i].mfg );
+					ImGui::Text("%s", bom->parts[i]->mfg );
 
 					/* Quantity */
 					ImGui::TableSetColumnIndex(3);
-					ImGui::Text("%d", bom.item[i].q );
+					ImGui::Text("%d", bom->line[i].q );
 
 					/* Type */
 					ImGui::TableSetColumnIndex(4);
-					ImGui::Text("Part type #%d", bom.item[i].type);
+					ImGui::Text("%s", bom->parts[i]->type);
 
 					if( item_sel[i] ){
 						/* Open popup for part info */
 						ImGui::OpenPopup("PartInfo");
-						printf("%s was selected\n", bom.item[i].mpn);
-						selected_item = &bom.item[i];
+						y_log_message(Y_LOG_LEVEL_DEBUG, "%s was selected", bom->parts[i]->mpn);
+						selected_item = bom->parts[i];
 					}
 
 				}
@@ -419,9 +681,13 @@ static void show_bom_window( ProjectBom bom ){
 				if( ImGui::BeginPopupModal("PartInfo", NULL, ImGuiWindowFlags_AlwaysAutoResize) ){
 					ImGui::Text("Part Info");
 					ImGui::Separator();
-
-					if( selected_item != NULL ){
+					
+					if( NULL != selected_item ){
 						ImGui::Text("Part Number: %s", selected_item->mpn);
+						ImGui::Text("Price Breaks:");
+						for( unsigned int i = 0; i <  selected_item->price_len; i++ ){
+							ImGui::Text("%ld:\t$%0.6lf", selected_item->price[i].quantity, selected_item->price[i].price );	
+						}
 					}
 					else{
 						ImGui::Text("Part Number not found");
@@ -450,14 +716,7 @@ static void show_bom_window( ProjectBom bom ){
 }
 
 /* Setup root window, child windows */
-static void show_root_window( ProjectNode *projects, ProjectBom *boms ){
-	
-	/* Default empty BOM to show */
-	static const ProjectBom empty_default_bom = {
-		0, { {0, 0, "\0", "\0", 0, 0} }
-	};
-
-
+static void show_root_window( struct proj_t** projects, struct bom_t** boms ){
 
 	/* Create menu items */
 	show_menu_bar();
@@ -485,20 +744,110 @@ static void show_root_window( ProjectNode *projects, ProjectBom *boms ){
 		ImGui::BeginChild("Project Information", ImVec2(ImGui::GetContentRegionAvail().x * 0.95f, ImGui::GetContentRegionAvail().y*0.95f));
 
 		/* Get selected project */
-		if( selected_prj != -1 ){
-			ProjectBom selected_bom = boms[ projects[selected_prj].bomid ];
-			show_bom_window(selected_bom);
+		if( NULL != selected_prj ){
+			show_bom_window( selected_prj->boms[0].bom );
 		} else {
 			/* No projects selected, use empty bom */
-			show_bom_window(empty_default_bom);
+//			show_bom_window(empty_default_bom);
 		}
 		ImGui::EndChild();
 		
 		ImGui::EndTable();	
 	}
 
+}
+
+void DisplayNode( struct proj_t* node ){
+
+	ImGuiTreeNodeFlags node_flags = ImGuiTreeNodeFlags_OpenOnArrow | \
+									ImGuiTreeNodeFlags_OpenOnDoubleClick | \
+									ImGuiTreeNodeFlags_SpanFullWidth; 
+
+	ImGui::TableNextRow();
+	ImGui::TableNextColumn();
+	
+	/* Check if project contains subprojects */
+	if( node->nsub > 0 ){
+
+		/* Check if selected, display if selected */
+		if( node->selected && (node == selected_prj ) ){
+			node_flags |= ImGuiTreeNodeFlags_Selected;
+		}
+		else {
+			node_flags &= ~ImGuiTreeNodeFlags_Selected;		
+		}
+
+		bool open = ImGui::TreeNodeEx(node->name, node_flags);
+		
+		/* Check if item has been clicked */
+		if( ImGui::IsItemClicked() && !ImGui::IsItemToggledOpen() ){
+			y_log_message(Y_LOG_LEVEL_DEBUG, "In display: Node %s clicked", node->name);
+			selected_prj = node;
+			node->selected = true;
+		}
 
 
+		ImGui::TableNextColumn();
+		ImGui::Text( asctime( localtime(&node->time_created)) );
+		ImGui::TableNextColumn();
+		ImGui::Text(node->ver);
+		ImGui::TableNextColumn();
+		ImGui::TextUnformatted(node->author);
+		
+		/* Display subprojects if node is open */
+		if( open ){
+			for( int i = 0; i < node->nsub; i++ ){
+				DisplayNode( node->sub[i].prj );
+			}
+			ImGui::TreePop();
+		}
+	}
+	else {
 
+		node_flags = ImGuiTreeNodeFlags_Leaf | \
+					 ImGuiTreeNodeFlags_NoTreePushOnOpen | \
+					 ImGuiTreeNodeFlags_SpanFullWidth;
+
+		if( node->selected && (node == selected_prj) ){
+			node_flags |= ImGuiTreeNodeFlags_Selected;
+		}
+
+		ImGui::TreeNodeEx(node->name, node_flags );
+
+		/* Check if item has been clicked */
+		if( ImGui::IsItemClicked() && !ImGui::IsItemToggledOpen() ){
+			y_log_message(Y_LOG_LEVEL_DEBUG, "In display: Node %s clicked", node->name);
+			selected_prj = node;	
+			node->selected = true;
+		}
+
+		ImGui::TableNextColumn();
+		ImGui::Text( asctime( localtime(&node->time_created)) ); /* Convert time_t to localtime */
+		ImGui::TableNextColumn();
+		ImGui::Text(node->ver);
+		ImGui::TableNextColumn();
+		ImGui::TextUnformatted(node->author);
+
+	}
+
+#if 0
+	/* Check if something was clicked */
+	if( selected_prj != NULL && node == selected_prj ){
+		y_log_message(Y_LOG_LEVEL_DEBUG, "Project %s has been clicked", selected_prj->name);
+		/* toggle state */
+		node->selected = !(node->selected);
+		y_log_message(Y_LOG_LEVEL_DEBUG, "Selection state: %d", selected_prj->selected);
+
+		if( selected_prj->selected ){
+			y_log_message(Y_LOG_LEVEL_DEBUG, "Node %s is highlighted", node->name);
+		}
+		else {
+			/* Don't show anything if there is no highlight; second
+			 * thought, maybe not a good idea?  */
+			//selected_prj = -1;	
+		}
+	}
+#endif
 
 }
+

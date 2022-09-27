@@ -5,6 +5,7 @@
 #include <stdio.h>
 #include <vector>
 #include <iterator>
+#include <yder.h>
 
 extern int selected_prj;
 
@@ -46,7 +47,7 @@ struct ProjectNode {
 			
 			/* Check if item has been clicked */
 			if( ImGui::IsItemClicked() && !ImGui::IsItemToggledOpen() ){
-				printf("In display: Node %s clicked\n", node->name);
+				y_log_message(Y_LOG_LEVEL_DEBUG, "In display: Node %s clicked", node->name);
 				node_clicked = node;	
 				selected_prj = index;
 			}
@@ -83,7 +84,7 @@ struct ProjectNode {
 
 			/* Check if item has been clicked */
 			if( ImGui::IsItemClicked() && !ImGui::IsItemToggledOpen() ){
-				printf("In display: Node %s clicked\n", node->name);
+				y_log_message(Y_LOG_LEVEL_DEBUG, "In display: Node %s clicked", node->name);
 				node_clicked = node;	
 				selected_prj = index;
 			}
@@ -99,17 +100,18 @@ struct ProjectNode {
 
 		/* Check if something was clicked */
 		if( node_clicked != NULL ){
-			printf("Project %s has been clicked\n", node_clicked->name);
+			y_log_message(Y_LOG_LEVEL_DEBUG, "Project %s has been clicked", node_clicked->name);
 			/* toggle state */
 			node_clicked->selected = !(node_clicked->selected);
-			printf("Selection state: %d\n", node_clicked->selected);
+			y_log_message(Y_LOG_LEVEL_DEBUG, "Selection state: %d", node_clicked->selected);
 
 			if( node_clicked->selected ){
-				printf("Node %s is highlighted\n", node->name);
+				y_log_message(Y_LOG_LEVEL_DEBUG, "Node %s is highlighted", node->name);
 			}
 			else {
-				/* Don't show anything if there is no highlight */
-				selected_prj = -1;	
+				/* Don't show anything if there is no highlight; second
+				 * thought, maybe not a good idea?  */
+				//selected_prj = -1;	
 			}
 		}
 
