@@ -4,6 +4,8 @@
 #include <string.h>
 #include <yder.h>
 #include <db_handle.h>
+#include <unistd.h>
+	
 
 /* Redis Context for handling in database */
 static redisContext *rc;
@@ -28,8 +30,6 @@ static int parse_json_part( struct part_t * part, struct json_object* restrict j
 	jinfo   = json_object_object_get( jpart, "info" );
 	jprice  = json_object_object_get( jpart, "price" ); 
 	jdist   = json_object_object_get( jpart, "dist" );
-	
-
 
 	/* Copy data from json objects */
 
@@ -471,6 +471,51 @@ static int parse_json_proj( struct proj_t * prj, struct json_object* restrict jp
 			}
 		}
 	}
+
+	return 0;
+}
+
+/* Parse bom json object to dbinfo_t */
+static int parse_json_dbinfo( struct dbinfo_t * db, struct json_object* restrict jdb ){
+
+	json_object* jversion;
+	json_object* jnprj;
+	json_object* jnbom;
+	json_object* jnpart;
+	json_object* jlock;
+	json_object* jinit;
+	json_object* jmajor;
+	json_object* jminor;
+	json_object* jpatch;
+	
+	jversion  = json_object_object_get( jdb, "version" ); 
+	jmajor  = json_object_object_get( jversion, "major" ); 
+	jminor  = json_object_object_get( jversion, "minor" ); 
+	jpatch  = json_object_object_get( jversion, "patch" ); 
+	jnprj     = json_object_object_get( jdb, "nprj" ); 
+	jnbom     = json_object_object_get( jdb, "nbom" ); 
+	jnpart    = json_object_object_get( jdb, "npart" ); 
+	jlock     = json_object_object_get( jdb, "lock" );
+	jinit     = json_object_object_get( jdb, "init" );
+
+	y_log_message(Y_LOG_LEVEL_DEBUG, "JSON Object passed for dbinfo:\n%s\n", json_object_to_json_string_ext(jdb, JSON_C_TO_STRING_PRETTY));
+	
+	/* Copy data from json objects */
+
+	/* Number of kinds of objects  */
+	db->nprj  = json_object_get_int64( jnprj );
+	db->nbom  = json_object_get_int64( jnbom );
+	db->npart = json_object_get_int64( jnpart );
+
+	/* Flags */
+	db->flags  = 0;
+	db->flags |= json_object_get_int64( jinit ) << DBINFO_FLAG_INIT_SHFT;
+	db->flags |= json_object_get_int64( jlock ) << DBINFO_FLAG_LOCK_SHFT;
+
+	/* Version information */
+	db->version.major = json_object_get_int64( jmajor );
+	db->version.minor = json_object_get_int64( jminor );
+	db->version.patch = json_object_get_int64( jpatch );
 
 	return 0;
 }
@@ -1407,4 +1452,89 @@ struct proj_t* get_proj_from_ipn( unsigned int ipn ){
 	/* Free json */
 	//json_object_put( jprj );
 	return prj;
+}
+
+/* Read database information */
+int redis_read_dbinfo( struct dbinfo_t* db ){
+	json_object* jdb;
+	if(  !redis_json_get( rc, "popdb", "$", &jdb ) ){
+		y_log_message(Y_LOG_LEVEL_ERROR, "Could not get database information");
+		return -1;
+	}
+
+	/* Parse data */
+	return parse_json_dbinfo( db, jdb );
+}
+
+/* Write database information */
+static int write_dbinfo( struct dbinfo_t* db ){
+	/* Database part name */
+	char * dbinfo_name = "popdb";
+
+	if( NULL == db ){
+		y_log_message( Y_LOG_LEVEL_ERROR, "Database info struct passed when writing to database was NULL" );
+		return -1;
+	}
+
+	y_log_message(Y_LOG_LEVEL_DEBUG, "Creating json objects");
+
+
+	/* Create json object to write */
+	json_object *dbinfo_root = json_object_new_object();
+	json_object* version 	 = json_object_new_object();
+
+	int lock = ((db->flags & DBINFO_FLAG_LOCK) == DBINFO_FLAG_LOCK);
+	int init = ((db->flags & DBINFO_FLAG_INIT) == DBINFO_FLAG_INIT);
+
+	if( NULL == dbinfo_root ){
+		y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate new root for dbinfojson object" );
+		return -1;
+	}
+
+	if( NULL == version ){
+		y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate dbinfo version json object" );
+		json_object_put(dbinfo_root);
+		return -1;	
+	}
+
+	y_log_message(Y_LOG_LEVEL_DEBUG, "Adding json objects");
+
+	json_object_object_add( version, "major", json_object_new_int64( db->version.major ) );
+	json_object_object_add( version, "minor", json_object_new_int64( db->version.minor ) );
+	json_object_object_add( version, "patch", json_object_new_int64( db->version.patch ) );
+
+	/* Add all parts of the part struct to the json object */
+	json_object_object_add( dbinfo_root, "version", version );
+	json_object_object_add( dbinfo_root, "nprj", json_object_new_int64(db->nprj) );
+	json_object_object_add( dbinfo_root, "nbom", json_object_new_int64(db->nbom) );
+	json_object_object_add( dbinfo_root, "npart", json_object_new_int64(db->npart) );
+	json_object_object_add( dbinfo_root, "init", json_object_new_int64( init ) );
+	json_object_object_add( dbinfo_root, "lock", json_object_new_int64( lock ) );
+
+	y_log_message(Y_LOG_LEVEL_DEBUG, "Added items to object");
+
+	/* Write object to database */
+	int retval = redis_json_set( rc, dbinfo_name, "$", json_object_to_json_string(dbinfo_root) );
+	y_log_message(Y_LOG_LEVEL_DEBUG, "JSON Object to send:\n%s\n", json_object_to_json_string_ext(dbinfo_root, JSON_C_TO_STRING_PRETTY));
+
+	/* Cleanup json object */
+	json_object_put( dbinfo_root );
+
+	return 0;
+}
+
+/* Write database information; read modify write  */
+int redis_write_dbinfo( struct dbinfo_t* db ){
+	struct dbinfo_t db_check= {};
+	do{
+		redis_read_dbinfo( &db_check );
+		if( (db_check.flags & DBINFO_FLAG_LOCK) == DBINFO_FLAG_LOCK ){
+			sleep(2); /* Wait a little until lock is free */
+		}
+
+	} while( (db_check.flags & DBINFO_FLAG_LOCK) == DBINFO_FLAG_LOCK );
+
+	/* now write data */
+	return write_dbinfo( db );
+
 }
