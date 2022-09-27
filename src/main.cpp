@@ -2,15 +2,16 @@
 #include <imgui_impl_glfw.h>
 #include <imgui_impl_opengl3.h>
 #include <stdio.h>
+#include <time.h>
 #include <vector>
 #include <iterator>
 #include <GLFW/glfw3.h>
-#include <projectview.h>
+//#include <projectview.h>
 #include <yder.h>
 #include <db_handle.h>
 #include <L2DFileDialog.h>
 
-int selected_prj = 0; /* index that has been selected */
+static struct proj_t* selected_prj = 0; /* index that has been selected */
 
 
 ///* BOM Line item structure */
@@ -34,10 +35,11 @@ static void glfw_error_callback(int error, const char* description){
 }
 
 /* Pass structure of projects and number of projects inside of struct */
-static void show_project_select_window( ProjectNode *projects);
+static void show_project_select_window( struct proj_t** projects);
 static void show_new_part_popup( void );
-static void show_root_window( ProjectNode *projects, bom_t** boms );
+static void show_root_window( struct proj_t** projects, struct bom_t** boms );
 static void import_parts_window( void );
+void DisplayNode( struct proj_t* node );
 
 bool show_new_part_window = false;
 bool show_import_parts_window = false;
@@ -51,6 +53,8 @@ static bool run_flag = true;
 int main( int, char** ){
 
 	/* Projects */
+	static proj_t* projects[4] = {};
+#if 0
 	static ProjectNode projects[] = {
 		/* Name						Date			Version	 Author		BOM ID	Child Index		Child Count  	Selected */
 		{ "Project Top\0", 			"2022-05-01\0", 	"1.2.3\0", "Dylan\0",	0,		1,				2,				true},
@@ -58,7 +62,7 @@ int main( int, char** ){
 		{ "Subproject 2\0", 		"2022-05-03\0", 	"3.4.5\0", "Dylan\0",	2,		1,				-1,				false},
 		{ "subsubproject 1\0",		"2022-05-04\0", 	"4.5.6\0", "Dylan\0",	3,		-1,				-1,				false}
 	};
-
+#endif
 	/* BOMs */	
 	static bom_t* boms[4] = {};
 #if 0
@@ -179,11 +183,19 @@ int main( int, char** ){
 	free_part_t( test_part );
 #endif
 
-	/* Get BOM from database to overwrite BOM 0*/
-	boms[0] = get_bom_from_ipn(0);
-	if( NULL == boms[0] ){
-		y_log_message( Y_LOG_LEVEL_ERROR, "Could not get index bom" );
+	/* Get projects from database; has to start from 1 */
+	for( int i = 1; i <= 4; i++ ){
+		projects[i-1] = get_proj_from_ipn(i);
+		if( NULL == projects[i-1] ){
+			y_log_message( Y_LOG_LEVEL_ERROR, "Could not get index project" );
+		}
+		else{
+			y_log_message( Y_LOG_LEVEL_DEBUG, "Read project %d from database", i);
+		}
 	}
+
+	/* Use first project as first selected node */
+	selected_prj = projects[0];
 
 	/* Main application loop */
 	while( !glfwWindowShouldClose(window) ) {
@@ -231,8 +243,10 @@ int main( int, char** ){
 	/* Disconnect from database */
 	redis_disconnect();
 
-	/* Cleanup boms */
-	free_bom_t(boms[0]);
+	/* Cleanup projects */
+	for( int i = 0; i < 4; i++ ){
+		free_proj_t(projects[i]);
+	}
 
 	/* Application cleanup */
 	ImGui_ImplOpenGL3_Shutdown();
@@ -247,7 +261,7 @@ int main( int, char** ){
 
 
 
-static void show_project_select_window( ProjectNode *projects){
+static void show_project_select_window( struct proj_t **projects ){
 	
 	int open_action = -1;
 	ImGui::Text("Projects");
@@ -279,7 +293,10 @@ static void show_project_select_window( ProjectNode *projects){
 		ImGui::TableHeadersRow();
 
 
-		projects[0].ProjectNode::DisplayNode( &projects[0], projects );
+//		projects[0].ProjectNode::DisplayNode( &projects[0], projects );
+		for( int i = 0; i < 4; i++ ){
+			DisplayNode( projects[i] );
+		}
 		ImGui::EndTable();
 	}
 
@@ -607,7 +624,7 @@ static void show_bom_window( bom_t* bom ){
 
 				ImGui::TableHeadersRow();
 
-#if 0
+#if 0 
 				/* Sort the bom items list based off of what is currently
 				 * selected for sorting */
 				if(ImGuiTableSortSpecs* bom_sort_specs = ImGui::TableGetSortSpecs()){
@@ -644,7 +661,7 @@ static void show_bom_window( bom_t* bom ){
 
 					/* Quantity */
 					ImGui::TableSetColumnIndex(3);
-					ImGui::Text("%d", bom->parts[i]->q );
+					ImGui::Text("%d", bom->line[i].q );
 
 					/* Type */
 					ImGui::TableSetColumnIndex(4);
@@ -699,7 +716,7 @@ static void show_bom_window( bom_t* bom ){
 }
 
 /* Setup root window, child windows */
-static void show_root_window( ProjectNode *projects, bom_t** boms ){
+static void show_root_window( struct proj_t** projects, struct bom_t** boms ){
 
 	/* Create menu items */
 	show_menu_bar();
@@ -727,9 +744,8 @@ static void show_root_window( ProjectNode *projects, bom_t** boms ){
 		ImGui::BeginChild("Project Information", ImVec2(ImGui::GetContentRegionAvail().x * 0.95f, ImGui::GetContentRegionAvail().y*0.95f));
 
 		/* Get selected project */
-		if( selected_prj != -1 ){
-			bom_t* selected_bom = boms[ projects[selected_prj].bomid ];
-			show_bom_window(selected_bom);
+		if( NULL != selected_prj ){
+			show_bom_window( selected_prj->boms[0].bom );
 		} else {
 			/* No projects selected, use empty bom */
 //			show_bom_window(empty_default_bom);
@@ -740,3 +756,98 @@ static void show_root_window( ProjectNode *projects, bom_t** boms ){
 	}
 
 }
+
+void DisplayNode( struct proj_t* node ){
+
+	ImGuiTreeNodeFlags node_flags = ImGuiTreeNodeFlags_OpenOnArrow | \
+									ImGuiTreeNodeFlags_OpenOnDoubleClick | \
+									ImGuiTreeNodeFlags_SpanFullWidth; 
+
+	ImGui::TableNextRow();
+	ImGui::TableNextColumn();
+	
+	/* Check if project contains subprojects */
+	if( node->nsub > 0 ){
+
+		/* Check if selected, display if selected */
+		if( node->selected && (node == selected_prj ) ){
+			node_flags |= ImGuiTreeNodeFlags_Selected;
+		}
+		else {
+			node_flags &= ~ImGuiTreeNodeFlags_Selected;		
+		}
+
+		bool open = ImGui::TreeNodeEx(node->name, node_flags);
+		
+		/* Check if item has been clicked */
+		if( ImGui::IsItemClicked() && !ImGui::IsItemToggledOpen() ){
+			y_log_message(Y_LOG_LEVEL_DEBUG, "In display: Node %s clicked", node->name);
+			selected_prj = node;
+			node->selected = true;
+		}
+
+
+		ImGui::TableNextColumn();
+		ImGui::Text( asctime( localtime(&node->time_created)) );
+		ImGui::TableNextColumn();
+		ImGui::Text(node->ver);
+		ImGui::TableNextColumn();
+		ImGui::TextUnformatted(node->author);
+		
+		/* Display subprojects if node is open */
+		if( open ){
+			for( int i = 0; i < node->nsub; i++ ){
+				DisplayNode( node->sub[i].prj );
+			}
+			ImGui::TreePop();
+		}
+	}
+	else {
+
+		node_flags = ImGuiTreeNodeFlags_Leaf | \
+					 ImGuiTreeNodeFlags_NoTreePushOnOpen | \
+					 ImGuiTreeNodeFlags_SpanFullWidth;
+
+		if( node->selected && (node == selected_prj) ){
+			node_flags |= ImGuiTreeNodeFlags_Selected;
+		}
+
+		ImGui::TreeNodeEx(node->name, node_flags );
+
+		/* Check if item has been clicked */
+		if( ImGui::IsItemClicked() && !ImGui::IsItemToggledOpen() ){
+			y_log_message(Y_LOG_LEVEL_DEBUG, "In display: Node %s clicked", node->name);
+			selected_prj = node;	
+			node->selected = true;
+		}
+
+		ImGui::TableNextColumn();
+		ImGui::Text( asctime( localtime(&node->time_created)) ); /* Convert time_t to localtime */
+		ImGui::TableNextColumn();
+		ImGui::Text(node->ver);
+		ImGui::TableNextColumn();
+		ImGui::TextUnformatted(node->author);
+
+	}
+
+#if 0
+	/* Check if something was clicked */
+	if( selected_prj != NULL && node == selected_prj ){
+		y_log_message(Y_LOG_LEVEL_DEBUG, "Project %s has been clicked", selected_prj->name);
+		/* toggle state */
+		node->selected = !(node->selected);
+		y_log_message(Y_LOG_LEVEL_DEBUG, "Selection state: %d", selected_prj->selected);
+
+		if( selected_prj->selected ){
+			y_log_message(Y_LOG_LEVEL_DEBUG, "Node %s is highlighted", node->name);
+		}
+		else {
+			/* Don't show anything if there is no highlight; second
+			 * thought, maybe not a good idea?  */
+			//selected_prj = -1;	
+		}
+	}
+#endif
+
+}
+
