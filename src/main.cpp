@@ -6,10 +6,18 @@
 #include <vector>
 #include <iterator>
 #include <GLFW/glfw3.h>
+#include <thread>
 //#include <projectview.h>
 #include <yder.h>
 #include <db_handle.h>
 #include <L2DFileDialog.h>
+
+#ifdef _WIN32
+#include <windows.h>
+#else
+#include <unistd.h>
+#endif
+
 
 static struct proj_t* selected_prj = 0; /* index that has been selected */
 
@@ -37,9 +45,16 @@ static void glfw_error_callback(int error, const char* description){
 /* Pass structure of projects and number of projects inside of struct */
 static void show_project_select_window( struct proj_t** projects);
 static void show_new_part_popup( void );
-static void show_root_window( struct proj_t** projects, struct bom_t** boms );
+static void show_root_window( struct proj_t** projects );
 static void import_parts_window( void );
 void DisplayNode( struct proj_t* node );
+
+#define DB_STAT_DISCONNECTED  0
+#define DB_STAT_CONNECTED  1
+
+static int db_stat = DB_STAT_DISCONNECTED;
+
+#define DB_REFRESH_SEC	(60 * 5) /* Auto refresh once every 5 minutes */
 
 bool show_new_part_window = false;
 bool show_import_parts_window = false;
@@ -50,55 +65,43 @@ bool show_import_parts_window = false;
 /* Variable to continue running */
 static bool run_flag = true;
 
-int main( int, char** ){
+/* Projects */
+static proj_t* projects[4] = {};
 
-	/* Projects */
-	static proj_t* projects[4] = {};
-#if 0
-	static ProjectNode projects[] = {
-		/* Name						Date			Version	 Author		BOM ID	Child Index		Child Count  	Selected */
-		{ "Project Top\0", 			"2022-05-01\0", 	"1.2.3\0", "Dylan\0",	0,		1,				2,				true},
-		{ "Subproject 1\0", 		"2022-05-02\0", 	"2.3.4\0", "Dylan\0",	1,		3,				1,				false},
-		{ "Subproject 2\0", 		"2022-05-03\0", 	"3.4.5\0", "Dylan\0",	2,		1,				-1,				false},
-		{ "subsubproject 1\0",		"2022-05-04\0", 	"4.5.6\0", "Dylan\0",	3,		-1,				-1,				false}
-	};
-#endif
-	/* BOMs */	
-	static bom_t* boms[4] = {};
-#if 0
-	static ProjectBom boms[] = {
-		/* BOM ID	BOM Line Items	*/
-		{ 0, 			{	
-								/* Internal Part Number		BOM Index	MPN						MFG								Quantity	Type */
-								{	1000,					0,			"CL10B104KB8NNNC\0",	"Samsung Electro-Mechanics\0",	5000,		1},
-								{	2001,					1,			"RC0603FR-071KL\0",		"Yageo\0",						1000,		2},
-								{	2002,					2,			"RC0603FR-0710K\0",		"Yageo\0",						250,		2},
-								{	2006,					3,			"RC0603FR-0720K\0",		"Yageo\0",						250,		2},
-						}		                                                       
-		},
-		{ 1, 			{	
-								/* Internal Part Number		BOM Index	MPN						MFG								Quantity	Type */
-								{	1000,					0,			"CL10B104KB8NNNC\0",	"Samsung Electro-Mechanics\0",	5000,		1},
-								{	2002,					1,			"RC0603FR-0710KL\0",	"Yageo\0",						250,		2},
-								{	2001,					2,			"RC0603FR-071KL\0",		"Yageo\0",						1000,		2},
-						}		
-		},
-		{ 2, 			{	
-								/* Internal Part Number		BOM Index	MPN						MFG								Quantity	Type */
-								{	2001,					0,			"RC0603FR-071KL\0",		"Yageo\0",						1000,		2},
-								{	2002,					1,			"RC0603FR-0710KL\0",	"Yageo\0",						250,		2},
-								{	2003,					2,			"RC0603FR-074K7L\0",	"Yageo\0",						500,		2},
-						}		
-		},
-		{ 3, 			{	
-								/* Internal Part Number		BOM Index	MPN						MFG								Quantity	Type */
-								{	1000,					0,			"CL10B104KB8NNNC\0",	"Samsung Electro-Mechanics\0",	5000,		1},
-								{	2002,					1,			"RC0603FR-0710KL\0",	"Yageo\0",						250,		2},
-						}		
+static int thread_db_connection( void ) {
+	
+	y_log_message( Y_LOG_LEVEL_INFO, "Started thread_db_connection" );
+	
+	/* Constantly run, until told to stop */
+	while( run_flag ){
+		/* Get projects from database; has to start from 1 */
+		for( int i = 1; i <= 4; i++ ){
+		/* Check if database connection has been opened */
+			if( db_stat == DB_STAT_CONNECTED ){
+				projects[i-1] = get_proj_from_ipn(i);
+				if( NULL == projects[i-1] ){
+					y_log_message( Y_LOG_LEVEL_ERROR, "Could not get index project" );
+				}
+				else{
+					y_log_message( Y_LOG_LEVEL_DEBUG, "Read project %d from database", i);
+				}
+			}
+			else {
+				y_log_message( Y_LOG_LEVEL_WARNING, "No database connection to get project ipn %d", i );
+			}
 		}
+		/* sleep for some period of time until refresh */
+		sleep( DB_REFRESH_SEC );
+		
+	}
 
-	};
-#endif
+
+	return 0;
+}
+
+static int thread_ui( void ) {
+
+	y_log_message( Y_LOG_LEVEL_INFO, "Start thread_ui" );
 
 	/* Setup window */
 	glfwSetErrorCallback(glfw_error_callback);
@@ -166,6 +169,9 @@ int main( int, char** ){
 		/* Failed to init database connection, so quit */
 		run_flag = 0;
 	}
+	else {
+		db_stat = DB_STAT_CONNECTED;
+	}
 	
 #if 0
 	/* Get a part to see if it works */
@@ -183,16 +189,7 @@ int main( int, char** ){
 	free_part_t( test_part );
 #endif
 
-	/* Get projects from database; has to start from 1 */
-	for( int i = 1; i <= 4; i++ ){
-		projects[i-1] = get_proj_from_ipn(i);
-		if( NULL == projects[i-1] ){
-			y_log_message( Y_LOG_LEVEL_ERROR, "Could not get index project" );
-		}
-		else{
-			y_log_message( Y_LOG_LEVEL_DEBUG, "Read project %d from database", i);
-		}
-	}
+
 
 	/* Use first project as first selected node */
 	selected_prj = projects[0];
@@ -222,7 +219,7 @@ int main( int, char** ){
 		if( show_import_parts_window ){
 			import_parts_window();
 		}
-		show_root_window(projects, boms);
+		show_root_window(projects);
 		ImGui::End();
 
 		/* End Projects view creation */
@@ -240,12 +237,17 @@ int main( int, char** ){
 
 	}
 
+	/* Tell other threads to stop */
+	db_stat = DB_STAT_DISCONNECTED;
+
 	/* Disconnect from database */
 	redis_disconnect();
 
 	/* Cleanup projects */
 	for( int i = 0; i < 4; i++ ){
-		free_proj_t(projects[i]);
+		if( nullptr != projects[i] ){
+			free_proj_t(projects[i]);
+		}
 	}
 
 	/* Application cleanup */
@@ -256,6 +258,26 @@ int main( int, char** ){
 	glfwDestroyWindow(window);
 	glfwTerminate();
 
+	y_log_message( Y_LOG_LEVEL_INFO, "Exit thread_ui" );
+
+	return 0;
+}
+
+
+int main( int, char** ){
+
+
+	/* Start UI thread */
+	std::thread ui( thread_ui );
+
+	/* Start database connection thread */
+	std::thread db( thread_db_connection );
+
+	/* Join threads */
+	ui.join();
+	db.join();
+
+	return 0;
 
 }
 
@@ -295,7 +317,9 @@ static void show_project_select_window( struct proj_t **projects ){
 
 //		projects[0].ProjectNode::DisplayNode( &projects[0], projects );
 		for( int i = 0; i < 4; i++ ){
-			DisplayNode( projects[i] );
+			if( nullptr != projects[i]){
+				DisplayNode( projects[i] );
+			}
 		}
 		ImGui::EndTable();
 	}
@@ -716,7 +740,7 @@ static void show_bom_window( bom_t* bom ){
 }
 
 /* Setup root window, child windows */
-static void show_root_window( struct proj_t** projects, struct bom_t** boms ){
+static void show_root_window( struct proj_t** projects ){
 
 	/* Create menu items */
 	show_menu_bar();

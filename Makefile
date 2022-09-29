@@ -93,7 +93,7 @@ CXXFLAGS += ${CFLAGS.${BUILD}}
 
 CXXFLAGS += $(CXXOPTIONS)
 CXXFLAGS += $(WARNINGS)
-LDFLAGS   = -lhiredis -ljson-c -lyder -L./redis -lredis-wrapper
+LDFLAGS   = -lhiredis -ljson-c -lyder -L./redis -lredis-wrapper -lpthread
 LDFLAGS  += -lGL
 LDFLAGS  += `pkg-config --static --libs glfw3`
 
