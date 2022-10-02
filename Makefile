@@ -307,6 +307,7 @@ clean:
 	-@rm -f $(CDEP)
 	-@rm -f $(CXXDEP)
 	-@rm -f $(PRGNAME)
+	-@rm -f $(PRGNAME).exe
 	-@rm -f $(SRC_DIR)/*.gcda
 	-@rm -f $(SRC_DIR)/*.gcno
 	-@rm -f *.gcov
