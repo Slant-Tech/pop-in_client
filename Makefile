@@ -1,6 +1,18 @@
+UNAME_S := $(shell uname -s)
+
+# Linux specific options 
+ifeq ($(UNAME_S), Linux)
 CC=gcc
 CXX=g++
 LD=ld
+endif
+
+# Mac OSX specific options 
+ifeq ($(UNAME_S), Darwin)
+CC=clang
+CXX=clang++
+LD=ld
+endif
 
 PRGNAME=pop
 
@@ -50,8 +62,15 @@ CXXWARNINGS += -Wmissing-field-initializers -Wpacked -Wredundant-decls
 CXXWARNINGS += -Winline -Wdisabled-optimization 
 
 #Debugging options
-CFLAGS.DEBUG=  -ggdb3 -fvar-tracking -fvar-tracking-assignments -ginline-points -gstatement-frontiers # -fprofile-arcs -ftest-coverage
-CXXFLAGS.DEBUG=  -ggdb3 -fvar-tracking -fvar-tracking-assignments -ginline-points -gstatement-frontiers
+
+CFLAGS.DEBUG=  -ggdb3
+CXXFLAGS.DEBUG=  -ggdb3 
+
+# clang doesn't support these options
+ifneq ($(CC), clang)
+CFLAGS.DEBUG += -fvar-tracking -fvar-tracking-assignments -ginline-points -gstatement-frontiers # -fprofile-arcs -ftest-coverage
+CXXFLAGS.DEBUG += -fvar-tracking -fvar-tracking-assignments -ginline-points -gstatement-frontiers
+endif
 
 # Standard compile options
 CFLAGS.RELEASE= -O2
@@ -93,9 +112,24 @@ CXXFLAGS += ${CFLAGS.${BUILD}}
 
 CXXFLAGS += $(CXXOPTIONS)
 CXXFLAGS += $(WARNINGS)
+
+#Library options for each OS
+ifeq ($(UNAME_S), Linux)
 LDFLAGS   = -lhiredis -ljson-c -lyder -L./redis -lpthread
 LDFLAGS  += -lGL
 LDFLAGS  += `pkg-config --static --libs glfw3`
+endif
+
+ifeq ($(UNAME_S), Darwin)
+LDFLAGS += -framework OpenGL -framework Cocoa -framework IOKit -framework CoreVideo
+LDFLAGS += -L/usr/local/lib -L/opt/local/lib -L/opt/homebrew/lib
+LDFLAGS += -lglfw
+endif
+
+ifeq ($(OS), Windows_NT)
+LDFLAGS += -lglfw3 -lgdi32 -lopengl32 -limm32
+endif
+
 
 # IMGUI Source files
 IMGUI = ./imgui
