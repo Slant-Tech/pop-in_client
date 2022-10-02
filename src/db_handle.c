@@ -1223,7 +1223,9 @@ int redis_connect( const char* hostname, int port ){
 
 /* Free memory for redis connection */
 void redis_disconnect( void ){
-	redisFree( rc );
+	if( NULL != rc ){
+		redisFree( rc );
+	}
 	y_log_message(Y_LOG_LEVEL_INFO, "Disconnected from redis database");
 
 	rc = NULL;

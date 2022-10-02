@@ -201,7 +201,6 @@ CXXSRC		+= $(IMGUI)/backends/imgui_impl_opengl3.cpp
 
 SRC_DIR	 = ./src
 CSRC		 = $(wildcard $(SRC_DIR)/*.c)
-CSRC        += $(wildcard ./redis/src/*.c)
 COBJ		 = $(CSRC:.c=.o)
 CDEP	 	 = $(COBJ:.o=.d)
 
