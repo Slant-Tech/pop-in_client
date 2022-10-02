@@ -93,7 +93,7 @@ CXXFLAGS += ${CFLAGS.${BUILD}}
 
 CXXFLAGS += $(CXXOPTIONS)
 CXXFLAGS += $(WARNINGS)
-LDFLAGS   = -lhiredis -ljson-c -lyder -L./redis -lredis-wrapper -lpthread
+LDFLAGS   = -lhiredis -ljson-c -lyder -L./redis -lpthread
 LDFLAGS  += -lGL
 LDFLAGS  += `pkg-config --static --libs glfw3`
 
@@ -118,7 +118,7 @@ CXXDEP		 = $(CXXOBJ:.o=.d)
 
 all: $(PRGNAME)
 
-$(PRGNAME): $(COBJ) $(CXXOBJ) ./redis/libredis-wrapper.a
+$(PRGNAME): $(COBJ) $(CXXOBJ)  ./redis/libredis-wrapper.a
 	@echo "Linking $@"
 	@$(CXX) $(CXXFLAGS) $(LDFLAGS) -o $@ $^
 

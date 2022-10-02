@@ -54,7 +54,10 @@ void DisplayNode( struct proj_t* node );
 
 static int db_stat = DB_STAT_DISCONNECTED;
 
-#define DB_REFRESH_SEC	(60 * 5) /* Auto refresh once every 5 minutes */
+/* Auto refresh once every 15 seconds. 
+ * Issue is longer times leads to longer quit times. 
+ * Need to figure out better way to do this*/
+#define DB_REFRESH_SEC	(15) 
 
 bool show_new_part_window = false;
 bool show_import_parts_window = false;
@@ -146,8 +149,9 @@ static int thread_ui( void ) {
 
 	/* Load fonts if possible  */
 	ImFont* font_hack = io.Fonts->AddFontFromFileTTF( "/usr/share/fonts/TTF/Hack-Regular.ttf", 14.0f);
-	IM_ASSERT( font_hack != NULL );
-	if( font_hack == NULL ){
+	IM_ASSERT( nullptr != font_hack );
+	if( nullptr != font_hack ){
+		y_log_message(Y_LOG_LEVEL_WARNING, "Could not find Hack-Regular.ttf font");
 		io.Fonts->AddFontDefault();
 	}
 
