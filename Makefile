@@ -1,7 +1,12 @@
 UNAME_S := $(shell uname -s)
+# For checking if using systemd
+INITSYSTEM := $(shell ps --no-headers -o comm 1)
+
+OS ?= Linux
 
 # Linux specific options 
 ifeq ($(UNAME_S), Linux)
+CMAKE=cmake
 CC=gcc
 CXX=g++
 LD=ld
@@ -9,9 +14,18 @@ endif
 
 # Mac OSX specific options 
 ifeq ($(UNAME_S), Darwin)
+CMAKE=cmake
 CC=clang
 CXX=clang++
 LD=ld
+endif
+
+# Windows cross compilation
+ifeq ($(OS), Windows)
+CMAKE=x86_64-w64-mingw32-cmake
+CC=x86_64-w64-mingw32-gcc
+CXX=x86_64-w64-mingw32-g++
+LD=x86_64-w64-mingw32-ld
 endif
 
 PRGNAME=pop
@@ -86,6 +100,44 @@ CXXFLAGS.RELEASE= -O2
 
 CXXOPTIONS  += -std=c++17
 
+# External Library Locations
+LIBDIR= ./libs
+LIBYDER_DIR= $(LIBDIR)/yder
+LIBORCANIA_DIR= $(LIBDIR)/orcania
+LIBJSONC_DIR= $(LIBDIR)/json-c
+LIBHIREDIS_DIR=$(LIBDIR)/hiredis
+
+LIB_INSTALL_DIR_BASE=$(shell pwd)/libs/install
+
+# Compiled libraries install directories
+ifeq ($(UNAME_S), Linux)
+LIB_INSTALL_DIR=$(LIB_INSTALL_DIR_BASE)/linux
+endif
+
+ifeq ($(UNAME_S), Darwin)
+LIB_INSTALL_DIR=$(LIB_INSTALL_DIR_BASE)/macos
+endif
+
+# hiredis libraries; since they can't be static
+ifeq ($(OS), Windows)
+LIB_INSTALL_DIR=$(LIB_INSTALL_DIR_BASE)/windows
+LIBHIREDIS_SO=$(LIB_INSTALL_DIR)/libhiredis.dll
+
+endif
+
+# Static libraries
+ifneq ($(OS), Windows)
+LIBORCANIA_A = $(LIB_INSTALL_DIR)/lib/liborcania.a
+LIBYDER_A = $(LIB_INSTALL_DIR)/lib/libyder.a
+#LIBJSONC_A= $(LIBJSONC_DIR)/build/libjson-c.a
+LIBHIREDIS_A=$(LIB_INSTALL_DIR)/libhiredis.dll.a
+else 
+LIBORCANIA_A = $(LIB_INSTALL_DIR)/lib/liborcania.dll.a
+LIBYDER_A = $(LIB_INSTALL_DIR)/lib/libyder.dll.a
+#LIBJSONC_A= $(LIBJSONC_DIR)/build/libjson-c.a
+endif
+
+
 #Include Directories
 INC  = -I./
 INC	+= -I./include
@@ -94,6 +146,30 @@ INC += -I./imgui/backends
 INC += -I./imgui-filedialog/L2DFileDialog/src
 INC += -I./redis
 INC += `pkg-config --cflags glfw3`
+
+#Library options for each OS
+ifeq ($(OS), Windows)
+INC     += -I/usr/x86_64-w64-mingw/include -I$(LIB_INSTALL_DIR)/include
+LDFLAGS += -L/usr/x86_64-w64-mingw/lib -L$(LIB_INSTALL_DIR)/lib 
+LDFLAGS +=  -ljson-c -lglfw3 -lgdi32 -lopengl32 -limm32
+else
+
+ifeq ($(UNAME_S), Linux)
+INC      += -I$(LIB_INSTALL_DIR)/linux/include
+LDFLAGS   = -lhiredis -ljson-c -lyder -lpthread
+LDFLAGS  += -lGL
+LDFLAGS  += `pkg-config --static --libs glfw3`
+CXXFLAGS += `pkg-config --cflags glfw3`
+endif
+
+ifeq ($(UNAME_S), Darwin)
+INC     += -I$(LIB_INSTALL_DIR)/include
+LDFLAGS += -framework OpenGL -framework Cocoa -framework IOKit -framework CoreVideo
+LDFLAGS += -L/usr/local/lib -L/opt/local/lib -L/opt/homebrew/lib
+LDFLAGS += -lglfw
+endif
+
+endif
 
 
 CFLAGS  += -std=c11 -DHAVE_INLINE
@@ -113,24 +189,6 @@ CXXFLAGS += ${CFLAGS.${BUILD}}
 CXXFLAGS += $(CXXOPTIONS)
 CXXFLAGS += $(WARNINGS)
 
-#Library options for each OS
-ifeq ($(UNAME_S), Linux)
-LDFLAGS   = -lhiredis -ljson-c -lyder -L./redis -lpthread
-LDFLAGS  += -lGL
-LDFLAGS  += `pkg-config --static --libs glfw3`
-endif
-
-ifeq ($(UNAME_S), Darwin)
-LDFLAGS += -framework OpenGL -framework Cocoa -framework IOKit -framework CoreVideo
-LDFLAGS += -L/usr/local/lib -L/opt/local/lib -L/opt/homebrew/lib
-LDFLAGS += -lglfw
-endif
-
-ifeq ($(OS), Windows_NT)
-LDFLAGS += -lglfw3 -lgdi32 -lopengl32 -limm32
-endif
-
-
 # IMGUI Source files
 IMGUI = ./imgui
 CXXSRC		+= $(IMGUI)/imgui.cpp
@@ -143,6 +201,7 @@ CXXSRC		+= $(IMGUI)/backends/imgui_impl_opengl3.cpp
 
 SRC_DIR	 = ./src
 CSRC		 = $(wildcard $(SRC_DIR)/*.c)
+CSRC        += $(wildcard ./redis/src/*.c)
 COBJ		 = $(CSRC:.c=.o)
 CDEP	 	 = $(COBJ:.o=.d)
 
@@ -150,15 +209,75 @@ CXXSRC	+= $(wildcard $(SRC_DIR)/*.cpp)
 CXXOBJ		 = $(CXXSRC:.cpp=.o)
 CXXDEP		 = $(CXXOBJ:.o=.d)
 
+ifeq ($(OS), Windows)
+all: libyder libhiredis ./redis/libredis-wrapper.a $(PRGNAME) 
+$(PRGNAME): $(COBJ) $(CXXOBJ) $(LIBYDER_A) $(LIBORCANIA_A) $(LIBHIREDIS_A)
+	@clear
+	@echo "Linking $@"
+	$(CXX) $(CXXFLAGS) $(LDFLAGS) -o $@ /usr/x86_64-w64-mingw32/lib/libglfw3.a $^
+
+else
+
 all: $(PRGNAME)
 
-$(PRGNAME): $(COBJ) $(CXXOBJ)  ./redis/libredis-wrapper.a
-	@echo "Linking $@"
-	@$(CXX) $(CXXFLAGS) $(LDFLAGS) -o $@ $^
+$(PRGNAME): $(COBJ) $(CXXOBJ) ./redis/libredis-wrapper.a
+	-@echo "Linking $@"
+	-@$(CXX) $(CXXFLAGS) $(LDFLAGS) -o $@ $^
 
+endif
+
+ifneq ($(OS), Windows)
 ./redis/libredis-wrapper.a: ./redis
 	@echo "Building redis-wrapper"
-	@make -C ./redis all
+	@make -C ./redis all CC=$(CC) CXX=$(CXX) LD=$(LD) INC="$(INC)"
+endif
+
+# Build Libraries
+
+liborcania: $(LIBORCANIA_A)
+
+$(LIBORCANIA_A): $(LIBORCANIA_DIR)/.git
+	@echo "Building library orcania"
+	@mkdir -p $(LIBORCANIA_DIR)/build
+	@$(CMAKE) -S $(LIBORCANIA_DIR) -B $(LIBORCANIA_DIR)/build -DCMAKE_INSTALL_PREFIX=$(LIB_INSTALL_DIR) -DCMAKE_C_FLAGS=""
+	@make -C $(LIBORCANIA_DIR)/build install
+
+libyder: $(LIBYDER_A)
+
+ifneq ($(OS), Windows)
+# Check if systemd is used if not cross compiling
+ifeq ($(INITSYSTEM), systemd)
+$(LIBYDER_A): $(LIBYDER_DIR)/.git  $(LIBORCANIA_A)
+	@echo "Building library yder"
+	@mkdir -p $(LIBYDER_DIR)/build
+	@$(CMAKE) -S $(LIBYDER_DIR) -B $(LIBYDER_DIR)/build -DCMAKE_INSTALL_PREFIX=$(LIB_INSTALL_DIR) -DCMAKE_C_FLAGS=""
+	@make -C $(LIBYDER_DIR)/build install
+
+else 
+$(LIBYDER_A): $(LIBYDER_DIR)/.git  $(LIBORCANIA_A)
+	@echo "Building library yder"
+	@mkdir -p $(LIBYDER_DIR)/build
+	@$(CMAKE) -S $(LIBYDER_DIR) -B $(LIBYDER_DIR)/build -DCMAKE_INSTALL_PREFIX=$(LIB_INSTALL_DIR) -DWITH_JOURNALD=OFF -DCMAKE_C_FLAGS=""
+	@make -C $(LIBYDER_DIR)/build install
+endif
+
+else
+$(LIBYDER_A): $(LIBYDER_DIR)/.git  $(LIBORCANIA_A)
+	@echo "Building library yder"
+	@mkdir -p $(LIBYDER_DIR)/build
+	@$(CMAKE) -S $(LIBYDER_DIR) -B $(LIBYDER_DIR)/build -DCMAKE_INSTALL_PREFIX=$(LIB_INSTALL_DIR) -DWITH_JOURNALD=OFF -DCMAKE_C_FLAGS=""
+	@make -C $(LIBYDER_DIR)/build install
+endif
+
+
+libhiredis: $(LIBHIREDIS_SO)
+
+$(LIBHIREDIS_SO): $(LIBHIREDIS_DIR)/.git
+	echo "Building library hiredis"
+	mkdir -p $(LIBHIREDIS_DIR)/build
+	$(CMAKE) -S $(LIBHIREDIS_DIR) -B $(LIBHIREDIS_DIR)/build -DENABLE_SSL=ON -DCMAKE_INSTALL_PREFIX=$(LIB_INSTALL_DIR)
+	make -C $(LIBHIREDIS_DIR)/build 
+	make -C $(LIBHIREDIS_DIR)/build install
 
 valgrind: $(PRGNAME)
 	valgrind --leak-check=yes --track-origins=yes --show-reachable=yes --read-inline-info=yes --show-leak-kinds=possible --xtree-leak=yes --xtree-memory=full --gen-suppressions=all --xtree-memory-file="xtree_mem.log" --log-file="valgrind.log" ./$(PRGNAME)
@@ -168,8 +287,9 @@ valgrind: $(PRGNAME)
 %.d: %.cpp
 	@$(CXX) $(CXXFLAGS) $< -MM -MT $(@:.d=.o) >$@
 
-.PHONY: clean
+.PHONY: clean clean-lib
 clean:
+	-@echo "Cleaning project files"
 	-@rm -f $(COBJ)
 	-@rm -f $(CXXOBJ)
 	-@rm -f $(CDEP)
@@ -179,6 +299,13 @@ clean:
 	-@rm -f $(SRC_DIR)/*.gcno
 	-@rm -f *.gcov
 
+clean-lib:
+	-@echo "Cleaning libraries"
+	-@make -C ./redis clean
+	-@rm -rf $(LIBORCANIA_DIR)/build
+	-@rm -rf $(LIBYDER_DIR)/build
+	-@rm -rf $(LIBHIREDIS_DIR)/build
+	-@rm -rf $(LIB_INSTALL_DIR_BASE)
 
 
 -include $(CDEP) $(CXXDEP)
