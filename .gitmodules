@@ -7,3 +7,12 @@
 [submodule "imgui-filedialog"]
 	path = imgui-filedialog
 	url = https://github.com/Limeoats/L2DFileDialog.git
+[submodule "libs/hiredis"]
+	path = libs/hiredis
+	url = https://github.com/redis/hiredis.git
+[submodule "libs/yder"]
+	path = libs/yder
+	url = https://github.com/babelouest/yder.git
+[submodule "libs/orcania"]
+	path = libs/orcania
+	url = https://github.com/babelouest/orcania.git
