@@ -97,6 +97,10 @@ CXXFLAGS.RELEASE= -O2
 #OPTIONS += -fipa-sra -fmerge-all-constants -fthread-jumps -fauto-inc-dec
 #OPTIONS += -fif-conversion -fif-conversion2 -free -fexpensive-optimizations
 #OPTIONS += -fshrink-wrap -fhoist-adjacent-loads
+OPTIONS  += -fstack-protector -D_FORTIFY_SOURCES=2
+
+COPTIONS += $(OPTIONS)
+CXXOPTIONS += $(OPTIONS)
 
 CXXOPTIONS  += -std=c++17
 
@@ -130,10 +134,11 @@ ifneq ($(OS), Windows)
 LIBORCANIA_A = $(LIB_INSTALL_DIR)/lib/liborcania.a
 LIBYDER_A = $(LIB_INSTALL_DIR)/lib/libyder.a
 #LIBJSONC_A= $(LIBJSONC_DIR)/build/libjson-c.a
-LIBHIREDIS_A=$(LIB_INSTALL_DIR)/libhiredis.dll.a
+LIBHIREDIS_A=$(LIB_INSTALL_DIR)/libhiredis.a
 else 
 LIBORCANIA_A = $(LIB_INSTALL_DIR)/lib/liborcania.dll.a
 LIBYDER_A = $(LIB_INSTALL_DIR)/lib/libyder.dll.a
+LIBHIREDIS_A=$(LIB_INSTALL_DIR)/lib/libhiredis.dll.a
 #LIBJSONC_A= $(LIBJSONC_DIR)/build/libjson-c.a
 endif
 
@@ -151,7 +156,12 @@ INC += `pkg-config --cflags glfw3`
 ifeq ($(OS), Windows)
 INC     += -I/usr/x86_64-w64-mingw/include -I$(LIB_INSTALL_DIR)/include
 LDFLAGS += -L/usr/x86_64-w64-mingw/lib -L$(LIB_INSTALL_DIR)/lib 
-LDFLAGS +=  -ljson-c -lglfw3 -lgdi32 -lopengl32 -limm32
+LIBS 	 = /usr/x86_64-w64-mingw32/lib/libglfw3.a 
+LIBS    += /usr/x86_64-w64-mingw32/lib/libgdi32.a 
+LIBS    += /usr/x86_64-w64-mingw32/lib/libopengl32.a 
+LIBS    += /usr/x86_64-w64-mingw32/lib/libimm32.a
+LIBS    += /usr/x86_64-w64-mingw32/lib/libjson-c.a
+#LDFLAGS +=  -ljson-c -lglfw3 -lgdi32 -lopengl32 -limm32
 else
 
 ifeq ($(UNAME_S), Linux)
@@ -201,6 +211,9 @@ CXXSRC		+= $(IMGUI)/backends/imgui_impl_opengl3.cpp
 
 SRC_DIR	 = ./src
 CSRC		 = $(wildcard $(SRC_DIR)/*.c)
+ifeq ($(OS), Windows)
+CSRC        += $(wildcard ./redis/src/*.c)
+endif
 COBJ		 = $(CSRC:.c=.o)
 CDEP	 	 = $(COBJ:.o=.d)
 
@@ -209,11 +222,11 @@ CXXOBJ		 = $(CXXSRC:.cpp=.o)
 CXXDEP		 = $(CXXOBJ:.o=.d)
 
 ifeq ($(OS), Windows)
-all: libyder libhiredis ./redis/libredis-wrapper.a $(PRGNAME) 
-$(PRGNAME): $(COBJ) $(CXXOBJ) $(LIBYDER_A) $(LIBORCANIA_A) $(LIBHIREDIS_A)
+all: libyder libhiredis $(PRGNAME) 
+$(PRGNAME): $(COBJ) $(CXXOBJ) $(LIBYDER_A) $(LIBORCANIA_A) $(LIBHIREDIS_A) $(LIBS)
 	@clear
 	@echo "Linking $@"
-	$(CXX) $(CXXFLAGS) $(LDFLAGS) -o $@ /usr/x86_64-w64-mingw32/lib/libglfw3.a $^
+	$(CXX) -static $(CXXFLAGS) $(LDFLAGS) $^ -o $@
 
 else
 
@@ -271,7 +284,7 @@ endif
 
 libhiredis: $(LIBHIREDIS_SO)
 
-$(LIBHIREDIS_SO): $(LIBHIREDIS_DIR)/.git
+$(LIBHIREDIS_SO) $(LIBHIREDIS_A): $(LIBHIREDIS_DIR)/.git
 	echo "Building library hiredis"
 	mkdir -p $(LIBHIREDIS_DIR)/build
 	$(CMAKE) -S $(LIBHIREDIS_DIR) -B $(LIBHIREDIS_DIR)/build -DENABLE_SSL=ON -DCMAKE_INSTALL_PREFIX=$(LIB_INSTALL_DIR)

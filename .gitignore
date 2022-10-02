@@ -2,6 +2,7 @@
 *.o
 imgui.ini
 pop
+pop.exe
 imgui/**/*.d
 imgui/**/*.o
 *.log
@@ -10,3 +11,7 @@ redis.conf
 .vscode
 valgrind.log.*
 xtleak.kcg.*
+libs/install
+libs/hiredis/build
+libs/yder/build
+libs/orcania/build

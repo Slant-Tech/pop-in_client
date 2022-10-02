@@ -68,7 +68,11 @@ static int db_stat = DB_STAT_DISCONNECTED;
 /* Auto refresh once every 15 seconds. 
  * Issue is longer times leads to longer quit times. 
  * Need to figure out better way to do this*/
+#ifndef _WIN32
 #define DB_REFRESH_SEC	(15) 
+#else
+#define DB_REFRESH_SEC (15 * 1000)
+#endif
 
 bool show_new_part_window = false;
 bool show_import_parts_window = false;
