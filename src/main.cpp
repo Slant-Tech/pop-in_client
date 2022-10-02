@@ -19,6 +19,15 @@
 #include <unistd.h>
 #endif
 
+#define PARTINFO_SPACING	200
+
+struct db_settings_t {
+	char* hostname;
+	int port;
+};
+
+static struct db_settings_t db_set = {NULL, 0};
+
 
 static struct proj_t* selected_prj = 0; /* index that has been selected */
 
@@ -48,6 +57,7 @@ static void show_project_select_window( struct proj_t** projects);
 static void show_new_part_popup( void );
 static void show_root_window( struct proj_t** projects );
 static void import_parts_window( void );
+static void db_settings_window( struct db_settings_t * set );
 void DisplayNode( struct proj_t* node );
 
 #define DB_STAT_DISCONNECTED  0
@@ -62,6 +72,7 @@ static int db_stat = DB_STAT_DISCONNECTED;
 
 bool show_new_part_window = false;
 bool show_import_parts_window = false;
+bool show_db_settings_window = false;
 
 #define DEFAULT_ROOT_W	1280
 #define DEFAULT_ROOT_H	720
@@ -99,7 +110,7 @@ static int thread_db_connection( void ) {
 		
 	}
 
-
+	y_log_message( Y_LOG_LEVEL_INFO, "Exit thread_db_connection" );
 	return 0;
 }
 
@@ -151,7 +162,7 @@ static int thread_ui( void ) {
 	/* Load fonts if possible  */
 	ImFont* font_hack = io.Fonts->AddFontFromFileTTF( "/usr/share/fonts/TTF/Hack-Regular.ttf", 14.0f);
 	IM_ASSERT( nullptr != font_hack );
-	if( nullptr != font_hack ){
+	if( nullptr == font_hack ){
 		y_log_message(Y_LOG_LEVEL_WARNING, "Could not find Hack-Regular.ttf font");
 		io.Fonts->AddFontDefault();
 	}
@@ -218,6 +229,9 @@ static int thread_ui( void ) {
 		if( show_import_parts_window ){
 			import_parts_window();
 		}
+		if( show_db_settings_window ){
+			db_settings_window(&db_set );
+		}
 		show_root_window(projects);
 		ImGui::End();
 
@@ -268,6 +282,15 @@ int main( int, char** ){
 	/* Initialize logging */
 	y_init_logs("Pop:In", Y_LOG_MODE_CONSOLE, Y_LOG_LEVEL_DEBUG, NULL, "Pop:In Inventory Management");
 
+	if( redis_connect( db_set.hostname, db_set.port ) ){ /* Use defaults of localhost and default port */
+		y_log_message( Y_LOG_LEVEL_WARNING, "Could not connect to database on request");
+		/* Failed to init database connection */
+		db_stat = DB_STAT_DISCONNECTED;
+		}
+	else {
+		db_stat = DB_STAT_CONNECTED;
+	}
+
 	/* Start UI thread */
 	std::thread ui( thread_ui );
 
@@ -277,6 +300,10 @@ int main( int, char** ){
 	/* Join threads */
 	ui.join();
 	db.join();
+
+	/* Cleanup */
+	free( db_set.hostname );
+	y_close_logs();
 
 	return 0;
 
@@ -507,6 +534,74 @@ static void import_parts_window( void ){
 
 }
 
+static void db_settings_window( struct db_settings_t * set ){
+	static char hostname[1024] = "localhost";
+	static int port = 6379;
+
+	/* Ensure popup is in the center */
+	ImVec2 center = ImGui::GetMainViewport()->GetCenter();
+	ImGui::SetNextWindowPos(center, ImGuiCond_Appearing, ImVec2( 0.5f, 0.5f));
+
+	ImGuiWindowFlags flags =   ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoCollapse \
+							 | ImGuiWindowFlags_NoSavedSettings;
+	if( ImGui::Begin("Database Settings", &show_db_settings_window, flags) ){
+		
+		ImGui::Text("Hostname ");
+		ImGui::SameLine();
+		ImGui::InputText("##database_hostname", hostname, sizeof( hostname ) );
+
+		ImGui::Text("Port ");
+		ImGui::SameLine();
+		ImGui::InputInt("##database_port", &port);
+
+		/* Button to save settings */
+		if( ImGui::Button("Save") ){
+			/* Start importing */
+			y_log_message(Y_LOG_LEVEL_DEBUG, "New database connection: %s:%d", hostname, port);
+
+			/* Clear out previous setting */
+			if( NULL != set->hostname ){
+				memset( set->hostname, 0, sizeof( set->hostname ) );
+				set->hostname = NULL;
+			}
+
+			/* Copy new setting; make sure to not copy more than the size of
+			 * the input */
+			set->hostname = (char *)calloc( strnlen( hostname ,sizeof(hostname)) + 1, sizeof( char ) );
+			if( nullptr == set->hostname ){
+				y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate memory for database hostname setting");
+			}
+			else{
+				/* No issues, so copy data over */
+				strncpy( set->hostname, hostname, sizeof( set->hostname ) );
+
+				set->port = port;
+
+				/* Reset inputs to defaults */
+				memset( hostname, 0, sizeof( hostname ) );
+				strncpy( hostname, "localhost", sizeof( hostname ) );	
+				port = 6379;
+
+			}
+			/* End of window */
+			show_db_settings_window = false;
+		}
+		ImGui::SameLine();
+
+		/* Button to cancel operation */
+		if( ImGui::Button("Cancel") ){
+			/* Cleanup and exit window */
+			/* End of window */
+			show_db_settings_window = false;
+		}
+
+		ImGui::End();
+
+	}
+
+}
+
+
 /* Menu items */
 static void show_menu_bar( void ){
 
@@ -584,17 +679,18 @@ static void show_menu_bar( void ){
 		if( ImGui::BeginMenu("Network") ){
 			if( ImGui::MenuItem("Connect") ){
 				y_log_message(Y_LOG_LEVEL_DEBUG, "Clicked Network->connect");
-				if( redis_connect( NULL, 0 ) ){ /* Use defaults of localhost and default port */
+				if( redis_connect( db_set.hostname, db_set.port ) ){ /* Use defaults of localhost and default port */
 					y_log_message( Y_LOG_LEVEL_WARNING, "Could not connect to database on request");
 					/* Failed to init database connection, so quit */
 //					run_flag = 0;
+					db_stat = DB_STAT_DISCONNECTED;
 				}
 				else {
 					db_stat = DB_STAT_CONNECTED;
 				}
 			}
 			else if( ImGui::MenuItem("Server Settings")){
-
+				show_db_settings_window = true;
 			}
 			else if( ImGui::MenuItem("Server Status")){
 
@@ -716,11 +812,48 @@ static void show_bom_window( bom_t* bom ){
 					ImGui::Separator();
 					
 					if( NULL != selected_item ){
-						ImGui::Text("Part Number: %s", selected_item->mpn);
-						ImGui::Text("Price Breaks:");
-						for( unsigned int i = 0; i <  selected_item->price_len; i++ ){
-							ImGui::Text("%ld:\t$%0.6lf", selected_item->price[i].quantity, selected_item->price[i].price );	
+						ImGui::Text("Part Number:"); 
+						ImGui::SameLine(PARTINFO_SPACING); 
+						ImGui::Text("%s", selected_item->mpn);
+
+						ImGui::Text("Part Status:");
+						ImGui::SameLine(PARTINFO_SPACING); 
+						switch( selected_item->status ){
+							case pstat_prod:
+								ImGui::Text("In Production");
+								break;
+							case pstat_low_stock:
+								ImGui::Text("Low Stock Available");
+								break;
+							case pstat_unavailable:
+								ImGui::Text("Unavailable");
+								break;
+							case pstat_nrnd:
+								ImGui::Text("Not Recommended for New Designs");
+								break;
+							case pstat_obsolete:
+								ImGui::Text("Obsolete");
+								break;
+							case pstat_unknown:
+							default:
+								/* FALLTHRU */
+								ImGui::Text("Unknown");
+								break;
 						}
+						for( unsigned int i = 0 ; i < selected_item->info_len; i++ ){
+							ImGui::Text("%s", selected_item->info[i].key );
+							ImGui::SameLine(PARTINFO_SPACING); 
+							ImGui::Text("%s", selected_item->info[i].val);
+						}
+						ImGui::Spacing();
+						ImGui::Text("Price Breaks:");
+						ImGui::Indent();
+						for( unsigned int i = 0; i <  selected_item->price_len; i++ ){
+							ImGui::Text("%ld:", selected_item->price[i].quantity);	
+							ImGui::SameLine(PARTINFO_SPACING); 
+							ImGui::Text("$%0.6lf", selected_item->price[i].price  );
+						}
+						ImGui::Unindent();
 					}
 					else{
 						ImGui::Text("Part Number not found");
