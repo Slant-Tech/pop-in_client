@@ -170,13 +170,7 @@ static int thread_ui( void ) {
 	ImGuiWindowFlags root_window_flags = ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize
 									   | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_MenuBar;
 
-	if( redis_connect( NULL, 0 ) ){ /* Use defaults of localhost and default port */
-		/* Failed to init database connection, so quit */
-		run_flag = 0;
-	}
-	else {
-		db_stat = DB_STAT_CONNECTED;
-	}
+
 	
 #if 0
 	/* Get a part to see if it works */
@@ -271,6 +265,8 @@ static int thread_ui( void ) {
 
 int main( int, char** ){
 
+	/* Initialize logging */
+	y_init_logs("Pop:In", Y_LOG_MODE_CONSOLE, Y_LOG_LEVEL_DEBUG, NULL, "Pop:In Inventory Management");
 
 	/* Start UI thread */
 	std::thread ui( thread_ui );
@@ -587,7 +583,15 @@ static void show_menu_bar( void ){
 		/* Network Menu */
 		if( ImGui::BeginMenu("Network") ){
 			if( ImGui::MenuItem("Connect") ){
-				
+				y_log_message(Y_LOG_LEVEL_DEBUG, "Clicked Network->connect");
+				if( redis_connect( NULL, 0 ) ){ /* Use defaults of localhost and default port */
+					y_log_message( Y_LOG_LEVEL_WARNING, "Could not connect to database on request");
+					/* Failed to init database connection, so quit */
+//					run_flag = 0;
+				}
+				else {
+					db_stat = DB_STAT_CONNECTED;
+				}
 			}
 			else if( ImGui::MenuItem("Server Settings")){
 

@@ -1209,8 +1209,6 @@ int redis_connect( const char* hostname, int port ){
 		port = 6379;
 	}
 
-	y_init_logs("Pop:In", Y_LOG_MODE_CONSOLE, Y_LOG_LEVEL_DEBUG, NULL, "Pop:In Inventory Management");
-
 	if( init_redis( &rc, hostname, port ) ){
 		y_log_message(Y_LOG_LEVEL_ERROR, "Could not connect to redis database");
 		return -1;
