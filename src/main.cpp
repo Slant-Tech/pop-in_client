@@ -164,7 +164,11 @@ static int thread_ui( void ) {
 	ImGui_ImplOpenGL3_Init(glsl_version);
 
 	/* Load fonts if possible  */
+#ifndef _WIN32
 	ImFont* font_hack = io.Fonts->AddFontFromFileTTF( "/usr/share/fonts/TTF/Hack-Regular.ttf", 14.0f);
+#else
+	ImFont* font_hack = io.Fonts->AddFontFromFileTTF( "Hack-Regular.ttf", 14.0f);
+#endif
 	IM_ASSERT( nullptr != font_hack );
 	if( nullptr == font_hack ){
 		y_log_message(Y_LOG_LEVEL_WARNING, "Could not find Hack-Regular.ttf font");
@@ -577,8 +581,8 @@ static void db_settings_window( struct db_settings_t * set ){
 			}
 			else{
 				/* No issues, so copy data over */
-				strncpy( set->hostname, hostname, sizeof( set->hostname ) );
-
+				strncpy( set->hostname, hostname, strnlen( hostname ,sizeof(hostname)) );
+				y_log_message(Y_LOG_LEVEL_DEBUG, "Copied hostname: %s", set->hostname);
 				set->port = port;
 
 				/* Reset inputs to defaults */
