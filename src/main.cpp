@@ -460,6 +460,9 @@ static void show_project_select_window( struct proj_t **projects ){
 		if( nullptr != projects ){
 			for( int i = 0; i < ncached_projects; i++ ){
 				if( nullptr != projects[i]){
+					/* If node is stale, wait for it to be fixed first before
+					 * displaying */
+					while( projects[i]->flags & PROJ_FLAG_STALE == PROJ_FLAG_STALE );
 					DisplayNode( projects[i] );
 				}
 			}
@@ -1078,11 +1081,6 @@ void DisplayNode( struct proj_t* node ){
 			y_log_message(Y_LOG_LEVEL_DEBUG, "In display: Node %s clicked", node->name);
 			selected_prj = node;
 			node->selected = true;
-			/* Update selected value if dirty */
-			if( node->flags & PROJ_FLAG_DIRTY == PROJ_FLAG_DIRTY ){
-				/* Refresh */
-				node = get_proj_from_ipn( node->ipn );
-			}
 		}
 
 
@@ -1096,6 +1094,9 @@ void DisplayNode( struct proj_t* node ){
 		/* Display subprojects if node is open */
 		if( open ){
 			for( int i = 0; i < node->nsub; i++ ){
+				/* If node is stale, wait for it to be fixed first before
+				 * displaying */
+				while( node->flags & PROJ_FLAG_STALE == PROJ_FLAG_STALE );
 				DisplayNode( node->sub[i].prj );
 			}
 			ImGui::TreePop();
