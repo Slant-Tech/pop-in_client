@@ -104,8 +104,13 @@ struct proj_subprj_ver_t{
 	struct proj_t* prj;
 };
 
+/* Project flags */
+#define PROJ_FLAG_DIRTY				0x0001 /* Edited locally, should be pushed to database */
+#define PROJ_FLAG_STALE				0x0002 /* Data is old, should be refreshed */
+
 /* Structure for project */
 struct proj_t {
+	int flags;						/* Project handling flags. Not stored in database */
 	int selected;					/* If selected in UI or not. Can't use bool because of c/c++ api differences */	
 	unsigned int ipn;				/* Internal part number */
 	int nsub;						/* Number of subprojects */

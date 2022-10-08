@@ -197,7 +197,7 @@ static int parse_json_bom( struct bom_t * bom, struct json_object* restrict jbom
 	jversion   = json_object_object_get( jbom, "ver" ); 
 	jlines     = json_object_object_get( jbom, "items" );
 
-	y_log_message(Y_LOG_LEVEL_DEBUG, "JSON Object passed for bom:\n%s\n", json_object_to_json_string_ext(jbom, JSON_C_TO_STRING_PRETTY));
+	//y_log_message(Y_LOG_LEVEL_DEBUG, "JSON Object passed for bom:\n%s\n", json_object_to_json_string_ext(jbom, JSON_C_TO_STRING_PRETTY));
 	
 	/* Copy data from json objects */
 
@@ -299,7 +299,7 @@ static int parse_json_proj( struct proj_t * prj, struct json_object* restrict jp
 	jsubprj    = json_object_object_get( jprj, "sub_prj" );
 	jboms      = json_object_object_get( jprj, "boms" );
 
-	y_log_message(Y_LOG_LEVEL_DEBUG, "JSON Object for project passed:\n%s\n", json_object_to_json_string_ext(jprj, JSON_C_TO_STRING_PRETTY));
+	//y_log_message(Y_LOG_LEVEL_DEBUG, "JSON Object for project passed:\n%s\n", json_object_to_json_string_ext(jprj, JSON_C_TO_STRING_PRETTY));
 	
 	/* Copy data from json objects */
 
@@ -498,7 +498,7 @@ static int parse_json_dbinfo( struct dbinfo_t * db, struct json_object* restrict
 	jlock     = json_object_object_get( jdb, "lock" );
 	jinit     = json_object_object_get( jdb, "init" );
 
-	y_log_message(Y_LOG_LEVEL_DEBUG, "JSON Object passed for dbinfo:\n%s\n", json_object_to_json_string_ext(jdb, JSON_C_TO_STRING_PRETTY));
+	//y_log_message(Y_LOG_LEVEL_DEBUG, "JSON Object passed for dbinfo:\n%s\n", json_object_to_json_string_ext(jdb, JSON_C_TO_STRING_PRETTY));
 	
 	/* Copy data from json objects */
 
@@ -812,7 +812,7 @@ int redis_write_part( struct part_t* part ){
 
 		/* Write object to database */
 		retval = redis_json_set( rc, dbpart_name, "$", json_object_to_json_string(part_root) );
-		y_log_message(Y_LOG_LEVEL_DEBUG, "JSON Object to send:\n%s\n", json_object_to_json_string_ext(part_root, JSON_C_TO_STRING_PRETTY));
+		//y_log_message(Y_LOG_LEVEL_DEBUG, "JSON Object to send:\n%s\n", json_object_to_json_string_ext(part_root, JSON_C_TO_STRING_PRETTY));
 	}
 
 
@@ -914,7 +914,7 @@ int redis_write_bom( struct bom_t* bom ){
 
 		/* Write object to database */
 		retval = redis_json_set( rc, dbbom_name, "$", json_object_to_json_string(bom_root) );
-		y_log_message(Y_LOG_LEVEL_DEBUG, "JSON Object to send:\n%s\n", json_object_to_json_string_ext(bom_root, JSON_C_TO_STRING_PRETTY));
+		//y_log_message(Y_LOG_LEVEL_DEBUG, "JSON Object to send:\n%s\n", json_object_to_json_string_ext(bom_root, JSON_C_TO_STRING_PRETTY));
 	}
 
 	/* Cleanup json object */
@@ -1108,7 +1108,7 @@ int redis_write_proj( struct proj_t* prj ){
 
 		/* Write object to database */
 		retval = redis_json_set( rc, dbprj_name, "$", json_object_to_json_string(prj_root) );
-		y_log_message(Y_LOG_LEVEL_DEBUG, "JSON Object to send:\n%s\n", json_object_to_json_string_ext(prj_root, JSON_C_TO_STRING_PRETTY));
+		//y_log_message(Y_LOG_LEVEL_DEBUG, "JSON Object to send:\n%s\n", json_object_to_json_string_ext(prj_root, JSON_C_TO_STRING_PRETTY));
 	}
 
 	/* Cleanup json object */
@@ -1169,7 +1169,7 @@ int redis_import_part_file( char* filepath ){
 				y_log_message( Y_LOG_LEVEL_ERROR, "Error parsing file %s at array index %d", filepath, i );
 			}
 			else {
-				y_log_message(Y_LOG_LEVEL_DEBUG, "JSON Object at index[%d]:\n%s\n", i, json_object_to_json_string_ext(jo_idx, JSON_C_TO_STRING_PRETTY));
+				//y_log_message(Y_LOG_LEVEL_DEBUG, "JSON Object at index[%d]:\n%s\n", i, json_object_to_json_string_ext(jo_idx, JSON_C_TO_STRING_PRETTY));
 
 				/* Convert json object to part_t */
 				parse_part_retval = parse_json_part( part, jo_idx );
@@ -1457,7 +1457,7 @@ struct proj_t* get_proj_from_ipn( unsigned int ipn ){
 /* Read database information */
 int redis_read_dbinfo( struct dbinfo_t* db ){
 	json_object* jdb;
-	if(  !redis_json_get( rc, "popdb", "$", &jdb ) ){
+	if( redis_json_get( rc, "popdb", "$", &jdb ) ){
 		y_log_message(Y_LOG_LEVEL_ERROR, "Could not get database information");
 		return -1;
 	}
@@ -1515,7 +1515,7 @@ static int write_dbinfo( struct dbinfo_t* db ){
 
 	/* Write object to database */
 	int retval = redis_json_set( rc, dbinfo_name, "$", json_object_to_json_string(dbinfo_root) );
-	y_log_message(Y_LOG_LEVEL_DEBUG, "JSON Object to send:\n%s\n", json_object_to_json_string_ext(dbinfo_root, JSON_C_TO_STRING_PRETTY));
+	//y_log_message(Y_LOG_LEVEL_DEBUG, "JSON Object to send:\n%s\n", json_object_to_json_string_ext(dbinfo_root, JSON_C_TO_STRING_PRETTY));
 
 	/* Cleanup json object */
 	json_object_put( dbinfo_root );

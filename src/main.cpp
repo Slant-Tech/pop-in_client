@@ -27,7 +27,7 @@ struct db_settings_t {
 };
 
 static struct db_settings_t db_set = {NULL, 0};
-
+static struct dbinfo_t dbinfo = {0,0,0,{0}};
 
 static struct proj_t* selected_prj = 0; /* index that has been selected */
 
@@ -69,9 +69,9 @@ static int db_stat = DB_STAT_DISCONNECTED;
  * Issue is longer times leads to longer quit times. 
  * Need to figure out better way to do this*/
 #ifndef _WIN32
-#define DB_REFRESH_SEC	(15) 
+#define DB_REFRESH_SEC	(5) 
 #else
-#define DB_REFRESH_SEC (15 * 1000)
+#define DB_REFRESH_SEC (5 * 1000)
 #endif
 
 bool show_new_part_window = false;
@@ -85,7 +85,9 @@ bool show_db_settings_window = false;
 static bool run_flag = true;
 
 /* Projects */
-static proj_t* projects[4] = {};
+static struct proj_t** projects = NULL;
+static unsigned int ncached_projects = 0;
+int read_db_projects( struct db_settings_t* set, struct dbinfo_t* info, struct proj_t*** prjs );
 
 static int thread_db_connection( void ) {
 	
@@ -93,25 +95,36 @@ static int thread_db_connection( void ) {
 	
 	/* Constantly run, until told to stop */
 	while( run_flag ){
-		/* Get projects from database; has to start from 1 */
-		for( int i = 1; i <= 4; i++ ){
-		/* Check if database connection has been opened */
+
+		/* Check flags for projects and handle them */
+		for( unsigned int i = 0; i < ncached_projects; i++ ){
 			if( db_stat == DB_STAT_CONNECTED ){
-				projects[i-1] = get_proj_from_ipn(i);
-				if( NULL == projects[i-1] ){
-					y_log_message( Y_LOG_LEVEL_ERROR, "Could not get index project" );
+
+				/* Check if projects are flagged as dirty and save them to database */
+				if( projects[i]->flags & PROJ_FLAG_DIRTY == PROJ_FLAG_DIRTY ){
+					redis_write_proj( projects[i] );
+					projects[i]->flags &= ~(PROJ_FLAG_DIRTY);
+					y_log_message(Y_LOG_LEVEL_DEBUG, "Updated project ipn %d from local copy to database", i);
 				}
-				else{
-					y_log_message( Y_LOG_LEVEL_DEBUG, "Read project %d from database", i);
+
+				/* Check if project is flagged as stale; update from database */
+				if( projects[i]->flags & PROJ_FLAG_STALE == PROJ_FLAG_STALE ){
+					projects[i] = get_proj_from_ipn(i);
+					projects[i]->flags &= ~(PROJ_FLAG_STALE);
+					y_log_message(Y_LOG_LEVEL_DEBUG, "Updated project ipn %d from database to local copy", i);
+
 				}
 			}
 			else {
-				y_log_message( Y_LOG_LEVEL_WARNING, "No database connection to get project ipn %d", i );
+				y_log_message( Y_LOG_LEVEL_WARNING, "Could not handle project %d flags due to no database connection", i);
 			}
+
 		}
+
 		/* sleep for some period of time until refresh */
 		sleep( DB_REFRESH_SEC );
-		
+		y_log_message( Y_LOG_LEVEL_DEBUG, "Finished sleeping for %d seconds in thread_db", DB_REFRESH_SEC );
+	
 	}
 
 	y_log_message( Y_LOG_LEVEL_INFO, "Exit thread_db_connection" );
@@ -210,7 +223,9 @@ static int thread_ui( void ) {
 
 
 	/* Use first project as first selected node */
-	selected_prj = projects[0];
+	if( nullptr != projects ){
+		selected_prj = projects[0];
+	}
 
 	/* Main application loop */
 	while( !glfwWindowShouldClose(window) ) {
@@ -284,19 +299,99 @@ static int thread_ui( void ) {
 	return 0;
 }
 
+int read_db_projects( struct db_settings_t* set, struct dbinfo_t* info, struct proj_t*** prjs ){
+	/* Now get database information */
+	if( !redis_read_dbinfo( &dbinfo ) ){
+		/* Get number of projects, and allocate memory for them */
+		if( nullptr != prjs && nullptr != *prjs ){
+			/* Free up memory for the projects, since no longer needed */
+			for( unsigned int i = 0; i < ncached_projects; i++ ){
+				if( nullptr != (*prjs)[i] ){
+					free_proj_t( (*prjs)[i] );
+					(*prjs)[i] = NULL;
+				}
+			}
+			free( *prjs );
+			*prjs = NULL;
+		}
+		y_log_message( Y_LOG_LEVEL_DEBUG, "Freed all cached data" );
+
+
+		/* Can now allocate memory for the new cached projects */
+		ncached_projects = 0;
+		*prjs = (struct proj_t**)calloc( dbinfo.nprj, sizeof( struct proj_t * ) );
+		if( nullptr == *prjs ){
+			db_stat = DB_STAT_DISCONNECTED;
+			y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate projects array" );
+		}
+		/* Get projects from database; has to start from 1 */
+		for( unsigned int i = 1; i <= dbinfo.nprj; i++ ){
+			/* Double check if databse connection is still valid */
+			if( db_stat == DB_STAT_CONNECTED ){
+				(*prjs)[i-1] = get_proj_from_ipn(i);
+				y_log_message( Y_LOG_LEVEL_DEBUG, "Saved project ipn %d", i );
+				/* Make fail safe so that whatever projects have been
+				 * acquired would not be lost. Not great as some will be
+				 * missing, but better than nothing */
+				ncached_projects++;
+			}
+		}
+		return 0;
+
+	}
+	else {
+		y_log_message( Y_LOG_LEVEL_ERROR, "Could not read database info" );
+		return 1;
+	}
+}
+
+int open_db( struct db_settings_t* set, struct dbinfo_t * info, struct proj_t *** projects ){
+	/* Check if database connection was already made; may be switching
+	 * databases */
+	if( DB_STAT_DISCONNECTED != db_stat ){
+		y_log_message( Y_LOG_LEVEL_INFO, "Already connected to database; closing connection before switching");
+		/* Close connection first */
+		redis_disconnect();
+		db_stat = DB_STAT_DISCONNECTED;
+		if( nullptr != projects ){
+			/* Free up memory for the projects, since no longer needed */
+			for( unsigned int i = 0; i < ncached_projects; i++ ){
+				if( nullptr != (*projects)[i] ){
+					free_proj_t((*projects)[i]);
+					(*projects)[i] = NULL;
+				}
+			}
+			free( *projects );
+			*projects = NULL;
+		}
+
+	}
+	y_log_message( Y_LOG_LEVEL_INFO, "Ready to connect to databse");
+	if( redis_connect( db_set.hostname, db_set.port ) ){ /* Use defaults of localhost and default port */
+		y_log_message( Y_LOG_LEVEL_WARNING, "Could not connect to database on request");
+		/* Failed to init database connection, so quit */
+//		run_flag = 0;
+		db_stat = DB_STAT_DISCONNECTED;
+		return -1;
+	}
+	else {
+		y_log_message( Y_LOG_LEVEL_INFO, "Successfully connected to database");
+		db_stat = DB_STAT_CONNECTED;
+		return read_db_projects( &db_set, &dbinfo, projects );	
+	}
+}
 
 int main( int, char** ){
 
 	/* Initialize logging */
 	y_init_logs("Pop:In", Y_LOG_MODE_CONSOLE, Y_LOG_LEVEL_DEBUG, NULL, "Pop:In Inventory Management");
 
-	if( redis_connect( db_set.hostname, db_set.port ) ){ /* Use defaults of localhost and default port */
-		y_log_message( Y_LOG_LEVEL_WARNING, "Could not connect to database on request");
+	if( open_db( &db_set, &dbinfo, &projects ) ){ /* Use defaults of localhost and default port */
 		/* Failed to init database connection */
-		db_stat = DB_STAT_DISCONNECTED;
-		}
-	else {
-		db_stat = DB_STAT_CONNECTED;
+		y_log_message( Y_LOG_LEVEL_WARNING, "Database connection failed on startup");
+	}
+	else{
+		selected_prj = projects[0];
 	}
 
 	/* Start UI thread */
@@ -311,6 +406,16 @@ int main( int, char** ){
 
 	/* Cleanup */
 	free( db_set.hostname );
+	if( nullptr != projects ){
+		/* Free up memory for the projects, since no longer needed */
+		for( unsigned int i = 0; i < ncached_projects; i++ ){
+			if( nullptr != projects[i] ){
+				free_proj_t(projects[i]);
+			}
+		}
+		free( projects );
+		projects = NULL;
+	}
 	y_close_logs();
 
 	return 0;
@@ -352,9 +457,11 @@ static void show_project_select_window( struct proj_t **projects ){
 
 
 //		projects[0].ProjectNode::DisplayNode( &projects[0], projects );
-		for( int i = 0; i < 4; i++ ){
-			if( nullptr != projects[i]){
-				DisplayNode( projects[i] );
+		if( nullptr != projects ){
+			for( int i = 0; i < ncached_projects; i++ ){
+				if( nullptr != projects[i]){
+					DisplayNode( projects[i] );
+				}
 			}
 		}
 		ImGui::EndTable();
@@ -687,14 +794,12 @@ static void show_menu_bar( void ){
 		if( ImGui::BeginMenu("Network") ){
 			if( ImGui::MenuItem("Connect") ){
 				y_log_message(Y_LOG_LEVEL_DEBUG, "Clicked Network->connect");
-				if( redis_connect( db_set.hostname, db_set.port ) ){ /* Use defaults of localhost and default port */
-					y_log_message( Y_LOG_LEVEL_WARNING, "Could not connect to database on request");
-					/* Failed to init database connection, so quit */
-//					run_flag = 0;
-					db_stat = DB_STAT_DISCONNECTED;
+				if( open_db( &db_set, &dbinfo, &projects ) ){ /* Use defaults of localhost and default port */
+					/* Failed to init database connection */
+					y_log_message( Y_LOG_LEVEL_WARNING, "Database connection failed on startup");
 				}
-				else {
-					db_stat = DB_STAT_CONNECTED;
+				else{
+					selected_prj = projects[0];
 				}
 			}
 			else if( ImGui::MenuItem("Server Settings")){
@@ -929,6 +1034,21 @@ static void show_root_window( struct proj_t** projects ){
 		ImGui::EndTable();	
 	}
 
+	/* Show status of database connection*/
+	switch(db_stat){
+		case DB_STAT_DISCONNECTED:
+			ImGui::Text("Database Disconnected");
+			break;
+		case DB_STAT_CONNECTED:
+			ImGui::Text("Database Connected");
+			break;
+		default:
+			ImGui::Text("Unknown Database Error");
+			break;
+	}
+
+	ImGui::Spacing();
+
 }
 
 void DisplayNode( struct proj_t* node ){
@@ -958,6 +1078,11 @@ void DisplayNode( struct proj_t* node ){
 			y_log_message(Y_LOG_LEVEL_DEBUG, "In display: Node %s clicked", node->name);
 			selected_prj = node;
 			node->selected = true;
+			/* Update selected value if dirty */
+			if( node->flags & PROJ_FLAG_DIRTY == PROJ_FLAG_DIRTY ){
+				/* Refresh */
+				node = get_proj_from_ipn( node->ipn );
+			}
 		}
 
 

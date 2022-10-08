@@ -241,7 +241,7 @@ endif
 ifneq ($(OS), Windows)
 ./redis/libredis-wrapper.a: ./redis
 	@echo "Building redis-wrapper"
-	@make -C ./redis all CC=$(CC) CXX=$(CXX) LD=$(LD) INC="$(INC)"
+	@make -C ./redis all CC=$(CC) CXX=$(CXX) LD=$(LD)
 endif
 
 # Build Libraries
