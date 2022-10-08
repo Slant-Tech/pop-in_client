@@ -9,16 +9,28 @@ extern "C" {
 #include <stdint.h>
 #include <time.h>
 
+struct dbver_t {
+	unsigned int major;
+	unsigned int minor;
+	unsigned int patch;
+};
+
 /* Struct for overall database information */
 struct dbinfo_t {
-	unsigned int version;	/* Database version for keeping everything in sync */
 	uint32_t flags;			/* Option flags */
+	unsigned int nprj;		/* Number of projects in database */
+	unsigned int nbom;		/* Number of boms in database */
+	unsigned int npart;		/* Number of parts in database */
+	struct dbver_t version;	/* Database version for keeping everything in sync */
 };
 
 /* dbinfo_t flags */
-#define DBINFO_FLAG_INITIALIZED	0x0001 	/* Database has been initialized */
-#define DBINFO_FLAG_LOCK		0x0002	/* Lock on database; should not edit when locked */
+#define DBINFO_FLAG_INIT	0x0001 	/* Database has been initialized */
+#define DBINFO_FLAG_LOCK	0x0002	/* Lock on database; should not edit when locked */
 
+/* dbinfo_t flag shift */
+#define DBINFO_FLAG_INIT_SHFT	0
+#define DBINFO_FLAG_LOCK_SHFT			1
 
 /* Key Value pair for part info*/
 struct part_info_t {
@@ -92,8 +104,13 @@ struct proj_subprj_ver_t{
 	struct proj_t* prj;
 };
 
+/* Project flags */
+#define PROJ_FLAG_DIRTY				0x0001 /* Edited locally, should be pushed to database */
+#define PROJ_FLAG_STALE				0x0002 /* Data is old, should be refreshed */
+
 /* Structure for project */
 struct proj_t {
+	int flags;						/* Project handling flags. Not stored in database */
 	int selected;					/* If selected in UI or not. Can't use bool because of c/c++ api differences */	
 	unsigned int ipn;				/* Internal part number */
 	int nsub;						/* Number of subprojects */
@@ -145,6 +162,12 @@ int redis_write_bom( struct bom_t* bom );
 
 /* Write project to database */
 int redis_write_proj( struct proj_t* prj );
+
+/* Read database information */
+int redis_read_dbinfo( struct dbinfo_t* db );
+
+/* Write database information */
+int redis_write_dbinfo( struct dbinfo_t* db );
 
 /* Import file to database */
 int redis_import_part_file( char* filepath );

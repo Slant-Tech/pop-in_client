@@ -6,10 +6,28 @@
 #include <vector>
 #include <iterator>
 #include <GLFW/glfw3.h>
+#include <thread>
 //#include <projectview.h>
 #include <yder.h>
 #include <db_handle.h>
 #include <L2DFileDialog.h>
+
+#ifdef _WIN32
+#include <windows.h>
+#define sleep(x) Sleep(x)
+#else
+#include <unistd.h>
+#endif
+
+#define PARTINFO_SPACING	200
+
+struct db_settings_t {
+	char* hostname;
+	int port;
+};
+
+static struct db_settings_t db_set = {NULL, 0};
+static struct dbinfo_t dbinfo = {0,0,0,{0}};
 
 static struct proj_t* selected_prj = 0; /* index that has been selected */
 
@@ -37,12 +55,28 @@ static void glfw_error_callback(int error, const char* description){
 /* Pass structure of projects and number of projects inside of struct */
 static void show_project_select_window( struct proj_t** projects);
 static void show_new_part_popup( void );
-static void show_root_window( struct proj_t** projects, struct bom_t** boms );
+static void show_root_window( struct proj_t** projects );
 static void import_parts_window( void );
+static void db_settings_window( struct db_settings_t * set );
 void DisplayNode( struct proj_t* node );
+
+#define DB_STAT_DISCONNECTED  0
+#define DB_STAT_CONNECTED  1
+
+static int db_stat = DB_STAT_DISCONNECTED;
+
+/* Auto refresh once every 15 seconds. 
+ * Issue is longer times leads to longer quit times. 
+ * Need to figure out better way to do this*/
+#ifndef _WIN32
+#define DB_REFRESH_SEC	(5) 
+#else
+#define DB_REFRESH_SEC (5 * 1000)
+#endif
 
 bool show_new_part_window = false;
 bool show_import_parts_window = false;
+bool show_db_settings_window = false;
 
 #define DEFAULT_ROOT_W	1280
 #define DEFAULT_ROOT_H	720
@@ -50,55 +84,56 @@ bool show_import_parts_window = false;
 /* Variable to continue running */
 static bool run_flag = true;
 
-int main( int, char** ){
+/* Projects */
+static struct proj_t** projects = NULL;
+static unsigned int ncached_projects = 0;
+int read_db_projects( struct db_settings_t* set, struct dbinfo_t* info, struct proj_t*** prjs );
 
-	/* Projects */
-	static proj_t* projects[4] = {};
-#if 0
-	static ProjectNode projects[] = {
-		/* Name						Date			Version	 Author		BOM ID	Child Index		Child Count  	Selected */
-		{ "Project Top\0", 			"2022-05-01\0", 	"1.2.3\0", "Dylan\0",	0,		1,				2,				true},
-		{ "Subproject 1\0", 		"2022-05-02\0", 	"2.3.4\0", "Dylan\0",	1,		3,				1,				false},
-		{ "Subproject 2\0", 		"2022-05-03\0", 	"3.4.5\0", "Dylan\0",	2,		1,				-1,				false},
-		{ "subsubproject 1\0",		"2022-05-04\0", 	"4.5.6\0", "Dylan\0",	3,		-1,				-1,				false}
-	};
-#endif
-	/* BOMs */	
-	static bom_t* boms[4] = {};
-#if 0
-	static ProjectBom boms[] = {
-		/* BOM ID	BOM Line Items	*/
-		{ 0, 			{	
-								/* Internal Part Number		BOM Index	MPN						MFG								Quantity	Type */
-								{	1000,					0,			"CL10B104KB8NNNC\0",	"Samsung Electro-Mechanics\0",	5000,		1},
-								{	2001,					1,			"RC0603FR-071KL\0",		"Yageo\0",						1000,		2},
-								{	2002,					2,			"RC0603FR-0710K\0",		"Yageo\0",						250,		2},
-								{	2006,					3,			"RC0603FR-0720K\0",		"Yageo\0",						250,		2},
-						}		                                                       
-		},
-		{ 1, 			{	
-								/* Internal Part Number		BOM Index	MPN						MFG								Quantity	Type */
-								{	1000,					0,			"CL10B104KB8NNNC\0",	"Samsung Electro-Mechanics\0",	5000,		1},
-								{	2002,					1,			"RC0603FR-0710KL\0",	"Yageo\0",						250,		2},
-								{	2001,					2,			"RC0603FR-071KL\0",		"Yageo\0",						1000,		2},
-						}		
-		},
-		{ 2, 			{	
-								/* Internal Part Number		BOM Index	MPN						MFG								Quantity	Type */
-								{	2001,					0,			"RC0603FR-071KL\0",		"Yageo\0",						1000,		2},
-								{	2002,					1,			"RC0603FR-0710KL\0",	"Yageo\0",						250,		2},
-								{	2003,					2,			"RC0603FR-074K7L\0",	"Yageo\0",						500,		2},
-						}		
-		},
-		{ 3, 			{	
-								/* Internal Part Number		BOM Index	MPN						MFG								Quantity	Type */
-								{	1000,					0,			"CL10B104KB8NNNC\0",	"Samsung Electro-Mechanics\0",	5000,		1},
-								{	2002,					1,			"RC0603FR-0710KL\0",	"Yageo\0",						250,		2},
-						}		
+static int thread_db_connection( void ) {
+	
+	y_log_message( Y_LOG_LEVEL_INFO, "Started thread_db_connection" );
+	
+	/* Constantly run, until told to stop */
+	while( run_flag ){
+
+		/* Check flags for projects and handle them */
+		for( unsigned int i = 0; i < ncached_projects; i++ ){
+			if( db_stat == DB_STAT_CONNECTED ){
+
+				/* Check if projects are flagged as dirty and save them to database */
+				if( projects[i]->flags & PROJ_FLAG_DIRTY == PROJ_FLAG_DIRTY ){
+					redis_write_proj( projects[i] );
+					projects[i]->flags &= ~(PROJ_FLAG_DIRTY);
+					y_log_message(Y_LOG_LEVEL_DEBUG, "Updated project ipn %d from local copy to database", i);
+				}
+
+				/* Check if project is flagged as stale; update from database */
+				if( projects[i]->flags & PROJ_FLAG_STALE == PROJ_FLAG_STALE ){
+					projects[i] = get_proj_from_ipn(i);
+					projects[i]->flags &= ~(PROJ_FLAG_STALE);
+					y_log_message(Y_LOG_LEVEL_DEBUG, "Updated project ipn %d from database to local copy", i);
+
+				}
+			}
+			else {
+				y_log_message( Y_LOG_LEVEL_WARNING, "Could not handle project %d flags due to no database connection", i);
+			}
+
 		}
 
-	};
-#endif
+		/* sleep for some period of time until refresh */
+		sleep( DB_REFRESH_SEC );
+		y_log_message( Y_LOG_LEVEL_DEBUG, "Finished sleeping for %d seconds in thread_db", DB_REFRESH_SEC );
+	
+	}
+
+	y_log_message( Y_LOG_LEVEL_INFO, "Exit thread_db_connection" );
+	return 0;
+}
+
+static int thread_ui( void ) {
+
+	y_log_message( Y_LOG_LEVEL_INFO, "Start thread_ui" );
 
 	/* Setup window */
 	glfwSetErrorCallback(glfw_error_callback);
@@ -142,9 +177,14 @@ int main( int, char** ){
 	ImGui_ImplOpenGL3_Init(glsl_version);
 
 	/* Load fonts if possible  */
+#ifndef _WIN32
 	ImFont* font_hack = io.Fonts->AddFontFromFileTTF( "/usr/share/fonts/TTF/Hack-Regular.ttf", 14.0f);
-	IM_ASSERT( font_hack != NULL );
-	if( font_hack == NULL ){
+#else
+	ImFont* font_hack = io.Fonts->AddFontFromFileTTF( "Hack-Regular.ttf", 14.0f);
+#endif
+	IM_ASSERT( nullptr != font_hack );
+	if( nullptr == font_hack ){
+		y_log_message(Y_LOG_LEVEL_WARNING, "Could not find Hack-Regular.ttf font");
 		io.Fonts->AddFontDefault();
 	}
 
@@ -162,10 +202,7 @@ int main( int, char** ){
 	ImGuiWindowFlags root_window_flags = ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize
 									   | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_MenuBar;
 
-	if( redis_connect( NULL, 0 ) ){ /* Use defaults of localhost and default port */
-		/* Failed to init database connection, so quit */
-		run_flag = 0;
-	}
+
 	
 #if 0
 	/* Get a part to see if it works */
@@ -183,19 +220,12 @@ int main( int, char** ){
 	free_part_t( test_part );
 #endif
 
-	/* Get projects from database; has to start from 1 */
-	for( int i = 1; i <= 4; i++ ){
-		projects[i-1] = get_proj_from_ipn(i);
-		if( NULL == projects[i-1] ){
-			y_log_message( Y_LOG_LEVEL_ERROR, "Could not get index project" );
-		}
-		else{
-			y_log_message( Y_LOG_LEVEL_DEBUG, "Read project %d from database", i);
-		}
-	}
+
 
 	/* Use first project as first selected node */
-	selected_prj = projects[0];
+	if( nullptr != projects ){
+		selected_prj = projects[0];
+	}
 
 	/* Main application loop */
 	while( !glfwWindowShouldClose(window) ) {
@@ -222,7 +252,10 @@ int main( int, char** ){
 		if( show_import_parts_window ){
 			import_parts_window();
 		}
-		show_root_window(projects, boms);
+		if( show_db_settings_window ){
+			db_settings_window(&db_set );
+		}
+		show_root_window(projects);
 		ImGui::End();
 
 		/* End Projects view creation */
@@ -240,12 +273,17 @@ int main( int, char** ){
 
 	}
 
+	/* Tell other threads to stop */
+	db_stat = DB_STAT_DISCONNECTED;
+
 	/* Disconnect from database */
 	redis_disconnect();
 
 	/* Cleanup projects */
 	for( int i = 0; i < 4; i++ ){
-		free_proj_t(projects[i]);
+		if( nullptr != projects[i] ){
+			free_proj_t(projects[i]);
+		}
 	}
 
 	/* Application cleanup */
@@ -256,6 +294,131 @@ int main( int, char** ){
 	glfwDestroyWindow(window);
 	glfwTerminate();
 
+	y_log_message( Y_LOG_LEVEL_INFO, "Exit thread_ui" );
+
+	return 0;
+}
+
+int read_db_projects( struct db_settings_t* set, struct dbinfo_t* info, struct proj_t*** prjs ){
+	/* Now get database information */
+	if( !redis_read_dbinfo( &dbinfo ) ){
+		/* Get number of projects, and allocate memory for them */
+		if( nullptr != prjs && nullptr != *prjs ){
+			/* Free up memory for the projects, since no longer needed */
+			for( unsigned int i = 0; i < ncached_projects; i++ ){
+				if( nullptr != (*prjs)[i] ){
+					free_proj_t( (*prjs)[i] );
+					(*prjs)[i] = NULL;
+				}
+			}
+			free( *prjs );
+			*prjs = NULL;
+		}
+		y_log_message( Y_LOG_LEVEL_DEBUG, "Freed all cached data" );
+
+
+		/* Can now allocate memory for the new cached projects */
+		ncached_projects = 0;
+		*prjs = (struct proj_t**)calloc( dbinfo.nprj, sizeof( struct proj_t * ) );
+		if( nullptr == *prjs ){
+			db_stat = DB_STAT_DISCONNECTED;
+			y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate projects array" );
+		}
+		/* Get projects from database; has to start from 1 */
+		for( unsigned int i = 1; i <= dbinfo.nprj; i++ ){
+			/* Double check if databse connection is still valid */
+			if( db_stat == DB_STAT_CONNECTED ){
+				(*prjs)[i-1] = get_proj_from_ipn(i);
+				y_log_message( Y_LOG_LEVEL_DEBUG, "Saved project ipn %d", i );
+				/* Make fail safe so that whatever projects have been
+				 * acquired would not be lost. Not great as some will be
+				 * missing, but better than nothing */
+				ncached_projects++;
+			}
+		}
+		return 0;
+
+	}
+	else {
+		y_log_message( Y_LOG_LEVEL_ERROR, "Could not read database info" );
+		return 1;
+	}
+}
+
+int open_db( struct db_settings_t* set, struct dbinfo_t * info, struct proj_t *** projects ){
+	/* Check if database connection was already made; may be switching
+	 * databases */
+	if( DB_STAT_DISCONNECTED != db_stat ){
+		y_log_message( Y_LOG_LEVEL_INFO, "Already connected to database; closing connection before switching");
+		/* Close connection first */
+		redis_disconnect();
+		db_stat = DB_STAT_DISCONNECTED;
+		if( nullptr != projects ){
+			/* Free up memory for the projects, since no longer needed */
+			for( unsigned int i = 0; i < ncached_projects; i++ ){
+				if( nullptr != (*projects)[i] ){
+					free_proj_t((*projects)[i]);
+					(*projects)[i] = NULL;
+				}
+			}
+			free( *projects );
+			*projects = NULL;
+		}
+
+	}
+	y_log_message( Y_LOG_LEVEL_INFO, "Ready to connect to databse");
+	if( redis_connect( db_set.hostname, db_set.port ) ){ /* Use defaults of localhost and default port */
+		y_log_message( Y_LOG_LEVEL_WARNING, "Could not connect to database on request");
+		/* Failed to init database connection, so quit */
+//		run_flag = 0;
+		db_stat = DB_STAT_DISCONNECTED;
+		return -1;
+	}
+	else {
+		y_log_message( Y_LOG_LEVEL_INFO, "Successfully connected to database");
+		db_stat = DB_STAT_CONNECTED;
+		return read_db_projects( &db_set, &dbinfo, projects );	
+	}
+}
+
+int main( int, char** ){
+
+	/* Initialize logging */
+	y_init_logs("Pop:In", Y_LOG_MODE_CONSOLE, Y_LOG_LEVEL_DEBUG, NULL, "Pop:In Inventory Management");
+
+	if( open_db( &db_set, &dbinfo, &projects ) ){ /* Use defaults of localhost and default port */
+		/* Failed to init database connection */
+		y_log_message( Y_LOG_LEVEL_WARNING, "Database connection failed on startup");
+	}
+	else{
+		selected_prj = projects[0];
+	}
+
+	/* Start UI thread */
+	std::thread ui( thread_ui );
+
+	/* Start database connection thread */
+	std::thread db( thread_db_connection );
+
+	/* Join threads */
+	ui.join();
+	db.join();
+
+	/* Cleanup */
+	free( db_set.hostname );
+	if( nullptr != projects ){
+		/* Free up memory for the projects, since no longer needed */
+		for( unsigned int i = 0; i < ncached_projects; i++ ){
+			if( nullptr != projects[i] ){
+				free_proj_t(projects[i]);
+			}
+		}
+		free( projects );
+		projects = NULL;
+	}
+	y_close_logs();
+
+	return 0;
 
 }
 
@@ -294,8 +457,15 @@ static void show_project_select_window( struct proj_t **projects ){
 
 
 //		projects[0].ProjectNode::DisplayNode( &projects[0], projects );
-		for( int i = 0; i < 4; i++ ){
-			DisplayNode( projects[i] );
+		if( nullptr != projects ){
+			for( int i = 0; i < ncached_projects; i++ ){
+				if( nullptr != projects[i]){
+					/* If node is stale, wait for it to be fixed first before
+					 * displaying */
+					while( projects[i]->flags & PROJ_FLAG_STALE == PROJ_FLAG_STALE );
+					DisplayNode( projects[i] );
+				}
+			}
 		}
 		ImGui::EndTable();
 	}
@@ -482,6 +652,74 @@ static void import_parts_window( void ){
 
 }
 
+static void db_settings_window( struct db_settings_t * set ){
+	static char hostname[1024] = "localhost";
+	static int port = 6379;
+
+	/* Ensure popup is in the center */
+	ImVec2 center = ImGui::GetMainViewport()->GetCenter();
+	ImGui::SetNextWindowPos(center, ImGuiCond_Appearing, ImVec2( 0.5f, 0.5f));
+
+	ImGuiWindowFlags flags =   ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoCollapse \
+							 | ImGuiWindowFlags_NoSavedSettings;
+	if( ImGui::Begin("Database Settings", &show_db_settings_window, flags) ){
+		
+		ImGui::Text("Hostname ");
+		ImGui::SameLine();
+		ImGui::InputText("##database_hostname", hostname, sizeof( hostname ) );
+
+		ImGui::Text("Port ");
+		ImGui::SameLine();
+		ImGui::InputInt("##database_port", &port);
+
+		/* Button to save settings */
+		if( ImGui::Button("Save") ){
+			/* Start importing */
+			y_log_message(Y_LOG_LEVEL_DEBUG, "New database connection: %s:%d", hostname, port);
+
+			/* Clear out previous setting */
+			if( NULL != set->hostname ){
+				memset( set->hostname, 0, sizeof( set->hostname ) );
+				set->hostname = NULL;
+			}
+
+			/* Copy new setting; make sure to not copy more than the size of
+			 * the input */
+			set->hostname = (char *)calloc( strnlen( hostname ,sizeof(hostname)) + 1, sizeof( char ) );
+			if( nullptr == set->hostname ){
+				y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate memory for database hostname setting");
+			}
+			else{
+				/* No issues, so copy data over */
+				strncpy( set->hostname, hostname, strnlen( hostname ,sizeof(hostname)) );
+				y_log_message(Y_LOG_LEVEL_DEBUG, "Copied hostname: %s", set->hostname);
+				set->port = port;
+
+				/* Reset inputs to defaults */
+				memset( hostname, 0, sizeof( hostname ) );
+				strncpy( hostname, "localhost", sizeof( hostname ) );	
+				port = 6379;
+
+			}
+			/* End of window */
+			show_db_settings_window = false;
+		}
+		ImGui::SameLine();
+
+		/* Button to cancel operation */
+		if( ImGui::Button("Cancel") ){
+			/* Cleanup and exit window */
+			/* End of window */
+			show_db_settings_window = false;
+		}
+
+		ImGui::End();
+
+	}
+
+}
+
+
 /* Menu items */
 static void show_menu_bar( void ){
 
@@ -558,10 +796,17 @@ static void show_menu_bar( void ){
 		/* Network Menu */
 		if( ImGui::BeginMenu("Network") ){
 			if( ImGui::MenuItem("Connect") ){
-				
+				y_log_message(Y_LOG_LEVEL_DEBUG, "Clicked Network->connect");
+				if( open_db( &db_set, &dbinfo, &projects ) ){ /* Use defaults of localhost and default port */
+					/* Failed to init database connection */
+					y_log_message( Y_LOG_LEVEL_WARNING, "Database connection failed on startup");
+				}
+				else{
+					selected_prj = projects[0];
+				}
 			}
 			else if( ImGui::MenuItem("Server Settings")){
-
+				show_db_settings_window = true;
 			}
 			else if( ImGui::MenuItem("Server Status")){
 
@@ -683,11 +928,48 @@ static void show_bom_window( bom_t* bom ){
 					ImGui::Separator();
 					
 					if( NULL != selected_item ){
-						ImGui::Text("Part Number: %s", selected_item->mpn);
-						ImGui::Text("Price Breaks:");
-						for( unsigned int i = 0; i <  selected_item->price_len; i++ ){
-							ImGui::Text("%ld:\t$%0.6lf", selected_item->price[i].quantity, selected_item->price[i].price );	
+						ImGui::Text("Part Number:"); 
+						ImGui::SameLine(PARTINFO_SPACING); 
+						ImGui::Text("%s", selected_item->mpn);
+
+						ImGui::Text("Part Status:");
+						ImGui::SameLine(PARTINFO_SPACING); 
+						switch( selected_item->status ){
+							case pstat_prod:
+								ImGui::Text("In Production");
+								break;
+							case pstat_low_stock:
+								ImGui::Text("Low Stock Available");
+								break;
+							case pstat_unavailable:
+								ImGui::Text("Unavailable");
+								break;
+							case pstat_nrnd:
+								ImGui::Text("Not Recommended for New Designs");
+								break;
+							case pstat_obsolete:
+								ImGui::Text("Obsolete");
+								break;
+							case pstat_unknown:
+							default:
+								/* FALLTHRU */
+								ImGui::Text("Unknown");
+								break;
 						}
+						for( unsigned int i = 0 ; i < selected_item->info_len; i++ ){
+							ImGui::Text("%s", selected_item->info[i].key );
+							ImGui::SameLine(PARTINFO_SPACING); 
+							ImGui::Text("%s", selected_item->info[i].val);
+						}
+						ImGui::Spacing();
+						ImGui::Text("Price Breaks:");
+						ImGui::Indent();
+						for( unsigned int i = 0; i <  selected_item->price_len; i++ ){
+							ImGui::Text("%ld:", selected_item->price[i].quantity);	
+							ImGui::SameLine(PARTINFO_SPACING); 
+							ImGui::Text("$%0.6lf", selected_item->price[i].price  );
+						}
+						ImGui::Unindent();
 					}
 					else{
 						ImGui::Text("Part Number not found");
@@ -716,7 +998,7 @@ static void show_bom_window( bom_t* bom ){
 }
 
 /* Setup root window, child windows */
-static void show_root_window( struct proj_t** projects, struct bom_t** boms ){
+static void show_root_window( struct proj_t** projects ){
 
 	/* Create menu items */
 	show_menu_bar();
@@ -754,6 +1036,21 @@ static void show_root_window( struct proj_t** projects, struct bom_t** boms ){
 		
 		ImGui::EndTable();	
 	}
+
+	/* Show status of database connection*/
+	switch(db_stat){
+		case DB_STAT_DISCONNECTED:
+			ImGui::Text("Database Disconnected");
+			break;
+		case DB_STAT_CONNECTED:
+			ImGui::Text("Database Connected");
+			break;
+		default:
+			ImGui::Text("Unknown Database Error");
+			break;
+	}
+
+	ImGui::Spacing();
 
 }
 
@@ -797,6 +1094,9 @@ void DisplayNode( struct proj_t* node ){
 		/* Display subprojects if node is open */
 		if( open ){
 			for( int i = 0; i < node->nsub; i++ ){
+				/* If node is stale, wait for it to be fixed first before
+				 * displaying */
+				while( node->flags & PROJ_FLAG_STALE == PROJ_FLAG_STALE );
 				DisplayNode( node->sub[i].prj );
 			}
 			ImGui::TreePop();
