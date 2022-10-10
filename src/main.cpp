@@ -243,30 +243,10 @@ int open_db( struct db_settings_t* set, struct dbinfo_t * info, class Prjcache* 
 	if( DB_STAT_DISCONNECTED != db_stat ){
 		y_log_message( Y_LOG_LEVEL_ERROR, "Database connection is already open");
 		return -1;
-#if 0
-		db_stat = DB_STAT_DISCONNECTED;
-		y_log_message( Y_LOG_LEVEL_INFO, "Already connected to database; closing connection before switching");
-		/* Close connection first */
-		redis_disconnect();
-		y_log_message(Y_LOG_LEVEL_INFO, "Disconnected from database");
-		if( nullptr != projects ){
-			/* Free up memory for the projects, since no longer needed */
-			for( unsigned int i = 0; i < ncached_projects; i++ ){
-				if( nullptr != (*projects)[i] ){
-					free_proj_t((*projects)[i]);
-					(*projects)[i] = NULL;
-				}
-			}
-			free( *projects );
-			*projects = NULL;
-		}
-#endif
 	}
 	y_log_message( Y_LOG_LEVEL_INFO, "Ready to connect to databse");
 	if( redis_connect( db_set.hostname, db_set.port ) ){ /* Use defaults of localhost and default port */
 		y_log_message( Y_LOG_LEVEL_WARNING, "Could not connect to database on request");
-		/* Failed to init database connection, so quit */
-//		run_flag = 0;
 		db_stat = DB_STAT_DISCONNECTED;
 		return -1;
 	}
@@ -289,17 +269,11 @@ int main( int, char** ){
 		y_log_message( Y_LOG_LEVEL_WARNING, "Database connection failed on startup");
 	}
 
-//	prjcache->select(0);
-
 	/* Start UI thread */
 	std::thread ui( thread_ui, prjcache );
 
 	/* Start database connection thread */
 	std::thread db( thread_db_connection, prjcache );
-
-//	while( run_flag );
-
-
 
 	/* Join threads */
 	ui.join();
@@ -353,21 +327,8 @@ static void show_project_select_window( class Prjcache* cache ){
 		ImGui::TableHeadersRow();
 
 
-//		projects[0].ProjectNode::DisplayNode( &projects[0], projects );
 		if( DB_STAT_DISCONNECTED != db_stat ){
 			cache->display_projects();
-#if 0
-			prj_disp_stat = PRJDISP_DISPLAYING;
-			for( int i = 0; i < cache->items(); i++ ){
-				if( nullptr != cache->read(i)){
-					/* If node is stale, wait for it to be fixed first before
-					 * displaying */
-//					while( DB_STAT_CONNECTED != db_stat );
-//					while( (cache.read(i)->flags & PROJ_FLAG_STALE) == PROJ_FLAG_STALE );
-					DisplayNode( cache->read(i), cache );
-				}
-			}
-#endif
 		}
 		prj_disp_stat = PRJDISP_IDLE;
 		ImGui::EndTable();
@@ -381,7 +342,6 @@ static void show_new_part_popup( struct dbinfo_t* info ){
 
 	/* Buffers for text input. Can also be used for santizing inputs */
 	static char quantity[128] = {};
-//	static char internal_pn[256] = {};
 	static char type[256] = {};
 	static char mfg[512] = {};
 	static char mpn[512] = {};
@@ -408,7 +368,6 @@ static void show_new_part_popup( struct dbinfo_t* info ){
 		ImGui::Separator();
 
 		/* Text entry fields */
-//		ImGui::InputText("Internal Part Number", internal_pn, 255, ImGuiInputTextFlags_CharsNoBlank | ImGuiInputTextFlags_CharsDecimal );
 		ImGui::InputText("Part Type", type, 255, ImGuiInputTextFlags_CharsNoBlank);
 		ImGui::InputText("Part Number", mpn, 511, ImGuiInputTextFlags_CharsNoBlank);	
 		ImGui::InputText("Manufacturer", mfg, 511);
@@ -431,7 +390,6 @@ static void show_new_part_popup( struct dbinfo_t* info ){
 
 		/* No checks because I'll totally do it later (hopefully) */
 		part.q = atoi( quantity );
-//		part.ipn = ;//atoi( internal_pn ); 
 		part.mpn = mpn;
 		part.mfg = mfg;
 		part.type = type;
@@ -479,12 +437,10 @@ static void show_new_part_popup( struct dbinfo_t* info ){
 			part.mfg = NULL;
 	
 			memset( quantity, 0, 127);
-//			memset( internal_pn, 0, 255);
 			memset( type, 0, 255 );
 			memset( mfg, 0, 511 );
 			memset( mpn, 0, 511 );
 			y_log_message(Y_LOG_LEVEL_DEBUG, "Cleared out part, finished writing");
-//			show_new_part_window = false;
 
 		}
 		ImGui::SetItemDefaultFocus();
@@ -498,7 +454,6 @@ static void show_new_part_popup( struct dbinfo_t* info ){
 			part.mpn = NULL;
 			part.mfg = NULL;
 			memset( quantity, 0, 127);
-//			memset( internal_pn, 0, 255);
 			memset( type, 0, 255 );
 			memset( mfg, 0, 511 );
 			memset( mpn, 0, 511 );
@@ -514,7 +469,6 @@ static void new_proj_window( struct dbinfo_t* info ){
 	static struct proj_t * prj = NULL;
 
 	/* Buffers for text input. Can also be used for santizing inputs */
-//	static char internal_pn[256] = {};
 	static char version[256] = {};
 	static char author[512] = {};
 	static char pn[512] = {};
@@ -541,10 +495,6 @@ static void new_proj_window( struct dbinfo_t* info ){
 		ImGui::Text("Project Name");
 		ImGui::SameLine();
 		ImGui::InputText("##newprj_name", name, (sizeof(name) - 1));
-
-		ImGui::Text("Internal Part Number");
-		ImGui::SameLine();
-		//ImGui::InputText("##newprj_ipn", internal_pn, sizeof( internal_pn) - 1);
 
 		ImGui::Text("Part Number");
 		ImGui::SameLine();
@@ -646,7 +596,6 @@ static void new_proj_window( struct dbinfo_t* info ){
 			/* No checks because I'll totally do it later (hopefully) */
 			prj->flags = 0;
 			prj->selected = 0;
-			//prj->ipn = atoi( internal_pn );
 
 			prj->nboms = nboms;
 			prj->nsub = nsubprj;
@@ -1176,12 +1125,9 @@ static void show_root_window( class Prjcache* cache ){
 		/* Get selected project */
 		if( nullptr != cache->get_selected() &&  nullptr != cache->get_selected()->boms[0].bom ){
 			show_bom_window( cache->get_selected()->boms[0].bom );
-		} else {
-			/* No projects selected, use empty bom */
-//			show_bom_window(empty_default_bom);
-		}
+		} 
+
 		ImGui::EndChild();
-		
 		ImGui::EndTable();	
 	}
 
@@ -1201,102 +1147,4 @@ static void show_root_window( class Prjcache* cache ){
 	ImGui::Spacing();
 
 }
-#if 0
-void DisplayNode( struct proj_t* node, class Prjcache* cache ){
 
-	ImGuiTreeNodeFlags node_flags = ImGuiTreeNodeFlags_OpenOnArrow | \
-									ImGuiTreeNodeFlags_OpenOnDoubleClick | \
-									ImGuiTreeNodeFlags_SpanFullWidth; 
-
-	ImGui::TableNextRow();
-	ImGui::TableNextColumn();
-	
-	/* Check if project contains subprojects */
-	if( node->nsub > 0 ){
-
-		/* Check if selected, display if selected */
-		if( node->selected && (node == cache->get_selected() ) ){
-			node_flags |= ImGuiTreeNodeFlags_Selected;
-		}
-		else {
-			node_flags &= ~ImGuiTreeNodeFlags_Selected;		
-		}
-
-		bool open = ImGui::TreeNodeEx(node->name, node_flags);
-		
-		/* Check if item has been clicked */
-		if( ImGui::IsItemClicked() && !ImGui::IsItemToggledOpen() ){
-			y_log_message(Y_LOG_LEVEL_DEBUG, "In display: Node %s clicked", node->name);
-			cache->select_ptr( node );
-			node->selected = true;
-		}
-
-
-		ImGui::TableNextColumn();
-		ImGui::Text( asctime( localtime(&node->time_created)) );
-		ImGui::TableNextColumn();
-		ImGui::Text(node->ver);
-		ImGui::TableNextColumn();
-		ImGui::TextUnformatted(node->author);
-		
-		/* Display subprojects if node is open */
-		if( open ){
-			for( int i = 0; i < node->nsub; i++ ){
-				/* If node is stale, wait for it to be fixed first before
-				 * displaying */
-				//while( node->flags & PROJ_FLAG_STALE == PROJ_FLAG_STALE );
-				DisplayNode( node->sub[i].prj, cache );
-			}
-			ImGui::TreePop();
-		}
-	}
-	else {
-
-		node_flags = ImGuiTreeNodeFlags_Leaf | \
-					 ImGuiTreeNodeFlags_NoTreePushOnOpen | \
-					 ImGuiTreeNodeFlags_SpanFullWidth;
-
-		if( node->selected && (node == cache->get_selected()) ){
-			node_flags |= ImGuiTreeNodeFlags_Selected;
-		}
-
-		ImGui::TreeNodeEx(node->name, node_flags );
-
-		/* Check if item has been clicked */
-		if( ImGui::IsItemClicked() && !ImGui::IsItemToggledOpen() ){
-			y_log_message(Y_LOG_LEVEL_DEBUG, "In display: Node %s clicked", node->name);
-			cache->select_ptr( node );
-			node->selected = true;
-		}
-
-		ImGui::TableNextColumn();
-		ImGui::Text( asctime( localtime(&node->time_created)) ); /* Convert time_t to localtime */
-		ImGui::TableNextColumn();
-		ImGui::Text(node->ver);
-		ImGui::TableNextColumn();
-		ImGui::TextUnformatted(node->author);
-
-	}
-
-#if 0
-	/* Check if something was clicked */
-	if( selected_prj != NULL && node == selected_prj ){
-		y_log_message(Y_LOG_LEVEL_DEBUG, "Project %s has been clicked", selected_prj->name);
-		/* toggle state */
-		node->selected = !(node->selected);
-		y_log_message(Y_LOG_LEVEL_DEBUG, "Selection state: %d", selected_prj->selected);
-
-		if( selected_prj->selected ){
-			y_log_message(Y_LOG_LEVEL_DEBUG, "Node %s is highlighted", node->name);
-		}
-		else {
-			/* Don't show anything if there is no highlight; second
-			 * thought, maybe not a good idea?  */
-			//selected_prj = -1;	
-		}
-	}
-#endif
-
-}
-
-#endif
