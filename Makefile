@@ -98,7 +98,7 @@ CXXFLAGS.RELEASE= -O2
 #OPTIONS += -fif-conversion -fif-conversion2 -free -fexpensive-optimizations
 #OPTIONS += -fshrink-wrap -fhoist-adjacent-loads
 OPTIONS  += -fstack-protector -D_FORTIFY_SOURCES=2
-#OPTIONS  += -fsanitize=address 
+OPTIONS  += -fsanitize=address 
 
 COPTIONS += $(OPTIONS)
 CXXOPTIONS += $(OPTIONS)

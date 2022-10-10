@@ -23,7 +23,7 @@
 #endif
 
 #define PARTINFO_SPACING	200
-
+#define NEWPART_SPACING		250
 /* Project display state machine */
 #define PRJDISP_IDLE  		0
 #define PRJDISP_DISPLAYING  1
@@ -337,8 +337,24 @@ static void show_project_select_window( class Prjcache* cache ){
 }
 
 static void show_new_part_popup( struct dbinfo_t* info ){
-	unsigned int npart = 0;
 	static struct part_t part;
+
+	/* For entering in dynamic fields */
+	static unsigned int ninfo = 0;
+	static unsigned int nprice = 0;
+	static unsigned int ndist = 0;
+
+	/* Info fields */
+	static std::vector<std::string> info_key;
+	static std::vector<std::string> info_val;
+
+	/* Distributor info */
+	static std::vector<std::string> dist_name;
+	static std::vector<std::string> dist_pn;
+
+	/* Pricing info */
+	static std::vector<int> price_q;
+	static std::vector<double> price_cost;
 
 	/* Buffers for text input. Can also be used for santizing inputs */
 	static char quantity[128] = {};
@@ -368,10 +384,21 @@ static void show_new_part_popup( struct dbinfo_t* info ){
 		ImGui::Separator();
 
 		/* Text entry fields */
-		ImGui::InputText("Part Type", type, 255, ImGuiInputTextFlags_CharsNoBlank);
-		ImGui::InputText("Part Number", mpn, 511, ImGuiInputTextFlags_CharsNoBlank);	
-		ImGui::InputText("Manufacturer", mfg, 511);
-		if( ImGui::BeginCombo("new-part-status", selection_str, 0 ) ){
+		ImGui::Text("Part Type");
+		ImGui::SameLine(NEWPART_SPACING);
+		ImGui::InputText("##new_part_type", type, 255, ImGuiInputTextFlags_CharsNoBlank);
+
+		ImGui::Text("Part Number");
+		ImGui::SameLine(NEWPART_SPACING);
+		ImGui::InputText("##new_part_pn", mpn, 511, ImGuiInputTextFlags_CharsNoBlank);	
+
+		ImGui::Text("Manufacturer");
+		ImGui::SameLine(NEWPART_SPACING);
+		ImGui::InputText("##new_part_mfg", mfg, 511);
+
+		ImGui::Text("Part Status");
+		ImGui::SameLine(NEWPART_SPACING);
+		if( ImGui::BeginCombo("##new-part-status", selection_str, 0 ) ){
 			for( int i = 0; i < IM_ARRAYSIZE( status_options ); i++){
 				const bool is_selected = ( selection_idx == i );
 				if( ImGui::Selectable(status_options[i], is_selected ) ){
@@ -384,35 +411,156 @@ static void show_new_part_popup( struct dbinfo_t* info ){
 			}
 			ImGui::EndCombo();
 		}
-		ImGui::InputText("Local Stock", quantity, 127, ImGuiInputTextFlags_CharsNoBlank | ImGuiInputTextFlags_CharsDecimal );
 
-		/* Check if valid to copy */
+		ImGui::Text("Local Stock");
+		ImGui::SameLine(NEWPART_SPACING);
+		ImGui::InputText("##newpart_stock", quantity, 127, ImGuiInputTextFlags_CharsNoBlank | ImGuiInputTextFlags_CharsDecimal );
 
-		/* No checks because I'll totally do it later (hopefully) */
-		part.q = atoi( quantity );
-		part.mpn = mpn;
-		part.mfg = mfg;
-		part.type = type;
-		if( 0 == selection_idx ){
-			part.status = pstat_prod;
-		}
-		else if( 1 == selection_idx ){
-			part.status = pstat_nrnd;
-		}
-		else if( 2 == selection_idx ){
-			part.status = pstat_obsolete;
-		}
-		else {
-			part.status = pstat_unknown;
+		ImGui::Spacing();
+
+		/* Inputs for fields */
+		ImGui::Text("Number of custom part fields");
+		ImGui::SameLine(NEWPART_SPACING);
+		ImGui::InputInt("##newpart_ninfo", (int*)&ninfo);
+
+		ImGui::Text("Number of Distributors");
+		ImGui::SameLine(NEWPART_SPACING);
+		ImGui::InputInt("##newpart_ndist", (int*)&ndist);
+
+		ImGui::Text("Number of price breaks");
+		ImGui::SameLine(NEWPART_SPACING);
+		ImGui::InputInt("##newpart_nprice", (int*)&nprice);
+
+		/* Resize vectors as needed */
+
+		/* Info field entries */
+
+
+		ImGui::Spacing();
+
+		if( ninfo > 0 ){
+			if( info_key.size() != ninfo ){
+				info_key.resize( ninfo );
+			}
+			if( info_val.size() != ninfo ){
+				info_val.resize( ninfo );
+			}
+			ImGui::Text("Info Fields");
+			ImGui::Text("Field Name"); ImGui::SameLine(NEWPART_SPACING); ImGui::Text("Value");
 		}
 
-		/* Figure out what the hell to do with the info section */
+		std::vector<std::string>::iterator info_key_itr;
+		info_key_itr = info_key.begin();
+		std::vector<std::string>::iterator info_val_itr;
+		info_val_itr = info_val.begin();
+
+		std::string info_key_ident;
+		std::string info_val_ident;
+
+		for( unsigned int i = 0; i < ninfo; i++ ){
+			info_key_ident = "##info_key" + std::to_string(i);
+			info_val_ident = "##info_val" + std::to_string(i);
+
+			ImGui::InputText(info_key_ident.c_str(), (char *)(*info_key_itr).c_str(), 512 );
+			ImGui::SameLine(NEWPART_SPACING);
+			ImGui::InputText(info_val_ident.c_str(), (char *)(*info_val_itr).c_str(), 512 );
+
+			info_key_itr++;
+			info_val_itr++;
+		}
+
+		ImGui::Spacing();
+
+		/* Distributor entries */
+		if( ndist > 0 ){
+			if( dist_name.size() != ndist ){
+				dist_name.resize( ndist );
+			}
+			if( dist_pn.size() != ndist ){
+				dist_pn.resize( ndist );
+			}
+			ImGui::Text("Distributor Information");
+			ImGui::Text("Name"); ImGui::SameLine(NEWPART_SPACING); ImGui::Text("Part Number");
+		}
+		std::vector<std::string>::iterator dist_name_itr;
+		dist_name_itr = dist_name.begin();
+		std::vector<std::string>::iterator dist_pn_itr;
+		dist_pn_itr = dist_pn.begin();
+
+		std::string dist_name_ident;
+		std::string dist_pn_ident;
+
+		for( unsigned int i = 0; i < ndist; i++ ){
+			dist_name_ident = "##dist_name" + std::to_string(i);
+			dist_pn_ident = "##dist_pn" + std::to_string(i);
+
+			ImGui::InputText(dist_name_ident.c_str(), (char *)(*dist_name_itr).c_str(), 512 );
+			ImGui::SameLine(NEWPART_SPACING);
+			ImGui::InputText(dist_pn_ident.c_str(), (char *)(*dist_pn_itr).c_str(), 512 );
+
+			dist_name_itr++;
+			dist_pn_itr++;
+		}
+
+		ImGui::Spacing();
+
+		if( nprice > 0 ){
+			if( price_q.size() != nprice ){
+				price_q.resize( nprice );
+			}
+			if( price_cost.size() != nprice ){
+				price_cost.resize( nprice );
+			}
+			ImGui::Text("Price Break Information");
+			ImGui::Text("Quantity"); ImGui::SameLine(NEWPART_SPACING); ImGui::Text("Price");
+		}
+
+		/* Price break entries */
+		std::vector<int>::iterator price_q_itr;
+		price_q_itr = price_q.begin();
+		std::vector<double>::iterator price_cost_itr;
+		price_cost_itr = price_cost.begin();
+
+		std::string price_q_ident;
+		std::string price_cost_ident;
+
+
+		for( unsigned int i = 0; i < nprice; i++ ){
+			price_q_ident = "##price_q" + std::to_string(i);
+			price_cost_ident = "##price_cost" + std::to_string(i);
+
+			ImGui::InputInt(price_q_ident.c_str(), &(*price_q_itr) );
+			ImGui::SameLine(NEWPART_SPACING);
+			ImGui::InputDouble(price_cost_ident.c_str(), &(*price_cost_itr) );
+
+			price_q_itr++;
+			price_cost_itr++;
+		}
 
 		/* Save and cancel buttons */
 		if( ImGui::Button("Save", ImVec2(0,0)) ){
 
 			/* Check if can save first */
 			if( !redis_read_dbinfo( info ) ){
+                                                                         
+            	/* Need to do simple checks here at some point */
+            	part.q = atoi( quantity );
+            	part.mpn = mpn;
+            	part.mfg = mfg;
+            	part.type = type;
+            	if( 0 == selection_idx ){
+            		part.status = pstat_prod;
+            	}
+            	else if( 1 == selection_idx ){
+            		part.status = pstat_nrnd;
+            	}
+            	else if( 2 == selection_idx ){
+            		part.status = pstat_obsolete;
+            	}
+            	else {
+            		part.status = pstat_unknown;
+            	}
+
 				/* Increment part in dbinfo */
 				info->npart++;
 				part.ipn = info->npart;
