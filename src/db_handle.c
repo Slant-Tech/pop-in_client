@@ -346,7 +346,7 @@ static int parse_json_proj( struct proj_t * prj, struct json_object* restrict jp
 	strncpy( prj->author, json_object_get_string( jauthor ), jstrlen );
 
 	/* Project Part Number */
-	jstrlen = strlen( json_object_get_string( jpn ) );
+	jstrlen = json_object_get_string_len( jpn );
 	prj->pn = calloc( jstrlen + 1, sizeof( char ) );
 	if( NULL == prj->pn ){
 		y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate memory for project part number");
@@ -938,12 +938,6 @@ int redis_write_proj( struct proj_t* prj ){
 
 	/* Create json object to write */
 	json_object *prj_root = json_object_new_object();
-	json_object *ipn = json_object_new_object();
-	json_object *version = json_object_new_object();
-	json_object *name = json_object_new_object();
-	json_object *author = json_object_new_object();
-	json_object *tcreate = json_object_new_object();
-	json_object *tmod = json_object_new_object();
 	json_object *sub = json_object_new_array_ext(prj->nsub);
 	json_object *boms = json_object_new_array_ext(prj->nboms);
 	json_object *sub_itr = NULL;
@@ -954,77 +948,14 @@ int redis_write_proj( struct proj_t* prj ){
 		return -1;
 	}
 
-	if( NULL == ipn ){
-		y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate new project ipn json object" );
-		json_object_put(prj_root);
-		return -1;	
-	}
-
-	if( NULL == version ){
-		y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate project version json object" );
-		json_object_put( ipn );
-		json_object_put(prj_root);
-		return -1;	
-	}
-
-	if( NULL == name ){
-		y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate project name json object" );
-		json_object_put( ipn );
-		json_object_put( version );
-		json_object_put(prj_root);
-		return -1;	
-	}
-
-	if( NULL == author ){
-		y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate project author json object" );
-		json_object_put(ipn);
-		json_object_put(version);
-		json_object_put(name);
-		json_object_put(prj_root);
-		return -1;	
-	}
-
-	if( NULL == tcreate ){
-		y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate project created time json object" );
-		json_object_put(ipn);
-		json_object_put(version);
-		json_object_put(name);
-		json_object_put(author);
-		json_object_put(prj_root);
-		return -1;	
-	}
-
-	if( NULL == tmod ){
-		y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate project modified time json object" );
-		json_object_put(ipn);
-		json_object_put(version);
-		json_object_put(name);
-		json_object_put(author);
-		json_object_put(tcreate);
-		json_object_put(prj_root);
-		return -1;	
-	}
-
 	if( NULL == sub ){
 		y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate project subproject json object" );
-		json_object_put(ipn);
-		json_object_put(version);
-		json_object_put(name);
-		json_object_put(author);
-		json_object_put(tcreate);
-		json_object_put(tmod);
 		json_object_put(prj_root);
 		return -1;	
 	}
 
 	if( NULL == boms ){
 		y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate project boms json object" );
-		json_object_put(ipn);
-		json_object_put(version);
-		json_object_put(name);
-		json_object_put(author);
-		json_object_put(tcreate);
-		json_object_put(tmod);
 		json_object_put(sub);
 		json_object_put(prj_root);
 		return -1;	
@@ -1039,18 +970,12 @@ int redis_write_proj( struct proj_t* prj ){
 			bom_itr = json_object_new_object();
 			if( NULL == bom_itr ){
 				y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate new project bom iterator json object" );	
-				json_object_put(ipn);
-				json_object_put(version);
-				json_object_put(name);
-				json_object_put(author);
-				json_object_put(tcreate);
-				json_object_put(tmod);
 				json_object_put(sub);
 				json_object_put(prj_root);
 				return -1;
 			}			
 			json_object_object_add( bom_itr, "ipn", json_object_new_int64(prj->boms[i].bom->ipn) );
-			json_object_object_add( bom_itr, "ver", json_object_new_string(prj->boms[i].bom->ver) );
+			json_object_object_add( bom_itr, "ver", json_object_new_string(prj->boms[i].ver) );
 			json_object_array_put_idx( boms, i, json_object_get( bom_itr ) );
 		}
 
@@ -1062,19 +987,13 @@ int redis_write_proj( struct proj_t* prj ){
 			sub_itr = json_object_new_object();
 			if( NULL == sub_itr ){
 				y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate new project bom iterator json object" );	
-				json_object_put(ipn);
-				json_object_put(version);
-				json_object_put(name);
-				json_object_put(author);
-				json_object_put(tcreate);
-				json_object_put(tmod);
 				json_object_put(sub);
 				json_object_put(prj_root);
 				return -1;
 			}			
-			json_object_object_add( bom_itr, "ipn", json_object_new_int64(prj->sub[i].prj->ipn) );
-			json_object_object_add( bom_itr, "ver", json_object_new_string(prj->boms[i].bom->ver) );
-			json_object_array_put_idx( boms, i, json_object_get( bom_itr ) );
+			json_object_object_add( sub_itr, "ipn", json_object_new_int64(prj->sub[i].prj->ipn) );
+			json_object_object_add( sub_itr, "ver", json_object_new_string(prj->sub[i].ver) );
+			json_object_array_put_idx( sub, i, json_object_get( sub_itr ) );
 		}
 
 	}
@@ -1083,11 +1002,11 @@ int redis_write_proj( struct proj_t* prj ){
 
 	/* Add all parts of the part struct to the json object */
 	json_object_object_add( prj_root, "ipn", json_object_new_int64(prj->ipn) ); /* This should be generated somehow */
-	json_object_object_add( prj_root, "ver", version );
-	json_object_object_add( prj_root, "name", name );
-	json_object_object_add( prj_root, "author", author );
-	json_object_object_add( prj_root, "time_created", tcreate );
-	json_object_object_add( prj_root, "time_mod", tmod );
+	json_object_object_add( prj_root, "ver", json_object_new_string( prj->ver ) );
+	json_object_object_add( prj_root, "name", json_object_new_string( prj->name ) );
+	json_object_object_add( prj_root, "author", json_object_new_string( prj->author) );
+	json_object_object_add( prj_root, "time_created", json_object_new_int64( prj->time_created ) );
+	json_object_object_add( prj_root, "time_mod", json_object_new_int64( prj->time_mod ) );
 	json_object_object_add( prj_root, "sub_prj", sub );
 	json_object_object_add( prj_root, "boms", boms );
 
@@ -1108,7 +1027,7 @@ int redis_write_proj( struct proj_t* prj ){
 
 		/* Write object to database */
 		retval = redis_json_set( rc, dbprj_name, "$", json_object_to_json_string(prj_root) );
-		//y_log_message(Y_LOG_LEVEL_DEBUG, "JSON Object to send:\n%s\n", json_object_to_json_string_ext(prj_root, JSON_C_TO_STRING_PRETTY));
+		y_log_message(Y_LOG_LEVEL_DEBUG, "JSON Object to send:\n%s\n", json_object_to_json_string_ext(prj_root, JSON_C_TO_STRING_PRETTY));
 	}
 
 	/* Cleanup json object */
@@ -1431,8 +1350,15 @@ struct proj_t* get_proj_from_ipn( unsigned int ipn ){
 		freeReplyObject(reply);
 		return NULL;
 	}
+	else if( NULL == reply->element[2] || NULL == reply->element[2]->element[1] || NULL == reply->element[2]->element[1]->str){
+		y_log_message(Y_LOG_LEVEL_WARNING, "Database did not return data for project ipn %d. Does it exist, or was there an issue with the database?", ipn);
+		free( prj );
+		freeReplyObject(reply);
+		return NULL;
+	}
 
 	enum json_tokener_error parse_err;
+	
 	/* Should be correct response, get second element parsed into jbom */
 	y_log_message( Y_LOG_LEVEL_DEBUG, "Database response: \n%s", reply->element[2]->element[1]->str );
 	jprj = json_tokener_parse_verbose( reply->element[2]->element[1]->str, &parse_err );	
