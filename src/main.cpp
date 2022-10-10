@@ -6,12 +6,14 @@
 #include <vector>
 #include <iterator>
 #include <GLFW/glfw3.h>
+#include <mutex>
 #include <thread>
 #include <string>
 //#include <projectview.h>
 #include <yder.h>
 #include <db_handle.h>
 #include <L2DFileDialog.h>
+#include <prjcache.h>
 
 #ifdef _WIN32
 #include <windows.h>
@@ -35,7 +37,7 @@ struct db_settings_t {
 static struct db_settings_t db_set = {NULL, 0};
 static struct dbinfo_t dbinfo = {0,0,0,{0}};
 
-static struct proj_t* selected_prj = 0; /* index that has been selected */
+//static struct proj_t* selected_prj = 0; /* index that has been selected */
 
 
 static void glfw_error_callback(int error, const char* description){
@@ -43,13 +45,13 @@ static void glfw_error_callback(int error, const char* description){
 }
 
 /* Pass structure of projects and number of projects inside of struct */
-static void show_project_select_window( struct proj_t** projects);
+static void show_project_select_window( class Prjcache* cache );
 static void show_new_part_popup( void );
 static void new_proj_window( void );
-static void show_root_window( struct proj_t** projects );
+static void show_root_window( class Prjcache* cache );
 static void import_parts_window( void );
 static void db_settings_window( struct db_settings_t * set );
-void DisplayNode( struct proj_t* node );
+void DisplayNode( struct proj_t* node, class Prjcache* cache );
 
 #define DB_STAT_DISCONNECTED  0
 #define DB_STAT_CONNECTED  1
@@ -77,40 +79,20 @@ bool show_db_settings_window = false;
 static bool run_flag = true;
 
 /* Projects */
-static struct proj_t** projects = NULL;
-static unsigned int ncached_projects = 0;
-int read_db_projects( struct db_settings_t* set, struct dbinfo_t* info, struct proj_t*** prjs );
+//static struct proj_t** projects = NULL;
+//static unsigned int ncached_projects = 0;
+/* Project cache object */
 
-static int thread_db_connection( void ) {
+
+static int thread_db_connection( class Prjcache* cache ) {
 	
 	y_log_message( Y_LOG_LEVEL_INFO, "Started thread_db_connection" );
 	
 	/* Constantly run, until told to stop */
 	while( run_flag ){
-
 		/* Check flags for projects and handle them */
-		for( unsigned int i = 0; i < ncached_projects; i++ ){
-			if( db_stat == DB_STAT_CONNECTED ){
-
-				/* Check if projects are flagged as dirty and save them to database */
-				if( (projects[i]->flags & PROJ_FLAG_DIRTY) == PROJ_FLAG_DIRTY ){
-					redis_write_proj( projects[i] );
-					projects[i]->flags &= ~(PROJ_FLAG_DIRTY);
-					y_log_message(Y_LOG_LEVEL_DEBUG, "Updated project ipn %d from local copy to database", i);
-				}
-
-				/* Check if project is flagged as stale; update from database */
-				if( (projects[i]->flags & PROJ_FLAG_STALE) == PROJ_FLAG_STALE ){
-					projects[i] = get_proj_from_ipn(i);
-					projects[i]->flags &= ~(PROJ_FLAG_STALE);
-					y_log_message(Y_LOG_LEVEL_DEBUG, "Updated project ipn %d from database to local copy", i);
-
-				}
-			}
-			else {
-				y_log_message( Y_LOG_LEVEL_WARNING, "Could not handle project %d flags due to no database connection", i);
-			}
-
+		if( db_stat == DB_STAT_CONNECTED ){
+			cache->update( &dbinfo );
 		}
 
 		/* sleep for some period of time until refresh */
@@ -123,7 +105,7 @@ static int thread_db_connection( void ) {
 	return 0;
 }
 
-static int thread_ui( void ) {
+static int thread_ui( class Prjcache* cache ) {
 
 	y_log_message( Y_LOG_LEVEL_INFO, "Start thread_ui" );
 
@@ -195,29 +177,8 @@ static int thread_ui( void ) {
 									   | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_MenuBar;
 
 
-	
-#if 0
-	/* Get a part to see if it works */
-	struct part_t* test_part = get_part_from_pn("part:GRM188R61E106KA73D");
-
-	/* Print out part number, mfg, internal part number */
-	printf("Redis database part:\n pn:\t%s, mfg:\t%s, internal#:\t%d \n", test_part->mpn, test_part->mfg, test_part->ipn);
-	printf("Info:\n");
-	for( unsigned int i = 0; i < test_part->info_len; i++ ){
-		printf("\t %s:\t%s\n", test_part->info[i].key, test_part->info[i].val );
-	}
-
-
-	/* Done with part, free it */
-	free_part_t( test_part );
-#endif
-
-
-
 	/* Use first project as first selected node */
-	if( nullptr != projects ){
-		selected_prj = projects[0];
-	}
+	cache->select(0);
 
 	/* Main application loop */
 	while( !glfwWindowShouldClose(window) ) {
@@ -250,7 +211,7 @@ static int thread_ui( void ) {
 		if( show_db_settings_window ){
 			db_settings_window(&db_set );
 		}
-		show_root_window(projects);
+		show_root_window(cache);
 		ImGui::End();
 
 		/* End Projects view creation */
@@ -268,19 +229,6 @@ static int thread_ui( void ) {
 
 	}
 
-	/* Tell other threads to stop */
-	db_stat = DB_STAT_DISCONNECTED;
-
-	/* Disconnect from database */
-	redis_disconnect();
-
-	/* Cleanup projects */
-	for( int i = 0; i < 4; i++ ){
-		if( nullptr != projects[i] ){
-			free_proj_t(projects[i]);
-		}
-	}
-
 	/* Application cleanup */
 	ImGui_ImplOpenGL3_Shutdown();
 	ImGui_ImplGlfw_Shutdown();
@@ -294,64 +242,7 @@ static int thread_ui( void ) {
 	return 0;
 }
 
-int read_db_projects( struct db_settings_t* set, struct dbinfo_t* info, struct proj_t*** prjs ){
-	/* Now get database information */
-	if( !redis_read_dbinfo( &dbinfo ) ){
-		/* Get number of projects, and allocate memory for them */
-		if( nullptr != prjs && nullptr != *prjs ){
-			/* Free up memory for the projects, since no longer needed */
-			for( unsigned int i = 0; i < ncached_projects; i++ ){
-				if( nullptr != (*prjs)[i] ){
-					free_proj_t( (*prjs)[i] );
-					(*prjs)[i] = NULL;
-				}
-			}
-			//free( *prjs );
-			//*prjs = NULL;
-		}
-		y_log_message( Y_LOG_LEVEL_DEBUG, "Freed all cached data" );
-
-
-		/* Can now allocate memory for the new cached projects */
-		ncached_projects = 0;
-		void * tmp_ptr = NULL;
-		if( nullptr != *prjs ){
-			tmp_ptr = reallocarray( (void *)(*prjs), dbinfo.nprj, sizeof( struct proj_t * ) );
-			*prjs = (struct proj_t**)tmp_ptr;
-		}
-		else {
-			*prjs = (struct proj_t**)calloc( dbinfo.nprj, sizeof( struct proj_t * ) );
-		}
-		if( nullptr == *prjs ){
-			db_stat = DB_STAT_DISCONNECTED;
-			y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate projects array" );
-		}
-		/* Get projects from database; has to start from 1 */
-		for( unsigned int i = 1; i <= dbinfo.nprj; i++ ){
-			/* Double check if databse connection is still valid */
-			if( db_stat == DB_STAT_CONNECTED ){
-				(*prjs)[i-1] = get_proj_from_ipn(i);
-				if( nullptr == (*prjs)[i-1] ){
-					y_log_message( Y_LOG_LEVEL_ERROR, "Could not retrieve project ipn %d", i );
-					return -1;
-				}
-				y_log_message( Y_LOG_LEVEL_DEBUG, "Saved project ipn %d", i );
-				/* Make fail safe so that whatever projects have been
-				 * acquired would not be lost. Not great as some will be
-				 * missing, but better than nothing */
-				ncached_projects++;
-			}
-		}
-		return 0;
-
-	}
-	else {
-		y_log_message( Y_LOG_LEVEL_ERROR, "Could not read database info" );
-		return 1;
-	}
-}
-
-int open_db( struct db_settings_t* set, struct dbinfo_t * info, struct proj_t *** projects ){
+int open_db( struct db_settings_t* set, struct dbinfo_t * info, class Prjcache* cache){
 
 	/* Wait for finish with displaying data */
 	while( PRJDISP_DISPLAYING == prj_disp_stat );
@@ -390,46 +281,47 @@ int open_db( struct db_settings_t* set, struct dbinfo_t * info, struct proj_t **
 	}
 	else {
 		y_log_message( Y_LOG_LEVEL_INFO, "Successfully connected to database");
+
+		int retval = cache->update( info );
 		db_stat = DB_STAT_CONNECTED;
-		return read_db_projects( &db_set, &dbinfo, projects );	
+		return retval;
 	}
 }
 
 int main( int, char** ){
-
+	Prjcache* prjcache = new Prjcache(1);
 	/* Initialize logging */
 	y_init_logs("Pop:In", Y_LOG_MODE_CONSOLE, Y_LOG_LEVEL_DEBUG, NULL, "Pop:In Inventory Management");
 
-	if( open_db( &db_set, &dbinfo, &projects ) ){ /* Use defaults of localhost and default port */
+	if( open_db( &db_set, &dbinfo, prjcache ) ){ /* Use defaults of localhost and default port */
 		/* Failed to init database connection */
 		y_log_message( Y_LOG_LEVEL_WARNING, "Database connection failed on startup");
 	}
-	else{
-		selected_prj = projects[0];
-	}
+
+//	prjcache->select(0);
 
 	/* Start UI thread */
-	std::thread ui( thread_ui );
+	std::thread ui( thread_ui, prjcache );
 
 	/* Start database connection thread */
-//	std::thread db( thread_db_connection );
+	std::thread db( thread_db_connection, prjcache );
+
+//	while( run_flag );
+
+
 
 	/* Join threads */
 	ui.join();
-//	db.join();
+	db.join();
 
 	/* Cleanup */
+	db_stat = DB_STAT_DISCONNECTED;
+
+	/* Disconnect from database */
+	redis_disconnect();
+
 	free( db_set.hostname );
-	if( nullptr != projects ){
-		/* Free up memory for the projects, since no longer needed */
-		for( unsigned int i = 0; i < ncached_projects; i++ ){
-			if( nullptr != projects[i] ){
-				free_proj_t(projects[i]);
-			}
-		}
-		free( projects );
-		projects = NULL;
-	}
+	delete prjcache;
 	y_close_logs();
 
 	return 0;
@@ -438,7 +330,7 @@ int main( int, char** ){
 
 
 
-static void show_project_select_window( struct proj_t **projects ){
+static void show_project_select_window( class Prjcache* cache ){
 	
 	int open_action = -1;
 	ImGui::Text("Projects");
@@ -472,18 +364,19 @@ static void show_project_select_window( struct proj_t **projects ){
 
 //		projects[0].ProjectNode::DisplayNode( &projects[0], projects );
 		if( DB_STAT_DISCONNECTED != db_stat ){
+			cache->display_projects();
+#if 0
 			prj_disp_stat = PRJDISP_DISPLAYING;
-			if( (nullptr != projects) &&  ( 0 != ncached_projects) ){
-				for( int i = 0; i < ncached_projects; i++ ){
-					if( nullptr != projects[i]){
-						/* If node is stale, wait for it to be fixed first before
-						 * displaying */
-						while( DB_STAT_CONNECTED != db_stat );
-						while( (projects[i]->flags & PROJ_FLAG_STALE) == PROJ_FLAG_STALE );
-						DisplayNode( projects[i] );
-					}
+			for( int i = 0; i < cache->items(); i++ ){
+				if( nullptr != cache->read(i)){
+					/* If node is stale, wait for it to be fixed first before
+					 * displaying */
+//					while( DB_STAT_CONNECTED != db_stat );
+//					while( (cache.read(i)->flags & PROJ_FLAG_STALE) == PROJ_FLAG_STALE );
+					DisplayNode( cache->read(i), cache );
 				}
 			}
+#endif
 		}
 		prj_disp_stat = PRJDISP_IDLE;
 		ImGui::EndTable();
@@ -962,7 +855,7 @@ static void db_settings_window( struct db_settings_t * set ){
 
 
 /* Menu items */
-static void show_menu_bar( void ){
+static void show_menu_bar( class Prjcache* cache ){
 
 	if( ImGui::BeginMenuBar() ){
 		/* File Menu */
@@ -1039,12 +932,12 @@ static void show_menu_bar( void ){
 		if( ImGui::BeginMenu("Network") ){
 			if( ImGui::MenuItem("Connect") ){
 				y_log_message(Y_LOG_LEVEL_DEBUG, "Clicked Network->connect");
-				if( open_db( &db_set, &dbinfo, &projects ) ){ /* Use defaults of localhost and default port */
+				if( open_db( &db_set, &dbinfo, cache ) ){ /* Use defaults of localhost and default port */
 					/* Failed to init database connection */
 					y_log_message( Y_LOG_LEVEL_WARNING, "Database connection failed on startup");
 				}
 				else{
-					selected_prj = projects[0];
+					cache->select(0);
 				}
 			}
 			else if( ImGui::MenuItem("Server Settings")){
@@ -1240,10 +1133,10 @@ static void show_bom_window( bom_t* bom ){
 }
 
 /* Setup root window, child windows */
-static void show_root_window( struct proj_t** projects ){
+static void show_root_window( class Prjcache* cache ){
 
 	/* Create menu items */
-	show_menu_bar();
+	show_menu_bar( cache );
 	
 	/* Put the different items into columns*/
 	static ImGuiTableFlags table_flags = ImGuiTableFlags_SizingStretchProp | \
@@ -1260,8 +1153,8 @@ static void show_root_window( struct proj_t** projects ){
 		ImGui::TableSetColumnIndex(0);
 		/* Show project view */
 		ImGui::BeginChild("Project Selector", ImVec2(ImGui::GetContentRegionAvail().x * 0.95f, ImGui::GetContentRegionAvail().y * 0.95f ));
-		if( nullptr != projects && DB_STAT_DISCONNECTED != db_stat ){
-			show_project_select_window(projects);
+		if( nullptr != cache && DB_STAT_DISCONNECTED != db_stat ){
+			show_project_select_window(cache);
 		}
 		ImGui::EndChild();
 
@@ -1270,8 +1163,8 @@ static void show_root_window( struct proj_t** projects ){
 		ImGui::BeginChild("Project Information", ImVec2(ImGui::GetContentRegionAvail().x * 0.95f, ImGui::GetContentRegionAvail().y*0.95f));
 
 		/* Get selected project */
-		if( NULL != selected_prj ){
-			show_bom_window( selected_prj->boms[0].bom );
+		if( nullptr != cache->get_selected() &&  nullptr != cache->get_selected()->boms[0].bom ){
+			show_bom_window( cache->get_selected()->boms[0].bom );
 		} else {
 			/* No projects selected, use empty bom */
 //			show_bom_window(empty_default_bom);
@@ -1297,8 +1190,8 @@ static void show_root_window( struct proj_t** projects ){
 	ImGui::Spacing();
 
 }
-
-void DisplayNode( struct proj_t* node ){
+#if 0
+void DisplayNode( struct proj_t* node, class Prjcache* cache ){
 
 	ImGuiTreeNodeFlags node_flags = ImGuiTreeNodeFlags_OpenOnArrow | \
 									ImGuiTreeNodeFlags_OpenOnDoubleClick | \
@@ -1311,7 +1204,7 @@ void DisplayNode( struct proj_t* node ){
 	if( node->nsub > 0 ){
 
 		/* Check if selected, display if selected */
-		if( node->selected && (node == selected_prj ) ){
+		if( node->selected && (node == cache->get_selected() ) ){
 			node_flags |= ImGuiTreeNodeFlags_Selected;
 		}
 		else {
@@ -1323,7 +1216,7 @@ void DisplayNode( struct proj_t* node ){
 		/* Check if item has been clicked */
 		if( ImGui::IsItemClicked() && !ImGui::IsItemToggledOpen() ){
 			y_log_message(Y_LOG_LEVEL_DEBUG, "In display: Node %s clicked", node->name);
-			selected_prj = node;
+			cache->select_ptr( node );
 			node->selected = true;
 		}
 
@@ -1340,8 +1233,8 @@ void DisplayNode( struct proj_t* node ){
 			for( int i = 0; i < node->nsub; i++ ){
 				/* If node is stale, wait for it to be fixed first before
 				 * displaying */
-				while( node->flags & PROJ_FLAG_STALE == PROJ_FLAG_STALE );
-				DisplayNode( node->sub[i].prj );
+				//while( node->flags & PROJ_FLAG_STALE == PROJ_FLAG_STALE );
+				DisplayNode( node->sub[i].prj, cache );
 			}
 			ImGui::TreePop();
 		}
@@ -1352,7 +1245,7 @@ void DisplayNode( struct proj_t* node ){
 					 ImGuiTreeNodeFlags_NoTreePushOnOpen | \
 					 ImGuiTreeNodeFlags_SpanFullWidth;
 
-		if( node->selected && (node == selected_prj) ){
+		if( node->selected && (node == cache->get_selected()) ){
 			node_flags |= ImGuiTreeNodeFlags_Selected;
 		}
 
@@ -1361,7 +1254,7 @@ void DisplayNode( struct proj_t* node ){
 		/* Check if item has been clicked */
 		if( ImGui::IsItemClicked() && !ImGui::IsItemToggledOpen() ){
 			y_log_message(Y_LOG_LEVEL_DEBUG, "In display: Node %s clicked", node->name);
-			selected_prj = node;	
+			cache->select_ptr( node );
 			node->selected = true;
 		}
 
@@ -1395,3 +1288,4 @@ void DisplayNode( struct proj_t* node ){
 
 }
 
+#endif

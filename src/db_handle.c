@@ -462,8 +462,8 @@ static int parse_json_proj( struct proj_t * prj, struct json_object* restrict jp
 						prj = NULL;
 						return -1;
 					}
-					y_log_message(Y_LOG_LEVEL_DEBUG, "Cleanup subproject iterator");
-					json_object_put(jprj_itr);
+				//	y_log_message(Y_LOG_LEVEL_DEBUG, "Cleanup subproject iterator");
+//					json_object_put(jprj_itr);
 				}
 				else{
 					y_log_message( Y_LOG_LEVEL_ERROR, "Could not get subprojects at index %d. Json data: \n%s", i, json_object_to_json_string(jsubprj) );
@@ -524,165 +524,183 @@ static int parse_json_dbinfo( struct dbinfo_t * db, struct json_object* restrict
 
 /* Free the part structure */
 void free_part_t( struct part_t* part ){
-	
-	/* Zero out other data */
-	part->ipn = 0;
-	part->q = 0;
-	part->status = pstat_unknown;
-	
-	/* Free all the strings if not NULL */
-	if( NULL !=  part->type ){
-		free( part->type );
-		part->type = NULL;
-	}
-	if( NULL != part->mfg ){
-		free( part->mfg );
-		part->mfg = NULL;
-	}
-	if( NULL != part->mpn ){
-		free( part->mpn );
-		part->mpn = NULL;
-	}
-
-	if( NULL != part->info ){
-		for( unsigned int i = 0; i < part->info_len; i++ ){
-			if( NULL != part->info[i].key ){
-				free( part->info[i].key );
-				part->info[i].key = NULL;
-			}
-			if( NULL != part->info[i].val ){
-				free( part->info[i].val );
-				part->info[i].val = NULL;
-			}
-
+	if( NULL != part ){
+//		y_log_message( Y_LOG_LEVEL_DEBUG, "Freeing part:%d", part->ipn );
+		/* Zero out other data */
+		part->ipn = 0;
+		part->q = 0;
+		part->status = pstat_unknown;
+		
+		/* Free all the strings if not NULL */
+		if( NULL !=  part->type ){
+			free( part->type );
+			part->type = NULL;
+		}
+		if( NULL != part->mfg ){
+			free( part->mfg );
+			part->mfg = NULL;
+		}
+		if( NULL != part->mpn ){
+			free( part->mpn );
+			part->mpn = NULL;
 		}
 
-		/* Iterated through all the info key value pairs, free the array itself */
-		free( part->info );
-		part->info = NULL;
-		part->info_len = 0;
-	}
+		if( NULL != part->info ){
+			for( unsigned int i = 0; i < part->info_len; i++ ){
+				if( NULL != part->info[i].key ){
+					free( part->info[i].key );
+					part->info[i].key = NULL;
+				}
+				if( NULL != part->info[i].val ){
+					free( part->info[i].val );
+					part->info[i].val = NULL;
+				}
 
-	if( NULL != part->dist ){
-		for( unsigned int i = 0; i < part->dist_len; i++ ){
-			if( NULL != part->dist[i].name ){
-				free( part->dist[i].name );
-				part->dist[i].name = NULL;
 			}
-			if( NULL != part->dist[i].pn ){
-				free( part->dist[i].pn );
-				part->dist[i].pn = NULL;
-			}
+
+			/* Iterated through all the info key value pairs, free the array itself */
+			free( part->info );
+			part->info = NULL;
+			part->info_len = 0;
 		}
 
-		/* Finished iteration, free array pointer */
-		free( part->dist );
-		part->dist = NULL;
-		part->dist_len = 0;
-	}
+		if( NULL != part->dist ){
+			for( unsigned int i = 0; i < part->dist_len; i++ ){
+				if( NULL != part->dist[i].name ){
+					free( part->dist[i].name );
+					part->dist[i].name = NULL;
+				}
+				if( NULL != part->dist[i].pn ){
+					free( part->dist[i].pn );
+					part->dist[i].pn = NULL;
+				}
+			}
 
-	if( NULL != part->price ){
-		for( unsigned int i = 0; i < part->price_len; i++ ){
-			part->price[i].quantity = 0;
-			part->price[i].price = 0.0;
+			/* Finished iteration, free array pointer */
+			free( part->dist );
+			part->dist = NULL;
+			part->dist_len = 0;
 		}
 
-		/* Finished iteration, free array pointer */
-		free( part->price );
-		part->price = NULL;
-		part->price_len = 0;
-	}
+		if( NULL != part->price ){
+			for( unsigned int i = 0; i < part->price_len; i++ ){
+				part->price[i].quantity = 0;
+				part->price[i].price = 0.0;
+			}
 
+			/* Finished iteration, free array pointer */
+			free( part->price );
+			part->price = NULL;
+			part->price_len = 0;
+		}
+
+		/* Free allocated memory for the structure */
+		free( part );
+		part = NULL;
+	}
 }
 
 /* Free the bom structure */
 void free_bom_t( struct bom_t* bom ){
+	if( NULL != bom ){
+//		y_log_message( Y_LOG_LEVEL_DEBUG, "Freeing bom:%d", bom->ipn );
+		bom->ipn = 0;
 
-	bom->ipn = 0;
-
-	/* Free all the arrays if not NULL */
-	if( NULL !=  bom->line ){
-		free( bom->line );
-		bom->line = NULL;
-	}
-	if( NULL != bom->ver ){
-		free( bom->ver );
-		bom->ver = NULL;
-	}
-	if( NULL != bom->parts ){
-		for( unsigned int i = 0; i < bom->nitems; i++ ){
-			if( NULL != bom->parts[i] ){
-				free_part_t( bom->parts[i] );
-				bom->parts[i] = NULL;
+		/* Free all the arrays if not NULL */
+		if( NULL !=  bom->line ){
+			free( bom->line );
+			bom->line = NULL;
+		}
+		if( NULL != bom->ver ){
+			free( bom->ver );
+			bom->ver = NULL;
+		}
+		if( NULL != bom->parts ){
+			for( unsigned int i = 0; i < bom->nitems; i++ ){
+				if( NULL != bom->parts[i] ){
+					free_part_t( bom->parts[i] );
+					bom->parts[i] = NULL;
+				}
 			}
+
+			/* Iterated through all the info key value pairs, free the array itself */
+			free( bom->parts );
+			bom->parts = NULL;
+			bom->nitems = 0;
 		}
 
-		/* Iterated through all the info key value pairs, free the array itself */
-		free( bom->parts );
-		bom->parts = NULL;
-		bom->nitems = 0;
+		/* Free allocated memory for the structure */
+		free( bom );
+		bom = NULL;
+
 	}
 }
 
 /* Free the project structure */
 void free_proj_t( struct proj_t* prj ){
+	/* Check if already NULL */
+	if( NULL != prj ){
+//		y_log_message( Y_LOG_LEVEL_DEBUG, "Freeing project:%d", prj->ipn );
+		/* Zero out easy stuff */
+		prj->ipn = 0;
+		prj->selected = -1;
+		prj->time_created = (time_t)0;
+		prj->time_mod = (time_t)0;
 
-	/* Zero out easy stuff */
-	prj->ipn = 0;
-	prj->selected = -1;
-	prj->time_created = (time_t)0;
-	prj->time_mod = (time_t)0;
-
-	/* Free all the arrays if not NULL */
-	if( NULL !=  prj->ver ){
-		free( prj->ver );
-		prj->ver = NULL;
-	}
-	if( NULL != prj->name ){
-		free( prj->name );
-		prj->name = NULL;
-	}
-	if( NULL != prj->pn ){
-		free( prj->pn );
-		prj->pn = NULL;
-	}
-	if( NULL != prj->author ){
-		free( prj->author );
-		prj->author = NULL;
-	}
-	if( NULL != prj->boms ){
-		for( unsigned int i = 0; i < prj->nboms; i++ ){
-			if( NULL != prj->boms[i].bom ){
-				free_bom_t( prj->boms[i].bom );
-				prj->boms[i].bom = NULL;
-			}
-			if( NULL != prj->boms[i].ver ){
-				free( prj->boms[i].ver );
-				prj->boms[i].ver = NULL;
-			}
+		/* Free all the arrays if not NULL */
+		if( NULL !=  prj->ver ){
+			free( prj->ver );
+			prj->ver = NULL;
 		}
-		/* Iterated through all the info key value pairs, free the array itself */
-		free( prj->boms );
-		prj->boms = NULL;
-		prj->nboms = 0;
-	}
-
-	/* free subprojects, which requires recursion and could get messy */
-	if( NULL != prj->sub ){
-		for( unsigned int i = 0; i < prj->nsub; i++ ){
-			if( NULL != prj->sub[i].prj ){
-				free_proj_t( prj->sub[i].prj );
-				prj->sub[i].prj = NULL;
-			}
-			if( NULL != prj->sub[i].ver ){
-				free( prj->sub[i].ver );
-				prj->sub[i].ver = NULL;
-			}
+		if( NULL != prj->name ){
+			free( prj->name );
+			prj->name = NULL;
 		}
-		/* Iterated through all the info key value pairs, free the array itself */
-		free( prj->sub );
-		prj->sub = NULL;
-		prj->nsub = 0;
+		if( NULL != prj->pn ){
+			free( prj->pn );
+			prj->pn = NULL;
+		}
+		if( NULL != prj->author ){
+			free( prj->author );
+			prj->author = NULL;
+		}
+		if( NULL != prj->boms ){
+			for( unsigned int i = 0; i < prj->nboms; i++ ){
+				if( NULL != prj->boms[i].bom ){
+					free_bom_t( prj->boms[i].bom );
+					prj->boms[i].bom = NULL;
+				}
+				if( NULL != prj->boms[i].ver ){
+					free( prj->boms[i].ver );
+					prj->boms[i].ver = NULL;
+				}
+			}
+			/* Iterated through all the info key value pairs, free the array itself */
+			free( prj->boms );
+			prj->boms = NULL;
+			prj->nboms = 0;
+		}
+
+		/* free subprojects, which requires recursion and could get messy */
+		if( NULL != prj->sub ){
+			for( unsigned int i = 0; i < prj->nsub; i++ ){
+				if( NULL != prj->sub[i].prj ){
+					free_proj_t( prj->sub[i].prj );
+					prj->sub[i].prj = NULL;
+				}
+				if( NULL != prj->sub[i].ver ){
+					free( prj->sub[i].ver );
+					prj->sub[i].ver = NULL;
+				}
+			}
+			/* Iterated through all the info key value pairs, free the array itself */
+			free( prj->sub );
+			prj->sub = NULL;
+			prj->nsub = 0;
+		}
+		/* Free allocated memory for the structure */
+		free( prj );
+		prj = NULL;
 	}
 }
 
@@ -1350,8 +1368,35 @@ struct proj_t* get_proj_from_ipn( unsigned int ipn ){
 		freeReplyObject(reply);
 		return NULL;
 	}
-	else if( NULL == reply->element[2] || NULL == reply->element[2]->element[1] || NULL == reply->element[2]->element[1]->str){
-		y_log_message(Y_LOG_LEVEL_WARNING, "Database did not return data for project ipn %d. Does it exist, or was there an issue with the database?", ipn);
+	/* Check if correct number of elements in array */
+	else if( reply->elements < 3 ) {
+		y_log_message( Y_LOG_LEVEL_WARNING, "Expected more elements in database reply for project:%d. Received %d", ipn, reply->elements );
+		free( prj );
+		freeReplyObject(reply);
+		return NULL;
+		
+	}
+
+	else if( NULL == reply->element[2] ){
+		y_log_message(Y_LOG_LEVEL_ERROR, "Unexpected null element in database reply for project:%d", ipn);
+		free( prj );
+		freeReplyObject(reply);
+		return NULL;
+	}
+	else if( reply->element[2]->elements < 2 ){
+		y_log_message( Y_LOG_LEVEL_WARNING, "Expected more subelements in database reply for project:%d. Received %d", ipn, reply->element[2]->elements );
+		free( prj );
+		freeReplyObject(reply);
+		return NULL;
+	}
+	else if( NULL == reply->element[2]->element[1] ){
+		y_log_message(Y_LOG_LEVEL_ERROR, "Unexpected null subelement in database reply for project:%d", ipn);
+		free( prj );
+		freeReplyObject(reply);
+		return NULL;
+	}
+	else if ( NULL == reply->element[2]->element[1]->str ) {
+		y_log_message(Y_LOG_LEVEL_WARNING, "Unexpected missing data for project%d. Does the project exist?", ipn);
 		free( prj );
 		freeReplyObject(reply);
 		return NULL;
@@ -1376,12 +1421,13 @@ struct proj_t* get_proj_from_ipn( unsigned int ipn ){
 	parse_json_proj( prj, jprj );
 
 	/* Free json */
-	//json_object_put( jprj );
+	json_object_put( jprj );
 	return prj;
 }
 
 /* Read database information */
 int redis_read_dbinfo( struct dbinfo_t* db ){
+	int retval = -1;
 	json_object* jdb;
 	if( redis_json_get( rc, "popdb", "$", &jdb ) ){
 		y_log_message(Y_LOG_LEVEL_ERROR, "Could not get database information");
@@ -1389,7 +1435,9 @@ int redis_read_dbinfo( struct dbinfo_t* db ){
 	}
 
 	/* Parse data */
-	return parse_json_dbinfo( db, jdb );
+	retval =  parse_json_dbinfo( db, jdb );
+	json_object_put( jdb );
+	return retval;
 }
 
 /* Write database information */

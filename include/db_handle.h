@@ -125,14 +125,6 @@ struct proj_t {
 	struct proj_bom_ver_t* boms;	/* BOMs for project with specific version */
 };
 
-/* Database information */
-struct db_info_t{
-	unsigned int next_part_ipn;		/* Next available part internal part number */
-	unsigned int next_bom_ipn;		/* Next available part internal part number */
-	unsigned int next_proj_ipn;		/* Next available part internal part number */
-
-};
-
 /* Create struct from parsed item in database, from part number */
 struct part_t* get_part_from_pn( const char* pn );
 
