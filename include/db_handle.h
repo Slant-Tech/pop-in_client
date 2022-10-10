@@ -149,6 +149,9 @@ void free_proj_t( struct proj_t* prj );
 /* Write part to database */
 int redis_write_part( struct part_t* part );
 
+/* Copy part structure to new structure */
+struct part_t* copy_part_t( struct part_t* src );
+
 /* Write bom to database */
 int redis_write_bom( struct bom_t* bom );
 

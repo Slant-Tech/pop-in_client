@@ -839,9 +839,134 @@ int redis_write_part( struct part_t* part ){
 	free( dbpart_name );
 	json_object_put( part_root );
 
+	if( NULL != price_itr ){
+		json_object_put( price_itr );
+	}
+
+	if( NULL != dist_itr ){
+		json_object_put( dist_itr );
+	}
+
 	return retval;
 
 }
+
+/* Copy part structure to new structure */
+struct part_t* copy_part_t( struct part_t* src ){
+	struct part_t* dest;
+	
+	/* Check if source is valid */
+	if( NULL == src ){
+		y_log_message( Y_LOG_LEVEL_ERROR, "Source for part copy is invalid" );
+		return NULL;
+	}
+
+	/* Allocate memory for struct */
+	dest = calloc( 1, sizeof( struct part_t ) );
+	if( NULL == dest ){
+		y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate memory for destination part");
+		return NULL;
+	}
+
+	/* Copy data over */
+	dest->ipn = src->ipn;
+	dest->q = src->q;
+	dest->type = calloc( strlen(src->type) + 1, sizeof( char ) );
+	if( NULL == dest->type ){
+		y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate memory for destination part type" );
+		free_part_t( dest );
+		return NULL;
+	}
+	strcpy( dest->type, src->type );
+
+	dest->mfg = calloc( strlen(src->mfg) + 1, sizeof( char ) );
+	if( NULL == dest->mfg ){
+		y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate memory for destination part manufacturer" );
+		free_part_t( dest );
+		return NULL;
+	}
+	strcpy( dest->mfg, src->mfg );
+
+	dest->mpn = calloc( strlen(src->mpn) + 1, sizeof( char ) );
+	if( NULL == dest->mpn ){
+		y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate memory for destination part manufacturer part number" );
+		free_part_t( dest );
+		return NULL;
+	}
+	strcpy( dest->mpn, src->mpn );
+
+	dest->status = src->status;
+
+	dest->info_len = src->info_len;
+
+	dest->info = calloc( src->info_len, sizeof( struct part_info_t ) );
+	if( NULL == dest->info ){
+		y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate memory for destination part info fields" );
+		free_part_t( dest );
+		return NULL;
+	}
+	for( unsigned int i = 0; i < dest->info_len; i++ ){
+		dest->info[i].key = calloc( (strlen( src->info[i].key ) + 1), sizeof( char ) );
+		if( NULL == dest->info[i].key){
+			y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate memory for destination part info key %d", i );
+			free_part_t( dest );
+			return NULL;
+		}
+		strcpy( dest->info[i].key, src->info[i].key );
+
+		dest->info[i].val = calloc( (strlen( src->info[i].val ) + 1), sizeof( char ) );
+		if( NULL == dest->info[i].val){
+			y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate memory for destination part info value %d", i );
+			free_part_t( dest );
+			return NULL;
+		}
+		strcpy( dest->info[i].val, src->info[i].val );
+	}
+
+
+	dest->dist_len = src->dist_len;
+
+	dest->dist = calloc( src->dist_len, sizeof( struct part_dist_t ) );
+	if( NULL == dest->dist ){
+		y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate memory for destination part distributor fields" );
+		free_part_t( dest );
+		return NULL;
+	}
+	for( unsigned int i = 0; i < dest->dist_len; i++ ){
+		dest->dist[i].name = calloc( (strlen( src->dist[i].name ) + 1), sizeof( char ) );
+		if( NULL == dest->info[i].key){
+			y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate memory for destination part distributor name %d", i );
+			free_part_t( dest );
+			return NULL;
+		}
+		strcpy( dest->dist[i].name, src->dist[i].name );
+
+		dest->dist[i].pn = calloc( (strlen( src->dist[i].pn ) + 1), sizeof( char ) );
+		if( NULL == dest->dist[i].pn){
+			y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate memory for destination part distributor part number %d", i );
+			free_part_t( dest );
+			return NULL;
+		}
+		strcpy( dest->dist[i].pn, src->dist[i].pn );
+	}
+
+	dest->price_len = src->price_len;
+
+	dest->price = calloc( src->price_len, sizeof( struct part_price_t ) );
+	if( NULL == dest->price ){
+		y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate memory for destination part price breaks" );
+		free_part_t( dest );
+		return NULL;
+	}
+	for( unsigned int i = 0; i < dest->price_len; i++ ){
+		dest->price[i].quantity = src->price[i].quantity;	
+		dest->price[i].price = src->price[i].price;
+	}
+
+
+	return dest;
+}
+
 
 int redis_write_bom( struct bom_t* bom ){
 	/* Database part name */
@@ -938,6 +1063,9 @@ int redis_write_bom( struct bom_t* bom ){
 	/* Cleanup json object */
 	free( dbbom_name );
 	json_object_put( bom_root );
+	if( NULL != line_itr ){
+		json_object_put( line_itr );
+	}
 
 	return retval;
 
@@ -1013,7 +1141,7 @@ int redis_write_proj( struct proj_t* prj ){
 			json_object_object_add( sub_itr, "ver", json_object_new_string(prj->sub[i].ver) );
 			json_object_array_put_idx( sub, i, json_object_get( sub_itr ) );
 		}
-
+		
 	}
 
 	y_log_message(Y_LOG_LEVEL_DEBUG, "Parsing");
@@ -1045,12 +1173,19 @@ int redis_write_proj( struct proj_t* prj ){
 
 		/* Write object to database */
 		retval = redis_json_set( rc, dbprj_name, "$", json_object_to_json_string(prj_root) );
-		y_log_message(Y_LOG_LEVEL_DEBUG, "JSON Object to send:\n%s\n", json_object_to_json_string_ext(prj_root, JSON_C_TO_STRING_PRETTY));
+//		y_log_message(Y_LOG_LEVEL_DEBUG, "JSON Object to send:\n%s\n", json_object_to_json_string_ext(prj_root, JSON_C_TO_STRING_PRETTY));
 	}
 
 	/* Cleanup json object */
 	free( dbprj_name );
 	json_object_put( prj_root );
+	if( NULL != bom_itr ){
+		json_object_put( bom_itr );
+	}
+
+	if( NULL != sub_itr ){
+		json_object_put( sub_itr );
+	}
 
 	return retval;
 

@@ -37,17 +37,14 @@ struct db_settings_t {
 static struct db_settings_t db_set = {NULL, 0};
 static struct dbinfo_t dbinfo = {0,0,0,{0}};
 
-//static struct proj_t* selected_prj = 0; /* index that has been selected */
-
-
 static void glfw_error_callback(int error, const char* description){
 	y_log_message(Y_LOG_LEVEL_ERROR, "GLFW Error %d: %s", error, description);
 }
 
 /* Pass structure of projects and number of projects inside of struct */
 static void show_project_select_window( class Prjcache* cache );
-static void show_new_part_popup( void );
-static void new_proj_window( void );
+static void show_new_part_popup( struct dbinfo_t* info );
+static void new_proj_window( struct dbinfo_t* info );
 static void show_root_window( class Prjcache* cache );
 static void import_parts_window( void );
 static void db_settings_window( struct db_settings_t * set );
@@ -77,12 +74,6 @@ bool show_db_settings_window = false;
 
 /* Variable to continue running */
 static bool run_flag = true;
-
-/* Projects */
-//static struct proj_t** projects = NULL;
-//static unsigned int ncached_projects = 0;
-/* Project cache object */
-
 
 static int thread_db_connection( class Prjcache* cache ) {
 	
@@ -200,10 +191,10 @@ static int thread_ui( class Prjcache* cache ) {
 		ImGui::SetNextWindowSize(ImVec2(display_w, display_h));
 		ImGui::Begin("Root", &bool_root_window, root_window_flags);
 		if( show_new_part_window ){
-			show_new_part_popup();
+			show_new_part_popup( &dbinfo );
 		}
 		if( show_new_proj_window ){
-			new_proj_window();
+			new_proj_window( &dbinfo );
 		}
 		if( show_import_parts_window ){
 			import_parts_window();
@@ -384,12 +375,13 @@ static void show_project_select_window( class Prjcache* cache ){
 
 }
 
-static void show_new_part_popup( void ){
+static void show_new_part_popup( struct dbinfo_t* info ){
+	unsigned int npart = 0;
 	static struct part_t part;
 
 	/* Buffers for text input. Can also be used for santizing inputs */
 	static char quantity[128] = {};
-	static char internal_pn[256] = {};
+//	static char internal_pn[256] = {};
 	static char type[256] = {};
 	static char mfg[512] = {};
 	static char mpn[512] = {};
@@ -416,7 +408,7 @@ static void show_new_part_popup( void ){
 		ImGui::Separator();
 
 		/* Text entry fields */
-		ImGui::InputText("Internal Part Number", internal_pn, 255, ImGuiInputTextFlags_CharsNoBlank | ImGuiInputTextFlags_CharsDecimal );
+//		ImGui::InputText("Internal Part Number", internal_pn, 255, ImGuiInputTextFlags_CharsNoBlank | ImGuiInputTextFlags_CharsDecimal );
 		ImGui::InputText("Part Type", type, 255, ImGuiInputTextFlags_CharsNoBlank);
 		ImGui::InputText("Part Number", mpn, 511, ImGuiInputTextFlags_CharsNoBlank);	
 		ImGui::InputText("Manufacturer", mfg, 511);
@@ -439,7 +431,7 @@ static void show_new_part_popup( void ){
 
 		/* No checks because I'll totally do it later (hopefully) */
 		part.q = atoi( quantity );
-		part.ipn = atoi( internal_pn ); 
+//		part.ipn = ;//atoi( internal_pn ); 
 		part.mpn = mpn;
 		part.mfg = mfg;
 		part.type = type;
@@ -462,10 +454,21 @@ static void show_new_part_popup( void ){
 		if( ImGui::Button("Save", ImVec2(0,0)) ){
 
 			/* Check if can save first */
+			if( !redis_read_dbinfo( info ) ){
+				/* Increment part in dbinfo */
+				info->npart++;
+				part.ipn = info->npart;
 
-			/* Perform the write */
-			redis_write_part( &part );
-			y_log_message(Y_LOG_LEVEL_DEBUG, "Data written to database");
+				/* Perform the write */
+				redis_write_part( &part );
+				y_log_message(Y_LOG_LEVEL_DEBUG, "Data written to database");
+
+
+				redis_write_dbinfo( info );
+			}
+			else {
+				y_log_message(Y_LOG_LEVEL_ERROR, "Could not write new part to database");
+			}
 			show_new_part_window = false;
 			
 			/* Clear all input data */
@@ -476,7 +479,7 @@ static void show_new_part_popup( void ){
 			part.mfg = NULL;
 	
 			memset( quantity, 0, 127);
-			memset( internal_pn, 0, 255);
+//			memset( internal_pn, 0, 255);
 			memset( type, 0, 255 );
 			memset( mfg, 0, 511 );
 			memset( mpn, 0, 511 );
@@ -495,7 +498,7 @@ static void show_new_part_popup( void ){
 			part.mpn = NULL;
 			part.mfg = NULL;
 			memset( quantity, 0, 127);
-			memset( internal_pn, 0, 255);
+//			memset( internal_pn, 0, 255);
 			memset( type, 0, 255 );
 			memset( mfg, 0, 511 );
 			memset( mpn, 0, 511 );
@@ -507,11 +510,11 @@ static void show_new_part_popup( void ){
 
 }
 
-static void new_proj_window( void ){
+static void new_proj_window( struct dbinfo_t* info ){
 	static struct proj_t * prj = NULL;
 
 	/* Buffers for text input. Can also be used for santizing inputs */
-	static char internal_pn[256] = {};
+//	static char internal_pn[256] = {};
 	static char version[256] = {};
 	static char author[512] = {};
 	static char pn[512] = {};
@@ -541,7 +544,7 @@ static void new_proj_window( void ){
 
 		ImGui::Text("Internal Part Number");
 		ImGui::SameLine();
-		ImGui::InputText("##newprj_ipn", internal_pn, sizeof( internal_pn) - 1);
+		//ImGui::InputText("##newprj_ipn", internal_pn, sizeof( internal_pn) - 1);
 
 		ImGui::Text("Part Number");
 		ImGui::SameLine();
@@ -643,7 +646,8 @@ static void new_proj_window( void ){
 			/* No checks because I'll totally do it later (hopefully) */
 			prj->flags = 0;
 			prj->selected = 0;
-			prj->ipn = atoi( internal_pn );
+			//prj->ipn = atoi( internal_pn );
+
 			prj->nboms = nboms;
 			prj->nsub = nsubprj;
 
@@ -694,19 +698,20 @@ static void new_proj_window( void ){
 
 			}
 
-			/* Check if can save first */
+			/* Increment database information */
+			info->nprj++;
+			prj->ipn = info->nprj;
 
 			/* Perform the write */
 			redis_write_proj( prj );
 			y_log_message(Y_LOG_LEVEL_DEBUG, "Data written to database");
 			show_new_proj_window = false;
-			
-			/* Increment database information */
-			dbinfo.nprj++;
-			redis_write_dbinfo( &dbinfo );
+
+
+			redis_write_dbinfo( info );
 
 			/* Make sure to read back the same data incase something went wrong */
-			redis_read_dbinfo( &dbinfo );
+			redis_read_dbinfo( info );
 
 			/* Clear all input data */
 			free_proj_t( prj );
@@ -971,7 +976,7 @@ static void show_menu_bar( class Prjcache* cache ){
 }
 
 static void show_bom_window( bom_t* bom ){
-
+	static part_t *selected_item = NULL;	
 	/* Show BOM/Information View */
 	ImGuiTabBarFlags tabbar_flags = ImGuiTabBarFlags_None;
 	if( ImGui::BeginTabBar("Project Info", tabbar_flags ) ){
@@ -1021,7 +1026,7 @@ static void show_bom_window( bom_t* bom ){
 				/* Used for selecting specific item in BOM */
 				bool item_sel[ bom->nitems ] = {};
 				char line_item_label[64]; /* May need to change size at some point */
-				static part_t *selected_item = NULL;	
+
 				for( int i = 0; i < bom->nitems; i++){
 					ImGui::TableNextRow();
 
@@ -1051,7 +1056,11 @@ static void show_bom_window( bom_t* bom ){
 						/* Open popup for part info */
 						ImGui::OpenPopup("PartInfo");
 						y_log_message(Y_LOG_LEVEL_DEBUG, "%s was selected", bom->parts[i]->mpn);
-						selected_item = bom->parts[i];
+						if( nullptr != selected_item ){
+							free_part_t( selected_item );
+							selected_item = nullptr;
+						}
+						selected_item = copy_part_t(bom->parts[i]);
 					}
 
 				}
@@ -1113,6 +1122,10 @@ static void show_bom_window( bom_t* bom ){
 					ImGui::Separator();
 			
 					if( ImGui::Button("OK", ImVec2(120,0))){
+						if( nullptr != selected_item ){
+							free_part_t( selected_item );
+						}
+						
 						ImGui::CloseCurrentPopup();
 					}
 					ImGui::SetItemDefaultFocus();
@@ -1127,8 +1140,6 @@ static void show_bom_window( bom_t* bom ){
 		}
 		ImGui::EndTabBar();
 	}
-
-
 
 }
 

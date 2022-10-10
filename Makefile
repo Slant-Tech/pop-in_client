@@ -98,7 +98,7 @@ CXXFLAGS.RELEASE= -O2
 #OPTIONS += -fif-conversion -fif-conversion2 -free -fexpensive-optimizations
 #OPTIONS += -fshrink-wrap -fhoist-adjacent-loads
 OPTIONS  += -fstack-protector -D_FORTIFY_SOURCES=2
-OPTIONS  += -fsanitize=address 
+#OPTIONS  += -fsanitize=address 
 
 COPTIONS += $(OPTIONS)
 CXXOPTIONS += $(OPTIONS)
@@ -293,7 +293,7 @@ $(LIBHIREDIS_SO) $(LIBHIREDIS_A): $(LIBHIREDIS_DIR)/.git
 	make -C $(LIBHIREDIS_DIR)/build install
 
 valgrind: $(PRGNAME)
-	valgrind --tool=memcheck --leak-check=yes --track-origins=yes --show-reachable=yes --read-inline-info=yes --show-leak-kinds=possible  --gen-suppressions=all --log-file="valgrind.log" ./$(PRGNAME)
+	valgrind --tool=memcheck --leak-check=full --show-leak-kinds=all --track-origins=yes --show-reachable=yes --read-inline-info=yes --show-leak-kinds=possible  --gen-suppressions=all --log-file="valgrind.log" ./$(PRGNAME)
 #	valgrind --leak-check=yes --track-origins=yes --show-reachable=yes --read-inline-info=yes --show-leak-kinds=possible --xtree-leak=yes --xtree-memory=full --gen-suppressions=all --xtree-memory-file="xtree_mem.log" --log-file="valgrind.log" ./$(PRGNAME)
 
 %.d: %.c

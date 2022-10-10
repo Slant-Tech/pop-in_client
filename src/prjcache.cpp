@@ -41,7 +41,6 @@ int Prjcache::_clean( void ){
 	/* Clear out selected poitner */
 	if( nullptr != selected ){
 		/* Will be freed soon, just need to make sure the pointer goes nowhere */
-//		free_proj_t( selected );
 		selected = nullptr;
 	}
 	for( unsigned int i = 0; i < cache.size(); i++ ){
@@ -148,7 +147,7 @@ int Prjcache::update( struct dbinfo_t* info ){
 			}
 		}
 		if( selected_idx == (unsigned int)-1){
-			y_log_message( Y_LOG_LEVEL_ERROR, "Could not find selected index from project pointer during update" );
+			y_log_message( Y_LOG_LEVEL_WARNING, "Could not find selected index from project pointer during update. Could mean that selected project is a subproject." );
 			cmtx.unlock();
 			return -1;
 		}
@@ -174,6 +173,7 @@ int Prjcache::update( struct dbinfo_t* info ){
 		/* Recreate selected project */
 		if( (unsigned int)-1 != selected_idx ){
 			selected = cache[selected_idx];
+			selected->selected = true;
 		}
 		
 	}
@@ -413,25 +413,6 @@ void Prjcache::_DisplayNode( struct proj_t* node ){
 		ImGui::TextUnformatted(node->author);
 
 	}
-
-#if 0
-	/* Check if something was clicked */
-	if( selected_prj != NULL && node == selected_prj ){
-		y_log_message(Y_LOG_LEVEL_DEBUG, "Project %s has been clicked", selected_prj->name);
-		/* toggle state */
-		node->selected = !(node->selected);
-		y_log_message(Y_LOG_LEVEL_DEBUG, "Selection state: %d", selected_prj->selected);
-
-		if( selected_prj->selected ){
-			y_log_message(Y_LOG_LEVEL_DEBUG, "Node %s is highlighted", node->name);
-		}
-		else {
-			/* Don't show anything if there is no highlight; second
-			 * thought, maybe not a good idea?  */
-			//selected_prj = -1;	
-		}
-	}
-#endif
 
 }
 
