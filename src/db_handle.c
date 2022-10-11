@@ -5,6 +5,7 @@
 #include <yder.h>
 #include <db_handle.h>
 #include <unistd.h>
+
 	
 
 /* Redis Context for handling in database */
@@ -346,7 +347,7 @@ static int parse_json_proj( struct proj_t * prj, struct json_object* restrict jp
 	strncpy( prj->author, json_object_get_string( jauthor ), jstrlen );
 
 	/* Project Part Number */
-	jstrlen = strlen( json_object_get_string( jpn ) );
+	jstrlen = json_object_get_string_len( jpn );
 	prj->pn = calloc( jstrlen + 1, sizeof( char ) );
 	if( NULL == prj->pn ){
 		y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate memory for project part number");
@@ -462,8 +463,8 @@ static int parse_json_proj( struct proj_t * prj, struct json_object* restrict jp
 						prj = NULL;
 						return -1;
 					}
-					y_log_message(Y_LOG_LEVEL_DEBUG, "Cleanup subproject iterator");
-					json_object_put(jprj_itr);
+				//	y_log_message(Y_LOG_LEVEL_DEBUG, "Cleanup subproject iterator");
+//					json_object_put(jprj_itr);
 				}
 				else{
 					y_log_message( Y_LOG_LEVEL_ERROR, "Could not get subprojects at index %d. Json data: \n%s", i, json_object_to_json_string(jsubprj) );
@@ -524,165 +525,183 @@ static int parse_json_dbinfo( struct dbinfo_t * db, struct json_object* restrict
 
 /* Free the part structure */
 void free_part_t( struct part_t* part ){
-	
-	/* Zero out other data */
-	part->ipn = 0;
-	part->q = 0;
-	part->status = pstat_unknown;
-	
-	/* Free all the strings if not NULL */
-	if( NULL !=  part->type ){
-		free( part->type );
-		part->type = NULL;
-	}
-	if( NULL != part->mfg ){
-		free( part->mfg );
-		part->mfg = NULL;
-	}
-	if( NULL != part->mpn ){
-		free( part->mpn );
-		part->mpn = NULL;
-	}
-
-	if( NULL != part->info ){
-		for( unsigned int i = 0; i < part->info_len; i++ ){
-			if( NULL != part->info[i].key ){
-				free( part->info[i].key );
-				part->info[i].key = NULL;
-			}
-			if( NULL != part->info[i].val ){
-				free( part->info[i].val );
-				part->info[i].val = NULL;
-			}
-
+	if( NULL != part ){
+//		y_log_message( Y_LOG_LEVEL_DEBUG, "Freeing part:%d", part->ipn );
+		/* Zero out other data */
+		part->ipn = 0;
+		part->q = 0;
+		part->status = pstat_unknown;
+		
+		/* Free all the strings if not NULL */
+		if( NULL !=  part->type ){
+			free( part->type );
+			part->type = NULL;
+		}
+		if( NULL != part->mfg ){
+			free( part->mfg );
+			part->mfg = NULL;
+		}
+		if( NULL != part->mpn ){
+			free( part->mpn );
+			part->mpn = NULL;
 		}
 
-		/* Iterated through all the info key value pairs, free the array itself */
-		free( part->info );
-		part->info = NULL;
-		part->info_len = 0;
-	}
+		if( NULL != part->info ){
+			for( unsigned int i = 0; i < part->info_len; i++ ){
+				if( NULL != part->info[i].key ){
+					free( part->info[i].key );
+					part->info[i].key = NULL;
+				}
+				if( NULL != part->info[i].val ){
+					free( part->info[i].val );
+					part->info[i].val = NULL;
+				}
 
-	if( NULL != part->dist ){
-		for( unsigned int i = 0; i < part->dist_len; i++ ){
-			if( NULL != part->dist[i].name ){
-				free( part->dist[i].name );
-				part->dist[i].name = NULL;
 			}
-			if( NULL != part->dist[i].pn ){
-				free( part->dist[i].pn );
-				part->dist[i].pn = NULL;
-			}
+
+			/* Iterated through all the info key value pairs, free the array itself */
+			free( part->info );
+			part->info = NULL;
+			part->info_len = 0;
 		}
 
-		/* Finished iteration, free array pointer */
-		free( part->dist );
-		part->dist = NULL;
-		part->dist_len = 0;
-	}
+		if( NULL != part->dist ){
+			for( unsigned int i = 0; i < part->dist_len; i++ ){
+				if( NULL != part->dist[i].name ){
+					free( part->dist[i].name );
+					part->dist[i].name = NULL;
+				}
+				if( NULL != part->dist[i].pn ){
+					free( part->dist[i].pn );
+					part->dist[i].pn = NULL;
+				}
+			}
 
-	if( NULL != part->price ){
-		for( unsigned int i = 0; i < part->price_len; i++ ){
-			part->price[i].quantity = 0;
-			part->price[i].price = 0.0;
+			/* Finished iteration, free array pointer */
+			free( part->dist );
+			part->dist = NULL;
+			part->dist_len = 0;
 		}
 
-		/* Finished iteration, free array pointer */
-		free( part->price );
-		part->price = NULL;
-		part->price_len = 0;
-	}
+		if( NULL != part->price ){
+			for( unsigned int i = 0; i < part->price_len; i++ ){
+				part->price[i].quantity = 0;
+				part->price[i].price = 0.0;
+			}
 
+			/* Finished iteration, free array pointer */
+			free( part->price );
+			part->price = NULL;
+			part->price_len = 0;
+		}
+
+		/* Free allocated memory for the structure */
+		free( part );
+		part = NULL;
+	}
 }
 
 /* Free the bom structure */
 void free_bom_t( struct bom_t* bom ){
+	if( NULL != bom ){
+//		y_log_message( Y_LOG_LEVEL_DEBUG, "Freeing bom:%d", bom->ipn );
+		bom->ipn = 0;
 
-	bom->ipn = 0;
-
-	/* Free all the arrays if not NULL */
-	if( NULL !=  bom->line ){
-		free( bom->line );
-		bom->line = NULL;
-	}
-	if( NULL != bom->ver ){
-		free( bom->ver );
-		bom->ver = NULL;
-	}
-	if( NULL != bom->parts ){
-		for( unsigned int i = 0; i < bom->nitems; i++ ){
-			if( NULL != bom->parts[i] ){
-				free_part_t( bom->parts[i] );
-				bom->parts[i] = NULL;
+		/* Free all the arrays if not NULL */
+		if( NULL !=  bom->line ){
+			free( bom->line );
+			bom->line = NULL;
+		}
+		if( NULL != bom->ver ){
+			free( bom->ver );
+			bom->ver = NULL;
+		}
+		if( NULL != bom->parts ){
+			for( unsigned int i = 0; i < bom->nitems; i++ ){
+				if( NULL != bom->parts[i] ){
+					free_part_t( bom->parts[i] );
+					bom->parts[i] = NULL;
+				}
 			}
+
+			/* Iterated through all the info key value pairs, free the array itself */
+			free( bom->parts );
+			bom->parts = NULL;
+			bom->nitems = 0;
 		}
 
-		/* Iterated through all the info key value pairs, free the array itself */
-		free( bom->parts );
-		bom->parts = NULL;
-		bom->nitems = 0;
+		/* Free allocated memory for the structure */
+		free( bom );
+		bom = NULL;
+
 	}
 }
 
 /* Free the project structure */
 void free_proj_t( struct proj_t* prj ){
+	/* Check if already NULL */
+	if( NULL != prj ){
+//		y_log_message( Y_LOG_LEVEL_DEBUG, "Freeing project:%d", prj->ipn );
+		/* Zero out easy stuff */
+		prj->ipn = 0;
+		prj->selected = -1;
+		prj->time_created = (time_t)0;
+		prj->time_mod = (time_t)0;
 
-	/* Zero out easy stuff */
-	prj->ipn = 0;
-	prj->selected = -1;
-	prj->time_created = (time_t)0;
-	prj->time_mod = (time_t)0;
-
-	/* Free all the arrays if not NULL */
-	if( NULL !=  prj->ver ){
-		free( prj->ver );
-		prj->ver = NULL;
-	}
-	if( NULL != prj->name ){
-		free( prj->name );
-		prj->name = NULL;
-	}
-	if( NULL != prj->pn ){
-		free( prj->pn );
-		prj->pn = NULL;
-	}
-	if( NULL != prj->author ){
-		free( prj->author );
-		prj->author = NULL;
-	}
-	if( NULL != prj->boms ){
-		for( unsigned int i = 0; i < prj->nboms; i++ ){
-			if( NULL != prj->boms[i].bom ){
-				free_bom_t( prj->boms[i].bom );
-				prj->boms[i].bom = NULL;
-			}
-			if( NULL != prj->boms[i].ver ){
-				free( prj->boms[i].ver );
-				prj->boms[i].ver = NULL;
-			}
+		/* Free all the arrays if not NULL */
+		if( NULL !=  prj->ver ){
+			free( prj->ver );
+			prj->ver = NULL;
 		}
-		/* Iterated through all the info key value pairs, free the array itself */
-		free( prj->boms );
-		prj->boms = NULL;
-		prj->nboms = 0;
-	}
-
-	/* free subprojects, which requires recursion and could get messy */
-	if( NULL != prj->sub ){
-		for( unsigned int i = 0; i < prj->nsub; i++ ){
-			if( NULL != prj->sub[i].prj ){
-				free_proj_t( prj->sub[i].prj );
-				prj->sub[i].prj = NULL;
-			}
-			if( NULL != prj->sub[i].ver ){
-				free( prj->sub[i].ver );
-				prj->sub[i].ver = NULL;
-			}
+		if( NULL != prj->name ){
+			free( prj->name );
+			prj->name = NULL;
 		}
-		/* Iterated through all the info key value pairs, free the array itself */
-		free( prj->sub );
-		prj->sub = NULL;
-		prj->nsub = 0;
+		if( NULL != prj->pn ){
+			free( prj->pn );
+			prj->pn = NULL;
+		}
+		if( NULL != prj->author ){
+			free( prj->author );
+			prj->author = NULL;
+		}
+		if( NULL != prj->boms ){
+			for( unsigned int i = 0; i < prj->nboms; i++ ){
+				if( NULL != prj->boms[i].bom ){
+					free_bom_t( prj->boms[i].bom );
+					prj->boms[i].bom = NULL;
+				}
+				if( NULL != prj->boms[i].ver ){
+					free( prj->boms[i].ver );
+					prj->boms[i].ver = NULL;
+				}
+			}
+			/* Iterated through all the info key value pairs, free the array itself */
+			free( prj->boms );
+			prj->boms = NULL;
+			prj->nboms = 0;
+		}
+
+		/* free subprojects, which requires recursion and could get messy */
+		if( NULL != prj->sub ){
+			for( unsigned int i = 0; i < prj->nsub; i++ ){
+				if( NULL != prj->sub[i].prj ){
+					free_proj_t( prj->sub[i].prj );
+					prj->sub[i].prj = NULL;
+				}
+				if( NULL != prj->sub[i].ver ){
+					free( prj->sub[i].ver );
+					prj->sub[i].ver = NULL;
+				}
+			}
+			/* Iterated through all the info key value pairs, free the array itself */
+			free( prj->sub );
+			prj->sub = NULL;
+			prj->nsub = 0;
+		}
+		/* Free allocated memory for the structure */
+		free( prj );
+		prj = NULL;
 	}
 }
 
@@ -797,7 +816,7 @@ int redis_write_part( struct part_t* part ){
 
 	y_log_message(Y_LOG_LEVEL_DEBUG, "Added items to object");
 
-	dbpart_name = calloc( strlen(part->mpn) + strlen("part:") + 2, sizeof( char ) );
+	dbpart_name = calloc( strlen(part->mpn) + strlen("part:") + strlen(part->type) + 3, sizeof( char ) );
 
 	int retval = -1;
 	if( NULL == dbpart_name ){
@@ -806,7 +825,7 @@ int redis_write_part( struct part_t* part ){
 	}
 	else{
 		/* create name */
-		sprintf( dbpart_name, "part:%s", part->mpn);
+		sprintf( dbpart_name, "part:%s:%s", part->type, part->mpn);
 
 		y_log_message(Y_LOG_LEVEL_DEBUG, "Created name: %s", dbpart_name);
 
@@ -824,6 +843,123 @@ int redis_write_part( struct part_t* part ){
 	return retval;
 
 }
+
+/* Copy part structure to new structure */
+struct part_t* copy_part_t( struct part_t* src ){
+	struct part_t* dest;
+	
+	/* Check if source is valid */
+	if( NULL == src ){
+		y_log_message( Y_LOG_LEVEL_ERROR, "Source for part copy is invalid" );
+		return NULL;
+	}
+
+	/* Allocate memory for struct */
+	dest = calloc( 1, sizeof( struct part_t ) );
+	if( NULL == dest ){
+		y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate memory for destination part");
+		return NULL;
+	}
+
+	/* Copy data over */
+	dest->ipn = src->ipn;
+	dest->q = src->q;
+	dest->type = calloc( strlen(src->type) + 1, sizeof( char ) );
+	if( NULL == dest->type ){
+		y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate memory for destination part type" );
+		free_part_t( dest );
+		return NULL;
+	}
+	strcpy( dest->type, src->type );
+
+	dest->mfg = calloc( strlen(src->mfg) + 1, sizeof( char ) );
+	if( NULL == dest->mfg ){
+		y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate memory for destination part manufacturer" );
+		free_part_t( dest );
+		return NULL;
+	}
+	strcpy( dest->mfg, src->mfg );
+
+	dest->mpn = calloc( strlen(src->mpn) + 1, sizeof( char ) );
+	if( NULL == dest->mpn ){
+		y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate memory for destination part manufacturer part number" );
+		free_part_t( dest );
+		return NULL;
+	}
+	strcpy( dest->mpn, src->mpn );
+
+	dest->status = src->status;
+
+	dest->info_len = src->info_len;
+
+	dest->info = calloc( src->info_len, sizeof( struct part_info_t ) );
+	if( NULL == dest->info ){
+		y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate memory for destination part info fields" );
+		free_part_t( dest );
+		return NULL;
+	}
+	for( unsigned int i = 0; i < dest->info_len; i++ ){
+		dest->info[i].key = calloc( (strlen( src->info[i].key ) + 1), sizeof( char ) );
+		if( NULL == dest->info[i].key){
+			y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate memory for destination part info key %d", i );
+			free_part_t( dest );
+			return NULL;
+		}
+		strcpy( dest->info[i].key, src->info[i].key );
+
+		dest->info[i].val = calloc( (strlen( src->info[i].val ) + 1), sizeof( char ) );
+		if( NULL == dest->info[i].val){
+			y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate memory for destination part info value %d", i );
+			free_part_t( dest );
+			return NULL;
+		}
+		strcpy( dest->info[i].val, src->info[i].val );
+	}
+
+
+	dest->dist_len = src->dist_len;
+
+	dest->dist = calloc( src->dist_len, sizeof( struct part_dist_t ) );
+	if( NULL == dest->dist ){
+		y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate memory for destination part distributor fields" );
+		free_part_t( dest );
+		return NULL;
+	}
+	for( unsigned int i = 0; i < dest->dist_len; i++ ){
+		dest->dist[i].name = calloc( (strlen( src->dist[i].name ) + 1), sizeof( char ) );
+		if( NULL == dest->info[i].key){
+			y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate memory for destination part distributor name %d", i );
+			free_part_t( dest );
+			return NULL;
+		}
+		strcpy( dest->dist[i].name, src->dist[i].name );
+
+		dest->dist[i].pn = calloc( (strlen( src->dist[i].pn ) + 1), sizeof( char ) );
+		if( NULL == dest->dist[i].pn){
+			y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate memory for destination part distributor part number %d", i );
+			free_part_t( dest );
+			return NULL;
+		}
+		strcpy( dest->dist[i].pn, src->dist[i].pn );
+	}
+
+	dest->price_len = src->price_len;
+
+	dest->price = calloc( src->price_len, sizeof( struct part_price_t ) );
+	if( NULL == dest->price ){
+		y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate memory for destination part price breaks" );
+		free_part_t( dest );
+		return NULL;
+	}
+	for( unsigned int i = 0; i < dest->price_len; i++ ){
+		dest->price[i].quantity = src->price[i].quantity;	
+		dest->price[i].price = src->price[i].price;
+	}
+
+
+	return dest;
+}
+
 
 int redis_write_bom( struct bom_t* bom ){
 	/* Database part name */
@@ -938,12 +1074,6 @@ int redis_write_proj( struct proj_t* prj ){
 
 	/* Create json object to write */
 	json_object *prj_root = json_object_new_object();
-	json_object *ipn = json_object_new_object();
-	json_object *version = json_object_new_object();
-	json_object *name = json_object_new_object();
-	json_object *author = json_object_new_object();
-	json_object *tcreate = json_object_new_object();
-	json_object *tmod = json_object_new_object();
 	json_object *sub = json_object_new_array_ext(prj->nsub);
 	json_object *boms = json_object_new_array_ext(prj->nboms);
 	json_object *sub_itr = NULL;
@@ -954,77 +1084,14 @@ int redis_write_proj( struct proj_t* prj ){
 		return -1;
 	}
 
-	if( NULL == ipn ){
-		y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate new project ipn json object" );
-		json_object_put(prj_root);
-		return -1;	
-	}
-
-	if( NULL == version ){
-		y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate project version json object" );
-		json_object_put( ipn );
-		json_object_put(prj_root);
-		return -1;	
-	}
-
-	if( NULL == name ){
-		y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate project name json object" );
-		json_object_put( ipn );
-		json_object_put( version );
-		json_object_put(prj_root);
-		return -1;	
-	}
-
-	if( NULL == author ){
-		y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate project author json object" );
-		json_object_put(ipn);
-		json_object_put(version);
-		json_object_put(name);
-		json_object_put(prj_root);
-		return -1;	
-	}
-
-	if( NULL == tcreate ){
-		y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate project created time json object" );
-		json_object_put(ipn);
-		json_object_put(version);
-		json_object_put(name);
-		json_object_put(author);
-		json_object_put(prj_root);
-		return -1;	
-	}
-
-	if( NULL == tmod ){
-		y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate project modified time json object" );
-		json_object_put(ipn);
-		json_object_put(version);
-		json_object_put(name);
-		json_object_put(author);
-		json_object_put(tcreate);
-		json_object_put(prj_root);
-		return -1;	
-	}
-
 	if( NULL == sub ){
 		y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate project subproject json object" );
-		json_object_put(ipn);
-		json_object_put(version);
-		json_object_put(name);
-		json_object_put(author);
-		json_object_put(tcreate);
-		json_object_put(tmod);
 		json_object_put(prj_root);
 		return -1;	
 	}
 
 	if( NULL == boms ){
 		y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate project boms json object" );
-		json_object_put(ipn);
-		json_object_put(version);
-		json_object_put(name);
-		json_object_put(author);
-		json_object_put(tcreate);
-		json_object_put(tmod);
 		json_object_put(sub);
 		json_object_put(prj_root);
 		return -1;	
@@ -1039,18 +1106,12 @@ int redis_write_proj( struct proj_t* prj ){
 			bom_itr = json_object_new_object();
 			if( NULL == bom_itr ){
 				y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate new project bom iterator json object" );	
-				json_object_put(ipn);
-				json_object_put(version);
-				json_object_put(name);
-				json_object_put(author);
-				json_object_put(tcreate);
-				json_object_put(tmod);
 				json_object_put(sub);
 				json_object_put(prj_root);
 				return -1;
 			}			
 			json_object_object_add( bom_itr, "ipn", json_object_new_int64(prj->boms[i].bom->ipn) );
-			json_object_object_add( bom_itr, "ver", json_object_new_string(prj->boms[i].bom->ver) );
+			json_object_object_add( bom_itr, "ver", json_object_new_string(prj->boms[i].ver) );
 			json_object_array_put_idx( boms, i, json_object_get( bom_itr ) );
 		}
 
@@ -1062,32 +1123,26 @@ int redis_write_proj( struct proj_t* prj ){
 			sub_itr = json_object_new_object();
 			if( NULL == sub_itr ){
 				y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate new project bom iterator json object" );	
-				json_object_put(ipn);
-				json_object_put(version);
-				json_object_put(name);
-				json_object_put(author);
-				json_object_put(tcreate);
-				json_object_put(tmod);
 				json_object_put(sub);
 				json_object_put(prj_root);
 				return -1;
 			}			
-			json_object_object_add( bom_itr, "ipn", json_object_new_int64(prj->sub[i].prj->ipn) );
-			json_object_object_add( bom_itr, "ver", json_object_new_string(prj->boms[i].bom->ver) );
-			json_object_array_put_idx( boms, i, json_object_get( bom_itr ) );
+			json_object_object_add( sub_itr, "ipn", json_object_new_int64(prj->sub[i].prj->ipn) );
+			json_object_object_add( sub_itr, "ver", json_object_new_string(prj->sub[i].ver) );
+			json_object_array_put_idx( sub, i, json_object_get( sub_itr ) );
 		}
-
+		
 	}
 
 	y_log_message(Y_LOG_LEVEL_DEBUG, "Parsing");
 
 	/* Add all parts of the part struct to the json object */
 	json_object_object_add( prj_root, "ipn", json_object_new_int64(prj->ipn) ); /* This should be generated somehow */
-	json_object_object_add( prj_root, "ver", version );
-	json_object_object_add( prj_root, "name", name );
-	json_object_object_add( prj_root, "author", author );
-	json_object_object_add( prj_root, "time_created", tcreate );
-	json_object_object_add( prj_root, "time_mod", tmod );
+	json_object_object_add( prj_root, "ver", json_object_new_string( prj->ver ) );
+	json_object_object_add( prj_root, "name", json_object_new_string( prj->name ) );
+	json_object_object_add( prj_root, "author", json_object_new_string( prj->author) );
+	json_object_object_add( prj_root, "time_created", json_object_new_int64( prj->time_created ) );
+	json_object_object_add( prj_root, "time_mod", json_object_new_int64( prj->time_mod ) );
 	json_object_object_add( prj_root, "sub_prj", sub );
 	json_object_object_add( prj_root, "boms", boms );
 
@@ -1108,7 +1163,7 @@ int redis_write_proj( struct proj_t* prj ){
 
 		/* Write object to database */
 		retval = redis_json_set( rc, dbprj_name, "$", json_object_to_json_string(prj_root) );
-		//y_log_message(Y_LOG_LEVEL_DEBUG, "JSON Object to send:\n%s\n", json_object_to_json_string_ext(prj_root, JSON_C_TO_STRING_PRETTY));
+//		y_log_message(Y_LOG_LEVEL_DEBUG, "JSON Object to send:\n%s\n", json_object_to_json_string_ext(prj_root, JSON_C_TO_STRING_PRETTY));
 	}
 
 	/* Cleanup json object */
@@ -1431,8 +1486,42 @@ struct proj_t* get_proj_from_ipn( unsigned int ipn ){
 		freeReplyObject(reply);
 		return NULL;
 	}
+	/* Check if correct number of elements in array */
+	else if( reply->elements < 3 ) {
+		y_log_message( Y_LOG_LEVEL_WARNING, "Expected more elements in database reply for project:%d. Received %d", ipn, reply->elements );
+		free( prj );
+		freeReplyObject(reply);
+		return NULL;
+		
+	}
+
+	else if( NULL == reply->element[2] ){
+		y_log_message(Y_LOG_LEVEL_ERROR, "Unexpected null element in database reply for project:%d", ipn);
+		free( prj );
+		freeReplyObject(reply);
+		return NULL;
+	}
+	else if( reply->element[2]->elements < 2 ){
+		y_log_message( Y_LOG_LEVEL_WARNING, "Expected more subelements in database reply for project:%d. Received %d", ipn, reply->element[2]->elements );
+		free( prj );
+		freeReplyObject(reply);
+		return NULL;
+	}
+	else if( NULL == reply->element[2]->element[1] ){
+		y_log_message(Y_LOG_LEVEL_ERROR, "Unexpected null subelement in database reply for project:%d", ipn);
+		free( prj );
+		freeReplyObject(reply);
+		return NULL;
+	}
+	else if ( NULL == reply->element[2]->element[1]->str ) {
+		y_log_message(Y_LOG_LEVEL_WARNING, "Unexpected missing data for project%d. Does the project exist?", ipn);
+		free( prj );
+		freeReplyObject(reply);
+		return NULL;
+	}
 
 	enum json_tokener_error parse_err;
+	
 	/* Should be correct response, get second element parsed into jbom */
 	y_log_message( Y_LOG_LEVEL_DEBUG, "Database response: \n%s", reply->element[2]->element[1]->str );
 	jprj = json_tokener_parse_verbose( reply->element[2]->element[1]->str, &parse_err );	
@@ -1450,12 +1539,13 @@ struct proj_t* get_proj_from_ipn( unsigned int ipn ){
 	parse_json_proj( prj, jprj );
 
 	/* Free json */
-	//json_object_put( jprj );
+	json_object_put( jprj );
 	return prj;
 }
 
 /* Read database information */
 int redis_read_dbinfo( struct dbinfo_t* db ){
+	int retval = -1;
 	json_object* jdb;
 	if( redis_json_get( rc, "popdb", "$", &jdb ) ){
 		y_log_message(Y_LOG_LEVEL_ERROR, "Could not get database information");
@@ -1463,7 +1553,9 @@ int redis_read_dbinfo( struct dbinfo_t* db ){
 	}
 
 	/* Parse data */
-	return parse_json_dbinfo( db, jdb );
+	retval =  parse_json_dbinfo( db, jdb );
+	json_object_put( jdb );
+	return retval;
 }
 
 /* Write database information */

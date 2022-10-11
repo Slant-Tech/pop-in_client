@@ -1,4 +1,5 @@
 #include <imgui.h>
+#include <misc/cpp/imgui_stdlib.h>
 #include <imgui_impl_glfw.h>
 #include <imgui_impl_opengl3.h>
 #include <stdio.h>
@@ -6,11 +7,15 @@
 #include <vector>
 #include <iterator>
 #include <GLFW/glfw3.h>
+#include <mutex>
 #include <thread>
+#include <string>
 //#include <projectview.h>
 #include <yder.h>
 #include <db_handle.h>
 #include <L2DFileDialog.h>
+#include <prjcache.h>
+#include <ctype.h>
 
 #ifdef _WIN32
 #include <windows.h>
@@ -20,6 +25,11 @@
 #endif
 
 #define PARTINFO_SPACING	200
+#define NEWPART_SPACING		250
+/* Project display state machine */
+#define PRJDISP_IDLE  		0
+#define PRJDISP_DISPLAYING  1
+static unsigned int prj_disp_stat = PRJDISP_IDLE;
 
 struct db_settings_t {
 	char* hostname;
@@ -29,36 +39,18 @@ struct db_settings_t {
 static struct db_settings_t db_set = {NULL, 0};
 static struct dbinfo_t dbinfo = {0,0,0,{0}};
 
-static struct proj_t* selected_prj = 0; /* index that has been selected */
-
-
-///* BOM Line item structure */
-//struct BomLineItem {
-//	int int_pn; 	/* internal part number */
-//	int index;	/* Bom item index */
-//	char* mpn;	/* Manufacturer Part Number */
-//	char* mfg;	/* Manufacturer */
-//	unsigned int q;		/* Quantity */
-//	unsigned int type;	/* Part type */
-//};
-
-/* BOM Structure */
-//struct ProjectBom {
-//	int id;					/* BOM id number */
-//	struct part_t*  item;	/* BOM Items */
-//};
-
 static void glfw_error_callback(int error, const char* description){
 	y_log_message(Y_LOG_LEVEL_ERROR, "GLFW Error %d: %s", error, description);
 }
 
 /* Pass structure of projects and number of projects inside of struct */
-static void show_project_select_window( struct proj_t** projects);
-static void show_new_part_popup( void );
-static void show_root_window( struct proj_t** projects );
+static void show_project_select_window( class Prjcache* cache );
+static void show_new_part_popup( struct dbinfo_t* info );
+static void new_proj_window( struct dbinfo_t* info );
+static void show_root_window( class Prjcache* cache );
 static void import_parts_window( void );
 static void db_settings_window( struct db_settings_t * set );
-void DisplayNode( struct proj_t* node );
+void DisplayNode( struct proj_t* node, class Prjcache* cache );
 
 #define DB_STAT_DISCONNECTED  0
 #define DB_STAT_CONNECTED  1
@@ -75,6 +67,7 @@ static int db_stat = DB_STAT_DISCONNECTED;
 #endif
 
 bool show_new_part_window = false;
+bool show_new_proj_window = false;
 bool show_import_parts_window = false;
 bool show_db_settings_window = false;
 
@@ -84,41 +77,15 @@ bool show_db_settings_window = false;
 /* Variable to continue running */
 static bool run_flag = true;
 
-/* Projects */
-static struct proj_t** projects = NULL;
-static unsigned int ncached_projects = 0;
-int read_db_projects( struct db_settings_t* set, struct dbinfo_t* info, struct proj_t*** prjs );
-
-static int thread_db_connection( void ) {
+static int thread_db_connection( class Prjcache* cache ) {
 	
 	y_log_message( Y_LOG_LEVEL_INFO, "Started thread_db_connection" );
 	
 	/* Constantly run, until told to stop */
 	while( run_flag ){
-
 		/* Check flags for projects and handle them */
-		for( unsigned int i = 0; i < ncached_projects; i++ ){
-			if( db_stat == DB_STAT_CONNECTED ){
-
-				/* Check if projects are flagged as dirty and save them to database */
-				if( projects[i]->flags & PROJ_FLAG_DIRTY == PROJ_FLAG_DIRTY ){
-					redis_write_proj( projects[i] );
-					projects[i]->flags &= ~(PROJ_FLAG_DIRTY);
-					y_log_message(Y_LOG_LEVEL_DEBUG, "Updated project ipn %d from local copy to database", i);
-				}
-
-				/* Check if project is flagged as stale; update from database */
-				if( projects[i]->flags & PROJ_FLAG_STALE == PROJ_FLAG_STALE ){
-					projects[i] = get_proj_from_ipn(i);
-					projects[i]->flags &= ~(PROJ_FLAG_STALE);
-					y_log_message(Y_LOG_LEVEL_DEBUG, "Updated project ipn %d from database to local copy", i);
-
-				}
-			}
-			else {
-				y_log_message( Y_LOG_LEVEL_WARNING, "Could not handle project %d flags due to no database connection", i);
-			}
-
+		if( db_stat == DB_STAT_CONNECTED ){
+			cache->update( &dbinfo );
 		}
 
 		/* sleep for some period of time until refresh */
@@ -131,7 +98,7 @@ static int thread_db_connection( void ) {
 	return 0;
 }
 
-static int thread_ui( void ) {
+static int thread_ui( class Prjcache* cache ) {
 
 	y_log_message( Y_LOG_LEVEL_INFO, "Start thread_ui" );
 
@@ -203,29 +170,8 @@ static int thread_ui( void ) {
 									   | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_MenuBar;
 
 
-	
-#if 0
-	/* Get a part to see if it works */
-	struct part_t* test_part = get_part_from_pn("part:GRM188R61E106KA73D");
-
-	/* Print out part number, mfg, internal part number */
-	printf("Redis database part:\n pn:\t%s, mfg:\t%s, internal#:\t%d \n", test_part->mpn, test_part->mfg, test_part->ipn);
-	printf("Info:\n");
-	for( unsigned int i = 0; i < test_part->info_len; i++ ){
-		printf("\t %s:\t%s\n", test_part->info[i].key, test_part->info[i].val );
-	}
-
-
-	/* Done with part, free it */
-	free_part_t( test_part );
-#endif
-
-
-
 	/* Use first project as first selected node */
-	if( nullptr != projects ){
-		selected_prj = projects[0];
-	}
+	cache->select(0);
 
 	/* Main application loop */
 	while( !glfwWindowShouldClose(window) ) {
@@ -247,7 +193,10 @@ static int thread_ui( void ) {
 		ImGui::SetNextWindowSize(ImVec2(display_w, display_h));
 		ImGui::Begin("Root", &bool_root_window, root_window_flags);
 		if( show_new_part_window ){
-			show_new_part_popup();
+			show_new_part_popup( &dbinfo );
+		}
+		if( show_new_proj_window ){
+			new_proj_window( &dbinfo );
 		}
 		if( show_import_parts_window ){
 			import_parts_window();
@@ -255,7 +204,7 @@ static int thread_ui( void ) {
 		if( show_db_settings_window ){
 			db_settings_window(&db_set );
 		}
-		show_root_window(projects);
+		show_root_window(cache);
 		ImGui::End();
 
 		/* End Projects view creation */
@@ -273,19 +222,6 @@ static int thread_ui( void ) {
 
 	}
 
-	/* Tell other threads to stop */
-	db_stat = DB_STAT_DISCONNECTED;
-
-	/* Disconnect from database */
-	redis_disconnect();
-
-	/* Cleanup projects */
-	for( int i = 0; i < 4; i++ ){
-		if( nullptr != projects[i] ){
-			free_proj_t(projects[i]);
-		}
-	}
-
 	/* Application cleanup */
 	ImGui_ImplOpenGL3_Shutdown();
 	ImGui_ImplGlfw_Shutdown();
@@ -299,123 +235,60 @@ static int thread_ui( void ) {
 	return 0;
 }
 
-int read_db_projects( struct db_settings_t* set, struct dbinfo_t* info, struct proj_t*** prjs ){
-	/* Now get database information */
-	if( !redis_read_dbinfo( &dbinfo ) ){
-		/* Get number of projects, and allocate memory for them */
-		if( nullptr != prjs && nullptr != *prjs ){
-			/* Free up memory for the projects, since no longer needed */
-			for( unsigned int i = 0; i < ncached_projects; i++ ){
-				if( nullptr != (*prjs)[i] ){
-					free_proj_t( (*prjs)[i] );
-					(*prjs)[i] = NULL;
-				}
-			}
-			free( *prjs );
-			*prjs = NULL;
-		}
-		y_log_message( Y_LOG_LEVEL_DEBUG, "Freed all cached data" );
+int open_db( struct db_settings_t* set, struct dbinfo_t * info, class Prjcache* cache){
 
-
-		/* Can now allocate memory for the new cached projects */
-		ncached_projects = 0;
-		*prjs = (struct proj_t**)calloc( dbinfo.nprj, sizeof( struct proj_t * ) );
-		if( nullptr == *prjs ){
-			db_stat = DB_STAT_DISCONNECTED;
-			y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate projects array" );
-		}
-		/* Get projects from database; has to start from 1 */
-		for( unsigned int i = 1; i <= dbinfo.nprj; i++ ){
-			/* Double check if databse connection is still valid */
-			if( db_stat == DB_STAT_CONNECTED ){
-				(*prjs)[i-1] = get_proj_from_ipn(i);
-				y_log_message( Y_LOG_LEVEL_DEBUG, "Saved project ipn %d", i );
-				/* Make fail safe so that whatever projects have been
-				 * acquired would not be lost. Not great as some will be
-				 * missing, but better than nothing */
-				ncached_projects++;
-			}
-		}
-		return 0;
-
-	}
-	else {
-		y_log_message( Y_LOG_LEVEL_ERROR, "Could not read database info" );
-		return 1;
-	}
-}
-
-int open_db( struct db_settings_t* set, struct dbinfo_t * info, struct proj_t *** projects ){
+	/* Wait for finish with displaying data */
+	while( PRJDISP_DISPLAYING == prj_disp_stat );
+	
 	/* Check if database connection was already made; may be switching
 	 * databases */
 	if( DB_STAT_DISCONNECTED != db_stat ){
-		y_log_message( Y_LOG_LEVEL_INFO, "Already connected to database; closing connection before switching");
-		/* Close connection first */
-		redis_disconnect();
-		db_stat = DB_STAT_DISCONNECTED;
-		if( nullptr != projects ){
-			/* Free up memory for the projects, since no longer needed */
-			for( unsigned int i = 0; i < ncached_projects; i++ ){
-				if( nullptr != (*projects)[i] ){
-					free_proj_t((*projects)[i]);
-					(*projects)[i] = NULL;
-				}
-			}
-			free( *projects );
-			*projects = NULL;
-		}
-
+		y_log_message( Y_LOG_LEVEL_ERROR, "Database connection is already open");
+		return -1;
 	}
 	y_log_message( Y_LOG_LEVEL_INFO, "Ready to connect to databse");
 	if( redis_connect( db_set.hostname, db_set.port ) ){ /* Use defaults of localhost and default port */
 		y_log_message( Y_LOG_LEVEL_WARNING, "Could not connect to database on request");
-		/* Failed to init database connection, so quit */
-//		run_flag = 0;
 		db_stat = DB_STAT_DISCONNECTED;
 		return -1;
 	}
 	else {
 		y_log_message( Y_LOG_LEVEL_INFO, "Successfully connected to database");
+
+		int retval = cache->update( info );
 		db_stat = DB_STAT_CONNECTED;
-		return read_db_projects( &db_set, &dbinfo, projects );	
+		return retval;
 	}
 }
 
 int main( int, char** ){
-
+	Prjcache* prjcache = new Prjcache(1);
 	/* Initialize logging */
 	y_init_logs("Pop:In", Y_LOG_MODE_CONSOLE, Y_LOG_LEVEL_DEBUG, NULL, "Pop:In Inventory Management");
 
-	if( open_db( &db_set, &dbinfo, &projects ) ){ /* Use defaults of localhost and default port */
+	if( open_db( &db_set, &dbinfo, prjcache ) ){ /* Use defaults of localhost and default port */
 		/* Failed to init database connection */
 		y_log_message( Y_LOG_LEVEL_WARNING, "Database connection failed on startup");
 	}
-	else{
-		selected_prj = projects[0];
-	}
 
 	/* Start UI thread */
-	std::thread ui( thread_ui );
+	std::thread ui( thread_ui, prjcache );
 
 	/* Start database connection thread */
-	std::thread db( thread_db_connection );
+	std::thread db( thread_db_connection, prjcache );
 
 	/* Join threads */
 	ui.join();
 	db.join();
 
 	/* Cleanup */
+	db_stat = DB_STAT_DISCONNECTED;
+
+	/* Disconnect from database */
+	redis_disconnect();
+
 	free( db_set.hostname );
-	if( nullptr != projects ){
-		/* Free up memory for the projects, since no longer needed */
-		for( unsigned int i = 0; i < ncached_projects; i++ ){
-			if( nullptr != projects[i] ){
-				free_proj_t(projects[i]);
-			}
-		}
-		free( projects );
-		projects = NULL;
-	}
+	delete prjcache;
 	y_close_logs();
 
 	return 0;
@@ -424,7 +297,7 @@ int main( int, char** ){
 
 
 
-static void show_project_select_window( struct proj_t **projects ){
+static void show_project_select_window( class Prjcache* cache ){
 	
 	int open_action = -1;
 	ImGui::Text("Projects");
@@ -456,28 +329,37 @@ static void show_project_select_window( struct proj_t **projects ){
 		ImGui::TableHeadersRow();
 
 
-//		projects[0].ProjectNode::DisplayNode( &projects[0], projects );
-		if( nullptr != projects ){
-			for( int i = 0; i < ncached_projects; i++ ){
-				if( nullptr != projects[i]){
-					/* If node is stale, wait for it to be fixed first before
-					 * displaying */
-					while( projects[i]->flags & PROJ_FLAG_STALE == PROJ_FLAG_STALE );
-					DisplayNode( projects[i] );
-				}
-			}
+		if( DB_STAT_DISCONNECTED != db_stat ){
+			cache->display_projects();
 		}
+		prj_disp_stat = PRJDISP_IDLE;
 		ImGui::EndTable();
 	}
 
 }
 
-static void show_new_part_popup( void ){
+static void show_new_part_popup( struct dbinfo_t* info ){
 	static struct part_t part;
+
+	/* For entering in dynamic fields */
+	static unsigned int ninfo = 0;
+	static unsigned int nprice = 0;
+	static unsigned int ndist = 0;
+
+	/* Info fields */
+	static std::vector<std::string> info_key;
+	static std::vector<std::string> info_val;
+
+	/* Distributor info */
+	static std::vector<std::string> dist_name;
+	static std::vector<std::string> dist_pn;
+
+	/* Pricing info */
+	static std::vector<int> price_q;
+	static std::vector<double> price_cost;
 
 	/* Buffers for text input. Can also be used for santizing inputs */
 	static char quantity[128] = {};
-	static char internal_pn[256] = {};
 	static char type[256] = {};
 	static char mfg[512] = {};
 	static char mpn[512] = {};
@@ -504,11 +386,26 @@ static void show_new_part_popup( void ){
 		ImGui::Separator();
 
 		/* Text entry fields */
-		ImGui::InputText("Internal Part Number", internal_pn, 255, ImGuiInputTextFlags_CharsNoBlank | ImGuiInputTextFlags_CharsDecimal );
-		ImGui::InputText("Part Type", type, 255, ImGuiInputTextFlags_CharsNoBlank);
-		ImGui::InputText("Part Number", mpn, 511, ImGuiInputTextFlags_CharsNoBlank);	
-		ImGui::InputText("Manufacturer", mfg, 511);
-		if( ImGui::BeginCombo("new-part-status", selection_str, 0 ) ){
+		ImGui::Text("Part Type");
+		ImGui::SameLine(NEWPART_SPACING);
+		ImGui::InputText("##new_part_type", type, 255, ImGuiInputTextFlags_CharsNoBlank);
+		/* Make sure that entry is lowercase */
+		for( unsigned int i = 0; i < strnlen( type, sizeof( type )); i++){
+			char tmp = tolower(type[i]);	
+			type[i] = tmp;
+		}
+
+		ImGui::Text("Part Number");
+		ImGui::SameLine(NEWPART_SPACING);
+		ImGui::InputText("##new_part_pn", mpn, 511, ImGuiInputTextFlags_CharsNoBlank);	
+
+		ImGui::Text("Manufacturer");
+		ImGui::SameLine(NEWPART_SPACING);
+		ImGui::InputText("##new_part_mfg", mfg, 511);
+
+		ImGui::Text("Part Status");
+		ImGui::SameLine(NEWPART_SPACING);
+		if( ImGui::BeginCombo("##new-part-status", selection_str, 0 ) ){
 			for( int i = 0; i < IM_ARRAYSIZE( status_options ); i++){
 				const bool is_selected = ( selection_idx == i );
 				if( ImGui::Selectable(status_options[i], is_selected ) ){
@@ -521,39 +418,170 @@ static void show_new_part_popup( void ){
 			}
 			ImGui::EndCombo();
 		}
-		ImGui::InputText("Local Stock", quantity, 127, ImGuiInputTextFlags_CharsNoBlank | ImGuiInputTextFlags_CharsDecimal );
 
-		/* Check if valid to copy */
+		ImGui::Text("Local Stock");
+		ImGui::SameLine(NEWPART_SPACING);
+		ImGui::InputText("##newpart_stock", quantity, 127, ImGuiInputTextFlags_CharsNoBlank | ImGuiInputTextFlags_CharsDecimal );
 
-		/* No checks because I'll totally do it later (hopefully) */
-		part.q = atoi( quantity );
-		part.ipn = atoi( internal_pn ); 
-		part.mpn = mpn;
-		part.mfg = mfg;
-		part.type = type;
-		if( 0 == selection_idx ){
-			part.status = pstat_prod;
-		}
-		else if( 1 == selection_idx ){
-			part.status = pstat_nrnd;
-		}
-		else if( 2 == selection_idx ){
-			part.status = pstat_obsolete;
-		}
-		else {
-			part.status = pstat_unknown;
+		ImGui::Spacing();
+
+		/* Inputs for fields */
+		ImGui::Text("Number of custom part fields");
+		ImGui::SameLine(NEWPART_SPACING);
+		ImGui::InputInt("##newpart_ninfo", (int*)&ninfo);
+
+		ImGui::Text("Number of Distributors");
+		ImGui::SameLine(NEWPART_SPACING);
+		ImGui::InputInt("##newpart_ndist", (int*)&ndist);
+
+		ImGui::Text("Number of price breaks");
+		ImGui::SameLine(NEWPART_SPACING);
+		ImGui::InputInt("##newpart_nprice", (int*)&nprice);
+
+		/* Resize vectors as needed */
+
+		/* Info field entries */
+
+
+		ImGui::Spacing();
+
+		if( ninfo > 0 ){
+			if( info_key.size() != ninfo ){
+				info_key.resize( ninfo );
+			}
+			if( info_val.size() != ninfo ){
+				info_val.resize( ninfo );
+			}
+			ImGui::Text("Info Fields");
+			ImGui::Text("Field Name"); ImGui::SameLine(NEWPART_SPACING); ImGui::Text("Value");
 		}
 
-		/* Figure out what the hell to do with the info section */
+		std::vector<std::string>::iterator info_key_itr;
+		info_key_itr = info_key.begin();
+		std::vector<std::string>::iterator info_val_itr;
+		info_val_itr = info_val.begin();
+
+		std::string info_key_ident;
+		std::string info_val_ident;
+
+		for( unsigned int i = 0; i < ninfo; i++ ){
+			info_key_ident = "##info_key" + std::to_string(i);
+			info_val_ident = "##info_val" + std::to_string(i);
+
+			ImGui::InputText(info_key_ident.c_str(), &(*info_key_itr), ImGuiInputTextFlags_CharsNoBlank);
+			ImGui::SameLine(NEWPART_SPACING);
+			ImGui::InputText(info_val_ident.c_str(), &(*info_val_itr), ImGuiInputTextFlags_CharsNoBlank );
+
+			info_key_itr++;
+			info_val_itr++;
+		}
+
+		ImGui::Spacing();
+
+		/* Distributor entries */
+		if( ndist > 0 ){
+			if( dist_name.size() != ndist ){
+				dist_name.resize( ndist );
+			}
+			if( dist_pn.size() != ndist ){
+				dist_pn.resize( ndist );
+			}
+			ImGui::Text("Distributor Information");
+			ImGui::Text("Name"); ImGui::SameLine(NEWPART_SPACING); ImGui::Text("Part Number");
+		}
+		std::vector<std::string>::iterator dist_name_itr;
+		dist_name_itr = dist_name.begin();
+		std::vector<std::string>::iterator dist_pn_itr;
+		dist_pn_itr = dist_pn.begin();
+
+		std::string dist_name_ident;
+		std::string dist_pn_ident;
+
+		for( unsigned int i = 0; i < ndist; i++ ){
+			dist_name_ident = "##dist_name" + std::to_string(i);
+			dist_pn_ident = "##dist_pn" + std::to_string(i);
+
+			ImGui::InputText(dist_name_ident.c_str(), &(*dist_name_itr), ImGuiInputTextFlags_CharsNoBlank );
+			ImGui::SameLine(NEWPART_SPACING);
+			ImGui::InputText(dist_pn_ident.c_str(), &(*dist_pn_itr), ImGuiInputTextFlags_CharsNoBlank );
+
+			dist_name_itr++;
+			dist_pn_itr++;
+		}
+
+		ImGui::Spacing();
+
+		if( nprice > 0 ){
+			if( price_q.size() != nprice ){
+				price_q.resize( nprice );
+			}
+			if( price_cost.size() != nprice ){
+				price_cost.resize( nprice );
+			}
+			ImGui::Text("Price Break Information");
+			ImGui::Text("Quantity"); ImGui::SameLine(NEWPART_SPACING); ImGui::Text("Price");
+		}
+
+		/* Price break entries */
+		std::vector<int>::iterator price_q_itr;
+		price_q_itr = price_q.begin();
+		std::vector<double>::iterator price_cost_itr;
+		price_cost_itr = price_cost.begin();
+
+		std::string price_q_ident;
+		std::string price_cost_ident;
+
+
+		for( unsigned int i = 0; i < nprice; i++ ){
+			price_q_ident = "##price_q" + std::to_string(i);
+			price_cost_ident = "##price_cost" + std::to_string(i);
+
+			ImGui::InputInt(price_q_ident.c_str(), &(*price_q_itr), ImGuiInputTextFlags_CharsNoBlank );
+			ImGui::SameLine(NEWPART_SPACING);
+			ImGui::InputDouble(price_cost_ident.c_str(), &(*price_cost_itr), ImGuiInputTextFlags_CharsNoBlank );
+
+			price_q_itr++;
+			price_cost_itr++;
+		}
 
 		/* Save and cancel buttons */
 		if( ImGui::Button("Save", ImVec2(0,0)) ){
 
 			/* Check if can save first */
+			if( !redis_read_dbinfo( info ) ){
+                                                                         
+            	/* Need to do simple checks here at some point */
+            	part.q = atoi( quantity );
+            	part.mpn = mpn;
+            	part.mfg = mfg;
+            	part.type = type;
+            	if( 0 == selection_idx ){
+            		part.status = pstat_prod;
+            	}
+            	else if( 1 == selection_idx ){
+            		part.status = pstat_nrnd;
+            	}
+            	else if( 2 == selection_idx ){
+            		part.status = pstat_obsolete;
+            	}
+            	else {
+            		part.status = pstat_unknown;
+            	}
 
-			/* Perform the write */
-			redis_write_part( &part );
-			y_log_message(Y_LOG_LEVEL_DEBUG, "Data written to database");
+				/* Increment part in dbinfo */
+				info->npart++;
+				part.ipn = info->npart;
+
+				/* Perform the write */
+				redis_write_part( &part );
+				y_log_message(Y_LOG_LEVEL_DEBUG, "Data written to database");
+
+
+				redis_write_dbinfo( info );
+			}
+			else {
+				y_log_message(Y_LOG_LEVEL_ERROR, "Could not write new part to database");
+			}
 			show_new_part_window = false;
 			
 			/* Clear all input data */
@@ -564,12 +592,10 @@ static void show_new_part_popup( void ){
 			part.mfg = NULL;
 	
 			memset( quantity, 0, 127);
-			memset( internal_pn, 0, 255);
 			memset( type, 0, 255 );
 			memset( mfg, 0, 511 );
 			memset( mpn, 0, 511 );
 			y_log_message(Y_LOG_LEVEL_DEBUG, "Cleared out part, finished writing");
-//			show_new_part_window = false;
 
 		}
 		ImGui::SetItemDefaultFocus();
@@ -583,7 +609,6 @@ static void show_new_part_popup( void ){
 			part.mpn = NULL;
 			part.mfg = NULL;
 			memset( quantity, 0, 127);
-			memset( internal_pn, 0, 255);
 			memset( type, 0, 255 );
 			memset( mfg, 0, 511 );
 			memset( mpn, 0, 511 );
@@ -594,6 +619,224 @@ static void show_new_part_popup( void ){
 	}
 
 }
+
+static void new_proj_window( struct dbinfo_t* info ){
+	static struct proj_t * prj = NULL;
+
+	/* Buffers for text input. Can also be used for santizing inputs */
+	static char version[256] = {};
+	static char author[512] = {};
+	static char pn[512] = {};
+	static char name[1024] = {};
+	static unsigned int nsubprj = 0;
+	static unsigned int nboms = 0;
+
+	static std::vector<unsigned int> bom_ipns;
+	static std::vector<std::string> bom_versions;
+	static std::vector<unsigned int> subprj_ipns;
+	static std::vector<std::string> subprj_versions;
+
+	/* Ensure popup is in the center */
+	ImVec2 center = ImGui::GetMainViewport()->GetCenter();
+	ImGui::SetNextWindowPos(center, ImGuiCond_Appearing, ImVec2( 0.5f, 0.5f));
+
+	ImGuiWindowFlags flags =   ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoCollapse \
+							 | ImGuiWindowFlags_NoSavedSettings;
+	if( ImGui::Begin("New Project Window",&show_new_proj_window, flags ) ){
+		ImGui::Text("Enter part details below");
+		ImGui::Separator();
+
+		/* Text entry fields */
+		ImGui::Text("Project Name");
+		ImGui::SameLine();
+		ImGui::InputText("##newprj_name", name, (sizeof(name) - 1));
+
+		ImGui::Text("Part Number");
+		ImGui::SameLine();
+		ImGui::InputText("##newprj_pn", pn, sizeof(pn) - 1);
+
+		ImGui::Text("Author");
+		ImGui::SameLine();
+		ImGui::InputText("##newprj_author", author, sizeof( author ) - 1);
+
+		ImGui::Text("Version");
+		ImGui::SameLine();
+		ImGui::InputText("##newprj_version", version, sizeof( version) - 1, ImGuiInputTextFlags_CharsNoBlank);
+
+		ImGui::Text("Number of BOMs");
+		ImGui::SameLine();
+		ImGui::InputInt("##newprj_nboms", (int *)&nboms);
+
+		ImGui::Text("Number of subprojects");
+		ImGui::SameLine();
+		ImGui::InputInt("##newprj_nsubprj", (int *)&nsubprj);
+
+
+		/* Figure out what size the vectors should be */
+		if( nsubprj > 0){
+			subprj_ipns.resize(nsubprj);
+			subprj_versions.resize(nsubprj);
+		}
+		if( nboms > 0){
+			bom_ipns.resize(nboms);
+			bom_versions.resize(nboms);
+		}
+
+		/* Subprojects entries */
+		std::vector<std::string>::iterator subprj_ver_itr;
+		subprj_ver_itr = subprj_versions.begin();
+		std::vector<unsigned int>::iterator subprj_ipn_itr;
+		subprj_ipn_itr = subprj_ipns.begin();
+
+		std::string sub_ipn_ident;
+		std::string sub_ver_ident;
+
+		for( unsigned int i = 0; i < nsubprj; i++ ){
+			sub_ipn_ident = "##sub_ipn" + std::to_string(i);
+			sub_ver_ident = "##sub_ver" + std::to_string(i);
+
+			ImGui::Text("Subproject %d", i+1);
+			ImGui::Text("Internal Part Number");
+			ImGui::SameLine();
+			ImGui::InputInt(sub_ipn_ident.c_str(), (int *)&(*subprj_ipn_itr) );
+
+			ImGui::Text("Version");
+			ImGui::SameLine();
+			ImGui::InputText(sub_ver_ident.c_str(), (char *)(*subprj_ver_itr).c_str(), 255 );
+
+			subprj_ver_itr++;
+			subprj_ipn_itr++;
+
+		}
+
+		/* For BOM entries */
+		std::vector<std::string>::iterator bom_ver_itr;
+		bom_ver_itr = bom_versions.begin();
+		std::vector<unsigned int>::iterator bom_ipn_itr;
+		bom_ipn_itr = bom_ipns.begin();
+
+		std::string bom_ipn_ident;
+		std::string bom_ver_ident;
+
+		for( unsigned int i = 0; i < nboms; i++ ){
+			bom_ipn_ident = "##bom_ipn" + std::to_string(i);
+			bom_ver_ident = "##bom_ver" + std::to_string(i);
+
+			ImGui::Text("BOM %d", i+1);
+			ImGui::Text("Internal Part Number");
+			ImGui::SameLine();
+			ImGui::InputInt(bom_ipn_ident.c_str(), (int *)&(*bom_ipn_itr) );
+
+			ImGui::Text("Version");
+			ImGui::SameLine();
+			ImGui::InputText(bom_ver_ident.c_str(), (char *)(*bom_ver_itr).c_str(), 255 );
+
+			bom_ver_itr++;
+			bom_ipn_itr++;
+
+		}
+
+
+
+		/* Save and cancel buttons */
+		if( ImGui::Button("Save", ImVec2(0,0)) ){
+
+			/* Check if valid to copy */
+			prj = (struct proj_t *)calloc(1, sizeof(struct proj_t));
+			if( nullptr == prj ){
+				y_log_message(Y_LOG_LEVEL_ERROR, "Could not allocate memory for saving new project");
+				show_new_proj_window = false;
+				return;
+			}
+			/* No checks because I'll totally do it later (hopefully) */
+			prj->flags = 0;
+			prj->selected = 0;
+
+			prj->nboms = nboms;
+			prj->nsub = nsubprj;
+
+			/* Add time created and modified, which they are both the same since the project is new */
+			prj->time_created = time(NULL);
+			prj->time_mod = prj->time_created;
+
+			prj->pn = (char *)calloc( strnlen(pn, sizeof(pn)) + 1, sizeof(char) );
+			strcpy( prj->pn, pn );
+			printf("String length pn: %d\n", strnlen(pn, sizeof(pn)));
+			printf("String length prj->pn: %d\n", strlen(prj->pn));
+			printf("Sizeof pn: %d\n", sizeof(prj->pn) );
+
+			prj->name = (char *)calloc( strnlen(name, sizeof(name)) + 1, sizeof(char) );
+			strcpy( prj->name, name );
+
+			prj->author = (char *)calloc( strnlen(author, sizeof(author)) + 1 , sizeof( char ) );
+			strcpy( prj->author, author );
+
+			prj->ver = (char *)calloc( strnlen(version, sizeof(version)) + 1 , sizeof( char ) );
+			strcpy( prj->ver, version );
+
+			/* Create new bom and subproject arrays */
+			prj->boms = (struct proj_bom_ver_t*)calloc( nboms, sizeof( struct proj_bom_ver_t) );
+			if( nullptr == prj->boms) {
+				y_log_message(Y_LOG_LEVEL_ERROR, "Could not allocate memory for new project bom array");
+				show_new_proj_window = false;
+				return;
+			}
+			for( unsigned int i = 0; i < nboms; i++){
+				prj->boms[i].ver = (char *)calloc( strlen( (char *)bom_versions[i].c_str() ) + 1, sizeof( char ) );
+				strcpy( prj->boms[i].ver, (char *)bom_versions[i].c_str());
+				prj->boms[i].bom = (struct bom_t*)calloc( 1, sizeof( struct bom_t ) );
+				prj->boms[i].bom->ipn = bom_ipns[i];
+			}
+
+			prj->sub = (struct proj_subprj_ver_t*)calloc( nsubprj, sizeof( struct proj_subprj_ver_t) );
+			if( nullptr == prj->sub) {
+				y_log_message(Y_LOG_LEVEL_ERROR, "Could not allocate memory for new project subproject array");
+				show_new_proj_window = false;
+				return;
+			}
+			for( unsigned int i = 0; i < nsubprj; i++){
+				prj->sub[i].ver = (char *)calloc( strlen( (char *)subprj_versions[i].c_str() ) + 1, sizeof( char ) );
+				strcpy( prj->sub[i].ver, (char *)subprj_versions[i].c_str());
+				prj->sub[i].prj = (struct proj_t*)calloc( 1, sizeof( struct proj_t ) );
+				prj->sub[i].prj->ipn = subprj_ipns[i];
+
+			}
+
+			/* Increment database information */
+			info->nprj++;
+			prj->ipn = info->nprj;
+
+			/* Perform the write */
+			redis_write_proj( prj );
+			y_log_message(Y_LOG_LEVEL_DEBUG, "Data written to database");
+			show_new_proj_window = false;
+
+
+			redis_write_dbinfo( info );
+
+			/* Make sure to read back the same data incase something went wrong */
+			redis_read_dbinfo( info );
+
+			/* Clear all input data */
+			free_proj_t( prj );
+			prj = NULL;
+
+			y_log_message(Y_LOG_LEVEL_DEBUG, "Cleared out project, finished writing");
+
+		}
+		ImGui::SetItemDefaultFocus();
+		ImGui::SameLine();
+		if ( ImGui::Button("Cancel", ImVec2(0, 0) )){
+			show_new_proj_window = false;
+		}
+
+		ImGui::End();
+	}
+
+}
+
+
+
 
 static void import_parts_window( void ){
 	static char filepath[(uint16_t)-1] = {}; /* Need to make sure this is large enough for some insane paths */
@@ -721,13 +964,14 @@ static void db_settings_window( struct db_settings_t * set ){
 
 
 /* Menu items */
-static void show_menu_bar( void ){
+static void show_menu_bar( class Prjcache* cache ){
 
 	if( ImGui::BeginMenuBar() ){
 		/* File Menu */
 		if( ImGui::BeginMenu("File") ) {
 			if( ImGui::MenuItem("New Project") ){
-				
+				y_log_message(Y_LOG_LEVEL_DEBUG, "New Project menu clicked");
+				show_new_proj_window = true;			
 			}
 			else if( ImGui::MenuItem("New Part") ){
 				/* Create part_t, then provide result to redis_write_part */
@@ -797,12 +1041,12 @@ static void show_menu_bar( void ){
 		if( ImGui::BeginMenu("Network") ){
 			if( ImGui::MenuItem("Connect") ){
 				y_log_message(Y_LOG_LEVEL_DEBUG, "Clicked Network->connect");
-				if( open_db( &db_set, &dbinfo, &projects ) ){ /* Use defaults of localhost and default port */
+				if( open_db( &db_set, &dbinfo, cache ) ){ /* Use defaults of localhost and default port */
 					/* Failed to init database connection */
 					y_log_message( Y_LOG_LEVEL_WARNING, "Database connection failed on startup");
 				}
 				else{
-					selected_prj = projects[0];
+					cache->select(0);
 				}
 			}
 			else if( ImGui::MenuItem("Server Settings")){
@@ -836,7 +1080,7 @@ static void show_menu_bar( void ){
 }
 
 static void show_bom_window( bom_t* bom ){
-
+	static part_t *selected_item = NULL;	
 	/* Show BOM/Information View */
 	ImGuiTabBarFlags tabbar_flags = ImGuiTabBarFlags_None;
 	if( ImGui::BeginTabBar("Project Info", tabbar_flags ) ){
@@ -886,7 +1130,7 @@ static void show_bom_window( bom_t* bom ){
 				/* Used for selecting specific item in BOM */
 				bool item_sel[ bom->nitems ] = {};
 				char line_item_label[64]; /* May need to change size at some point */
-				static part_t *selected_item = NULL;	
+
 				for( int i = 0; i < bom->nitems; i++){
 					ImGui::TableNextRow();
 
@@ -916,7 +1160,11 @@ static void show_bom_window( bom_t* bom ){
 						/* Open popup for part info */
 						ImGui::OpenPopup("PartInfo");
 						y_log_message(Y_LOG_LEVEL_DEBUG, "%s was selected", bom->parts[i]->mpn);
-						selected_item = bom->parts[i];
+						if( nullptr != selected_item ){
+							free_part_t( selected_item );
+							selected_item = nullptr;
+						}
+						selected_item = copy_part_t(bom->parts[i]);
 					}
 
 				}
@@ -978,6 +1226,10 @@ static void show_bom_window( bom_t* bom ){
 					ImGui::Separator();
 			
 					if( ImGui::Button("OK", ImVec2(120,0))){
+						if( nullptr != selected_item ){
+							free_part_t( selected_item );
+						}
+						
 						ImGui::CloseCurrentPopup();
 					}
 					ImGui::SetItemDefaultFocus();
@@ -993,15 +1245,13 @@ static void show_bom_window( bom_t* bom ){
 		ImGui::EndTabBar();
 	}
 
-
-
 }
 
 /* Setup root window, child windows */
-static void show_root_window( struct proj_t** projects ){
+static void show_root_window( class Prjcache* cache ){
 
 	/* Create menu items */
-	show_menu_bar();
+	show_menu_bar( cache );
 	
 	/* Put the different items into columns*/
 	static ImGuiTableFlags table_flags = ImGuiTableFlags_SizingStretchProp | \
@@ -1018,7 +1268,9 @@ static void show_root_window( struct proj_t** projects ){
 		ImGui::TableSetColumnIndex(0);
 		/* Show project view */
 		ImGui::BeginChild("Project Selector", ImVec2(ImGui::GetContentRegionAvail().x * 0.95f, ImGui::GetContentRegionAvail().y * 0.95f ));
-		show_project_select_window(projects);
+		if( nullptr != cache && DB_STAT_DISCONNECTED != db_stat ){
+			show_project_select_window(cache);
+		}
 		ImGui::EndChild();
 
 		/* Info view on the right */
@@ -1026,14 +1278,11 @@ static void show_root_window( struct proj_t** projects ){
 		ImGui::BeginChild("Project Information", ImVec2(ImGui::GetContentRegionAvail().x * 0.95f, ImGui::GetContentRegionAvail().y*0.95f));
 
 		/* Get selected project */
-		if( NULL != selected_prj ){
-			show_bom_window( selected_prj->boms[0].bom );
-		} else {
-			/* No projects selected, use empty bom */
-//			show_bom_window(empty_default_bom);
-		}
+		if( nullptr != cache->get_selected() &&  nullptr != cache->get_selected()->boms[0].bom ){
+			show_bom_window( cache->get_selected()->boms[0].bom );
+		} 
+
 		ImGui::EndChild();
-		
 		ImGui::EndTable();	
 	}
 
@@ -1051,103 +1300,6 @@ static void show_root_window( struct proj_t** projects ){
 	}
 
 	ImGui::Spacing();
-
-}
-
-void DisplayNode( struct proj_t* node ){
-
-	ImGuiTreeNodeFlags node_flags = ImGuiTreeNodeFlags_OpenOnArrow | \
-									ImGuiTreeNodeFlags_OpenOnDoubleClick | \
-									ImGuiTreeNodeFlags_SpanFullWidth; 
-
-	ImGui::TableNextRow();
-	ImGui::TableNextColumn();
-	
-	/* Check if project contains subprojects */
-	if( node->nsub > 0 ){
-
-		/* Check if selected, display if selected */
-		if( node->selected && (node == selected_prj ) ){
-			node_flags |= ImGuiTreeNodeFlags_Selected;
-		}
-		else {
-			node_flags &= ~ImGuiTreeNodeFlags_Selected;		
-		}
-
-		bool open = ImGui::TreeNodeEx(node->name, node_flags);
-		
-		/* Check if item has been clicked */
-		if( ImGui::IsItemClicked() && !ImGui::IsItemToggledOpen() ){
-			y_log_message(Y_LOG_LEVEL_DEBUG, "In display: Node %s clicked", node->name);
-			selected_prj = node;
-			node->selected = true;
-		}
-
-
-		ImGui::TableNextColumn();
-		ImGui::Text( asctime( localtime(&node->time_created)) );
-		ImGui::TableNextColumn();
-		ImGui::Text(node->ver);
-		ImGui::TableNextColumn();
-		ImGui::TextUnformatted(node->author);
-		
-		/* Display subprojects if node is open */
-		if( open ){
-			for( int i = 0; i < node->nsub; i++ ){
-				/* If node is stale, wait for it to be fixed first before
-				 * displaying */
-				while( node->flags & PROJ_FLAG_STALE == PROJ_FLAG_STALE );
-				DisplayNode( node->sub[i].prj );
-			}
-			ImGui::TreePop();
-		}
-	}
-	else {
-
-		node_flags = ImGuiTreeNodeFlags_Leaf | \
-					 ImGuiTreeNodeFlags_NoTreePushOnOpen | \
-					 ImGuiTreeNodeFlags_SpanFullWidth;
-
-		if( node->selected && (node == selected_prj) ){
-			node_flags |= ImGuiTreeNodeFlags_Selected;
-		}
-
-		ImGui::TreeNodeEx(node->name, node_flags );
-
-		/* Check if item has been clicked */
-		if( ImGui::IsItemClicked() && !ImGui::IsItemToggledOpen() ){
-			y_log_message(Y_LOG_LEVEL_DEBUG, "In display: Node %s clicked", node->name);
-			selected_prj = node;	
-			node->selected = true;
-		}
-
-		ImGui::TableNextColumn();
-		ImGui::Text( asctime( localtime(&node->time_created)) ); /* Convert time_t to localtime */
-		ImGui::TableNextColumn();
-		ImGui::Text(node->ver);
-		ImGui::TableNextColumn();
-		ImGui::TextUnformatted(node->author);
-
-	}
-
-#if 0
-	/* Check if something was clicked */
-	if( selected_prj != NULL && node == selected_prj ){
-		y_log_message(Y_LOG_LEVEL_DEBUG, "Project %s has been clicked", selected_prj->name);
-		/* toggle state */
-		node->selected = !(node->selected);
-		y_log_message(Y_LOG_LEVEL_DEBUG, "Selection state: %d", selected_prj->selected);
-
-		if( selected_prj->selected ){
-			y_log_message(Y_LOG_LEVEL_DEBUG, "Node %s is highlighted", node->name);
-		}
-		else {
-			/* Don't show anything if there is no highlight; second
-			 * thought, maybe not a good idea?  */
-			//selected_prj = -1;	
-		}
-	}
-#endif
 
 }
 

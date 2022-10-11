@@ -98,11 +98,13 @@ CXXFLAGS.RELEASE= -O2
 #OPTIONS += -fif-conversion -fif-conversion2 -free -fexpensive-optimizations
 #OPTIONS += -fshrink-wrap -fhoist-adjacent-loads
 OPTIONS  += -fstack-protector -D_FORTIFY_SOURCES=2
+OPTIONS  += -fsanitize=address 
 
 COPTIONS += $(OPTIONS)
-CXXOPTIONS += $(OPTIONS)
 
 CXXOPTIONS  += -std=c++17
+CXXOPTIONS += $(OPTIONS)
+
 
 # External Library Locations
 LIBDIR= ./libs
@@ -182,7 +184,7 @@ endif
 endif
 
 
-CFLAGS  += -std=c11 -DHAVE_INLINE
+CFLAGS  += -std=c17 -DHAVE_INLINE
 CFLAGS	+= $(INC)
 
 #Add build type flags
@@ -194,9 +196,10 @@ CFLAGS += $(WARNINGS)
 CXXFLAGS	+= $(INC)	
 
 #Add build type flags
+
+CXXFLAGS += $(CXXOPTIONS) -D_GLIBCXX_USE_CXX11_ABI=0
 CXXFLAGS += ${CFLAGS.${BUILD}} 
 
-CXXFLAGS += $(CXXOPTIONS)
 CXXFLAGS += $(WARNINGS)
 
 # IMGUI Source files
@@ -208,8 +211,9 @@ CXXSRC		+= $(IMGUI)/imgui_widgets.cpp
 CXXSRC		+= $(IMGUI)/imgui_demo.cpp
 CXXSRC		+= $(IMGUI)/backends/imgui_impl_glfw.cpp
 CXXSRC		+= $(IMGUI)/backends/imgui_impl_opengl3.cpp
+CXXSRC		+= $(IMGUI)/misc/cpp/imgui_stdlib.cpp
 
-SRC_DIR	 = ./src
+SRC_DIR	 	 = ./src
 CSRC		 = $(wildcard $(SRC_DIR)/*.c)
 ifeq ($(OS), Windows)
 CSRC        += $(wildcard ./redis/src/*.c)
@@ -217,7 +221,7 @@ endif
 COBJ		 = $(CSRC:.c=.o)
 CDEP	 	 = $(COBJ:.o=.d)
 
-CXXSRC	+= $(wildcard $(SRC_DIR)/*.cpp)
+CXXSRC		+= $(wildcard $(SRC_DIR)/*.cpp)
 CXXOBJ		 = $(CXXSRC:.cpp=.o)
 CXXDEP		 = $(CXXOBJ:.o=.d)
 
@@ -292,7 +296,8 @@ $(LIBHIREDIS_SO) $(LIBHIREDIS_A): $(LIBHIREDIS_DIR)/.git
 	make -C $(LIBHIREDIS_DIR)/build install
 
 valgrind: $(PRGNAME)
-	valgrind --leak-check=yes --track-origins=yes --show-reachable=yes --read-inline-info=yes --show-leak-kinds=possible --xtree-leak=yes --xtree-memory=full --gen-suppressions=all --xtree-memory-file="xtree_mem.log" --log-file="valgrind.log" ./$(PRGNAME)
+	valgrind --tool=memcheck --leak-check=full --show-leak-kinds=all --track-origins=yes --show-reachable=yes --read-inline-info=yes --show-leak-kinds=possible  --gen-suppressions=all --log-file="valgrind.log" ./$(PRGNAME)
+#	valgrind --leak-check=yes --track-origins=yes --show-reachable=yes --read-inline-info=yes --show-leak-kinds=possible --xtree-leak=yes --xtree-memory=full --gen-suppressions=all --xtree-memory-file="xtree_mem.log" --log-file="valgrind.log" ./$(PRGNAME)
 
 %.d: %.c
 	@$(CC) $(CFLAGS) $< -MM -MT $(@:.d=.o) >$@
