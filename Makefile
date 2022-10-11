@@ -98,7 +98,7 @@ CXXFLAGS.RELEASE= -O2
 #OPTIONS += -fif-conversion -fif-conversion2 -free -fexpensive-optimizations
 #OPTIONS += -fshrink-wrap -fhoist-adjacent-loads
 OPTIONS  += -fstack-protector -D_FORTIFY_SOURCES=2
-OPTIONS  += -fsanitize=address 
+#OPTIONS  += -fsanitize=address 
 
 COPTIONS += $(OPTIONS)
 
@@ -311,6 +311,12 @@ clean:
 	-@rm -f $(CXXOBJ)
 	-@rm -f $(CDEP)
 	-@rm -f $(CXXDEP)
+	-@rm -f $(IMGUI)/*.o
+	-@rm -f $(IMGUI)/backends/*.o
+	-@rm -f $(IMGUI)/misc/cpp/*.o
+	-@rm -f $(IMGUI)/*.d
+	-@rm -f $(IMGUI)/backends/*.d
+	-@rm -f $(IMGUI)/misc/cpp/*.d
 	-@rm -f $(PRGNAME)
 	-@rm -f $(PRGNAME).exe
 	-@rm -f $(SRC_DIR)/*.gcda
