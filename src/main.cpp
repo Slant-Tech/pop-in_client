@@ -1,4 +1,5 @@
 #include <imgui.h>
+#include <misc/cpp/imgui_stdlib.h>
 #include <imgui_impl_glfw.h>
 #include <imgui_impl_opengl3.h>
 #include <stdio.h>
@@ -14,6 +15,7 @@
 #include <db_handle.h>
 #include <L2DFileDialog.h>
 #include <prjcache.h>
+#include <ctype.h>
 
 #ifdef _WIN32
 #include <windows.h>
@@ -387,6 +389,11 @@ static void show_new_part_popup( struct dbinfo_t* info ){
 		ImGui::Text("Part Type");
 		ImGui::SameLine(NEWPART_SPACING);
 		ImGui::InputText("##new_part_type", type, 255, ImGuiInputTextFlags_CharsNoBlank);
+		/* Make sure that entry is lowercase */
+		for( unsigned int i = 0; i < strnlen( type, sizeof( type )); i++){
+			char tmp = tolower(type[i]);	
+			type[i] = tmp;
+		}
 
 		ImGui::Text("Part Number");
 		ImGui::SameLine(NEWPART_SPACING);
@@ -461,9 +468,9 @@ static void show_new_part_popup( struct dbinfo_t* info ){
 			info_key_ident = "##info_key" + std::to_string(i);
 			info_val_ident = "##info_val" + std::to_string(i);
 
-			ImGui::InputText(info_key_ident.c_str(), (char *)(*info_key_itr).c_str(), 512 );
+			ImGui::InputText(info_key_ident.c_str(), &(*info_key_itr), ImGuiInputTextFlags_CharsNoBlank);
 			ImGui::SameLine(NEWPART_SPACING);
-			ImGui::InputText(info_val_ident.c_str(), (char *)(*info_val_itr).c_str(), 512 );
+			ImGui::InputText(info_val_ident.c_str(), &(*info_val_itr), ImGuiInputTextFlags_CharsNoBlank );
 
 			info_key_itr++;
 			info_val_itr++;
@@ -494,9 +501,9 @@ static void show_new_part_popup( struct dbinfo_t* info ){
 			dist_name_ident = "##dist_name" + std::to_string(i);
 			dist_pn_ident = "##dist_pn" + std::to_string(i);
 
-			ImGui::InputText(dist_name_ident.c_str(), (char *)(*dist_name_itr).c_str(), 512 );
+			ImGui::InputText(dist_name_ident.c_str(), &(*dist_name_itr), ImGuiInputTextFlags_CharsNoBlank );
 			ImGui::SameLine(NEWPART_SPACING);
-			ImGui::InputText(dist_pn_ident.c_str(), (char *)(*dist_pn_itr).c_str(), 512 );
+			ImGui::InputText(dist_pn_ident.c_str(), &(*dist_pn_itr), ImGuiInputTextFlags_CharsNoBlank );
 
 			dist_name_itr++;
 			dist_pn_itr++;
@@ -529,9 +536,9 @@ static void show_new_part_popup( struct dbinfo_t* info ){
 			price_q_ident = "##price_q" + std::to_string(i);
 			price_cost_ident = "##price_cost" + std::to_string(i);
 
-			ImGui::InputInt(price_q_ident.c_str(), &(*price_q_itr) );
+			ImGui::InputInt(price_q_ident.c_str(), &(*price_q_itr), ImGuiInputTextFlags_CharsNoBlank );
 			ImGui::SameLine(NEWPART_SPACING);
-			ImGui::InputDouble(price_cost_ident.c_str(), &(*price_cost_itr) );
+			ImGui::InputDouble(price_cost_ident.c_str(), &(*price_cost_itr), ImGuiInputTextFlags_CharsNoBlank );
 
 			price_q_itr++;
 			price_cost_itr++;

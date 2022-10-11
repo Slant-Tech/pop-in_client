@@ -5,6 +5,7 @@
 #include <yder.h>
 #include <db_handle.h>
 #include <unistd.h>
+
 	
 
 /* Redis Context for handling in database */
@@ -815,7 +816,7 @@ int redis_write_part( struct part_t* part ){
 
 	y_log_message(Y_LOG_LEVEL_DEBUG, "Added items to object");
 
-	dbpart_name = calloc( strlen(part->mpn) + strlen("part:") + 2, sizeof( char ) );
+	dbpart_name = calloc( strlen(part->mpn) + strlen("part:") + strlen(part->type) + 3, sizeof( char ) );
 
 	int retval = -1;
 	if( NULL == dbpart_name ){
@@ -824,7 +825,7 @@ int redis_write_part( struct part_t* part ){
 	}
 	else{
 		/* create name */
-		sprintf( dbpart_name, "part:%s", part->mpn);
+		sprintf( dbpart_name, "part:%s:%s", part->type, part->mpn);
 
 		y_log_message(Y_LOG_LEVEL_DEBUG, "Created name: %s", dbpart_name);
 
@@ -838,14 +839,6 @@ int redis_write_part( struct part_t* part ){
 	/* Cleanup json object */
 	free( dbpart_name );
 	json_object_put( part_root );
-
-	if( NULL != price_itr ){
-		json_object_put( price_itr );
-	}
-
-	if( NULL != dist_itr ){
-		json_object_put( dist_itr );
-	}
 
 	return retval;
 
@@ -1063,9 +1056,6 @@ int redis_write_bom( struct bom_t* bom ){
 	/* Cleanup json object */
 	free( dbbom_name );
 	json_object_put( bom_root );
-	if( NULL != line_itr ){
-		json_object_put( line_itr );
-	}
 
 	return retval;
 
@@ -1179,13 +1169,6 @@ int redis_write_proj( struct proj_t* prj ){
 	/* Cleanup json object */
 	free( dbprj_name );
 	json_object_put( prj_root );
-	if( NULL != bom_itr ){
-		json_object_put( bom_itr );
-	}
-
-	if( NULL != sub_itr ){
-		json_object_put( sub_itr );
-	}
 
 	return retval;
 
