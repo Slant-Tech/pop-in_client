@@ -6,7 +6,7 @@
 	url = git@gitlab.slant.tech:open-source/c-redis-wrapper.git
 [submodule "imgui-filedialog"]
 	path = imgui-filedialog
-	url = https://github.com/Limeoats/L2DFileDialog.git
+	url = git@gitlab.slant.tech:engineering/software/library_maintenance/L2DFileDialog.git
 [submodule "libs/hiredis"]
 	path = libs/hiredis
 	url = https://github.com/redis/hiredis.git
