@@ -152,6 +152,9 @@ int redis_write_part( struct part_t* part );
 /* Copy part structure to new structure */
 struct part_t* copy_part_t( struct part_t* src );
 
+/* Copy bom structure to new structure */
+struct bom_t* copy_bom_t( struct bom_t* src );
+
 /* Write bom to database */
 int redis_write_bom( struct bom_t* bom );
 

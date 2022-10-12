@@ -216,6 +216,17 @@ static int parse_json_bom( struct bom_t * bom, struct json_object* restrict jbom
 	}
 	strncpy( bom->ver, json_object_get_string( jversion ), jstrlen );
 
+	/* BOM Name */
+	jstrlen = strlen( json_object_get_string( jname ) );
+	bom->name = calloc( jstrlen + 1, sizeof( char ) );
+	if( NULL == bom->name ){
+		y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate memory for bom name");
+		free_bom_t( bom );
+		bom = NULL;
+		return -1;
+	}
+	strncpy( bom->name, json_object_get_string( jname ), jstrlen );
+
 	/* Get number of elements in info key value array */
 	bom->nitems = json_object_array_length( jlines );
 
@@ -548,14 +559,16 @@ void free_part_t( struct part_t* part ){
 
 		if( NULL != part->info ){
 			for( unsigned int i = 0; i < part->info_len; i++ ){
-				if( NULL != part->info[i].key ){
-					free( part->info[i].key );
-					part->info[i].key = NULL;
-				}
-				if( NULL != part->info[i].val ){
-					free( part->info[i].val );
-					part->info[i].val = NULL;
-				}
+			//	if( NULL != part->info[i] ){
+					if( NULL != part->info[i].key ){
+						free( part->info[i].key );
+						part->info[i].key = NULL;
+					}
+					if( NULL != part->info[i].val ){
+						free( part->info[i].val );
+						part->info[i].val = NULL;
+					}
+			//	}
 
 			}
 
@@ -854,6 +867,8 @@ struct part_t* copy_part_t( struct part_t* src ){
 		return NULL;
 	}
 
+	y_log_message( Y_LOG_LEVEL_DEBUG, "IPN Of Part to copy: %d", src->ipn );
+
 	/* Allocate memory for struct */
 	dest = calloc( 1, sizeof( struct part_t ) );
 	if( NULL == dest ){
@@ -960,6 +975,82 @@ struct part_t* copy_part_t( struct part_t* src ){
 	return dest;
 }
 
+/* Copy bom structure to new structure */
+struct bom_t* copy_bom_t( struct bom_t* src ){
+	struct bom_t* dest;
+	
+	/* Check if source is valid */
+	if( NULL == src ){
+		y_log_message( Y_LOG_LEVEL_ERROR, "Source for bom copy is invalid" );
+		return NULL;
+	}
+
+	y_log_message( Y_LOG_LEVEL_DEBUG, "IPN Of BOM to copy: %d", src->ipn );
+
+	/* Allocate memory for struct */
+	dest = calloc( 1, sizeof( struct bom_t ) );
+	if( NULL == dest ){
+		y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate memory for destination bom");
+		return NULL;
+	}
+
+	/* Copy data over */
+	dest->ipn = src->ipn;
+	dest->name = calloc( strlen(src->name) + 1, sizeof( char ) );
+	if( NULL == dest->name ){
+		y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate memory for destination bom name" );
+		free_bom_t( dest );
+		return NULL;
+	}
+	strcpy( dest->name, src->name );
+
+	dest->ver = calloc( strlen(src->ver) + 1, sizeof( char ) );
+	if( NULL == dest->ver ){
+		y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate memory for destination bom version" );
+		free_bom_t( dest );
+		return NULL;
+	}
+	strcpy( dest->ver, src->ver );
+
+
+	dest->nitems = src->nitems;
+	
+	/* Create line items */
+	dest->line = calloc( src->nitems, sizeof( struct bom_line_t ) );
+	if( NULL == dest->line ){
+		y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate memory for destination bom line items" );
+		free_bom_t( dest );
+		return NULL;	
+	}
+
+	/* Wait to copy data until parts array is also created, saves another for
+	 * loop */
+
+	dest->parts = calloc( src->nitems, sizeof( struct part_t* ) );
+	if( NULL == dest->parts ){
+		y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate memory for destination bom parts" );
+		free_bom_t( dest );
+		return NULL;
+	}
+	for( unsigned int i = 0; i < dest->nitems; i++ ){
+		dest->parts[i] = copy_part_t( src->parts[i] );
+
+		if( NULL == dest->parts[i] ){
+			y_log_message( Y_LOG_LEVEL_ERROR, "Failed to copy part to destination bom" );
+			free_bom_t( dest );
+			return NULL;			
+		}
+
+		/* Now copy line item data */
+		dest->line[i].ipn = src->line[i].ipn;
+		dest->line[i].q = src->line[i].q;
+
+	}
+
+
+	return dest;
+}
+
 
 int redis_write_bom( struct bom_t* bom ){
 	/* Database part name */
@@ -974,8 +1065,6 @@ int redis_write_bom( struct bom_t* bom ){
 
 	/* Create json object to write */
 	json_object *bom_root = json_object_new_object();
-	json_object *ipn = json_object_new_object();
-	json_object *version = json_object_new_object();
 	json_object *line = json_object_new_array_ext(bom->nitems);
 	json_object *line_itr = NULL;
 
@@ -984,23 +1073,8 @@ int redis_write_bom( struct bom_t* bom ){
 		return -1;
 	}
 
-	if( NULL == ipn ){
-		y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate new bom ipn json object" );
-		json_object_put(bom_root);
-		return -1;	
-	}
-
-	if( NULL == version ){
-		y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate bom version json object" );
-		json_object_put( ipn );
-		json_object_put(bom_root);
-		return -1;	
-	}
-
 	if( NULL == line ){
 		y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate new bom items json object" );
-		json_object_put(ipn);
-		json_object_put(version);
 		json_object_put(bom_root);
 		return -1;	
 	}
@@ -1013,8 +1087,6 @@ int redis_write_bom( struct bom_t* bom ){
 			line_itr = json_object_new_object();
 			if( NULL == line_itr ){
 				y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate new bom line iterator json object" );	
-				json_object_put(ipn);
-				json_object_put(version);
 				json_object_put(line);
 				json_object_put(bom_root);
 				return -1;
@@ -1030,8 +1102,9 @@ int redis_write_bom( struct bom_t* bom ){
 
 	/* Add all parts of the part struct to the json object */
 	json_object_object_add( bom_root, "ipn", json_object_new_int64(bom->ipn) ); /* This should be generated somehow */
-	json_object_object_add( bom_root, "ver", version );
+	json_object_object_add( bom_root, "ver", json_object_new_string(bom->ver) );
 	json_object_object_add( bom_root, "items", line );
+	json_object_object_add( bom_root, "name", json_object_new_string(bom->name) );
 
 	y_log_message(Y_LOG_LEVEL_DEBUG, "Added items to object");
 
