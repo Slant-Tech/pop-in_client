@@ -97,12 +97,12 @@ CXXFLAGS.RELEASE= -O2
 #OPTIONS += -fipa-sra -fmerge-all-constants -fthread-jumps -fauto-inc-dec
 #OPTIONS += -fif-conversion -fif-conversion2 -free -fexpensive-optimizations
 #OPTIONS += -fshrink-wrap -fhoist-adjacent-loads
-OPTIONS  += -fstack-protector -D_FORTIFY_SOURCES=2
+OPTIONS  += -fstack-protector -D_FORTIFY_SOURCES=2 -D_GNU_SOURCE
 #OPTIONS  += -fsanitize=address 
 
 COPTIONS += $(OPTIONS)
 
-CXXOPTIONS  += -std=c++17
+CXXOPTIONS  += -std=gnu++17
 CXXOPTIONS += $(OPTIONS)
 
 
@@ -184,7 +184,7 @@ endif
 endif
 
 
-CFLAGS  += -std=c17 -DHAVE_INLINE
+CFLAGS  += -std=gnu17 -DHAVE_INLINE
 CFLAGS	+= $(INC)
 
 #Add build type flags

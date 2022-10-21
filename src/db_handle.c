@@ -5,7 +5,7 @@
 #include <yder.h>
 #include <db_handle.h>
 #include <unistd.h>
-
+#include <stdio.h>
 	
 
 /* Redis Context for handling in database */
@@ -389,16 +389,8 @@ static int parse_json_proj( struct proj_t * prj, struct json_object* restrict jp
 				/* Parse it out to get the required data */
 				jkey = json_object_object_get( jbom_itr, "ipn" );
 				jval = json_object_object_get( jbom_itr, "ver" );
-				unsigned int bom_ipn = json_object_get_int64( jkey );
-				prj->boms[i].bom = get_bom_from_ipn( bom_ipn );
-				if( NULL == prj->boms[i].bom ){
-					y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate memory for bom %d at %d in part array", bom_ipn, i );
-					free_proj_t( prj );
-					prj = NULL;
-					return -1;
-				}
 
-				/* subproject version */
+				/* bom version */
 				jstrlen = strlen( json_object_get_string( jval ) );
 				prj->boms[i].ver = calloc( jstrlen + 1, sizeof( char ) );
 				if( NULL == prj->boms[i].ver ){
@@ -408,7 +400,16 @@ static int parse_json_proj( struct proj_t * prj, struct json_object* restrict jp
 					return -1;
 				}
 				strcpy( prj->boms[i].ver, json_object_get_string( jval ) );
+
 				//json_object_put( jbom_itr );
+				unsigned int bom_ipn = json_object_get_int64( jkey );
+				prj->boms[i].bom = get_bom_from_ipn( bom_ipn, prj->boms[i].ver );
+				if( NULL == prj->boms[i].bom ){
+					y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate memory for bom %d at %d in part array", bom_ipn, i );
+					free_proj_t( prj );
+					prj = NULL;
+					return -1;
+				}
 			}
 			else {
 				/* Issue with getting BOM */
@@ -827,17 +828,16 @@ int redis_write_part( struct part_t* part ){
 
 	y_log_message(Y_LOG_LEVEL_DEBUG, "Added items to object");
 
-	dbpart_name = calloc( strlen(part->mpn) + strlen("part:") + strlen(part->type) + 3, sizeof( char ) );
+//	dbpart_name = calloc( strlen(part->mpn) + strlen("part:") + strlen(part->type) + 3, sizeof( char ) );
 
+	/* create name */
+	asprintf( dbpart_name, "part:%s:%s", part->type, part->mpn);
 	int retval = -1;
 	if( NULL == dbpart_name ){
 		y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate memory for dbpart_name");
 		retval = -1;
 	}
 	else{
-		/* create name */
-		sprintf( dbpart_name, "part:%s:%s", part->type, part->mpn);
-
 		y_log_message(Y_LOG_LEVEL_DEBUG, "Created name: %s", dbpart_name);
 
 		/* Write object to database */
@@ -1106,7 +1106,8 @@ int redis_write_bom( struct bom_t* bom ){
 
 	y_log_message(Y_LOG_LEVEL_DEBUG, "Added items to object");
 
-	dbbom_name = calloc( strlen("bom:") + 2 + 16, sizeof( char ) ); /* IPN has to be less than 16 characters right now */
+//	dbbom_name = calloc( strlen("bom:") + 2 + 16, sizeof( char ) ); /* IPN has to be less than 16 characters right now */
+	asprintf( &dbbom_name, "bom:%d:%s", bom->ipn, bom->ver);
 
 	int retval = -1;
 	if( NULL == dbbom_name ){
@@ -1115,7 +1116,7 @@ int redis_write_bom( struct bom_t* bom ){
 	}
 	else{
 		/* create name */
-		sprintf( dbbom_name, "bom:%d", bom->ipn);
+//		sprintf( dbbom_name, "bom:%d", bom->ipn);
 
 		y_log_message(Y_LOG_LEVEL_DEBUG, "Created name: %s", dbbom_name);
 
@@ -1219,17 +1220,15 @@ int redis_write_proj( struct proj_t* prj ){
 
 	y_log_message(Y_LOG_LEVEL_DEBUG, "Added items to object");
 
-	dbprj_name = calloc( strlen("prj:") + 2 + 16, sizeof( char ) ); /* IPN has to be less than 16 characters right now */
-
+//	dbprj_name = calloc( strlen("prj:") + 2 + 16, sizeof( char ) ); /* IPN has to be less than 16 characters right now */
+	/* create name */
+	asprintf( dbprj_name, "prj:%d", prj->ipn);
 	int retval = -1;
 	if( NULL == dbprj_name ){
 		y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate memory for dbprj_name");
 		retval = -1;
 	}
 	else{
-		/* create name */
-		sprintf( dbprj_name, "prj:%d", prj->ipn);
-
 		y_log_message(Y_LOG_LEVEL_DEBUG, "Created name: %s", dbprj_name);
 
 		/* Write object to database */
@@ -1365,14 +1364,12 @@ struct part_t* get_part_from_pn( const char* pn ){
 	}
 
 	/* Allocate size for database name */
-	dbpart_name = calloc( strlen(pn) + strlen("part:") + 2, sizeof( char ) );
+	asprintf( dbpart_name, "part:%s", pn);
 
 	if( NULL == dbpart_name ){
 		y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate memory for dbpart_name");
 		return NULL;
 	}
-
-	sprintf( dbpart_name, "part:%s", pn);
 
 	/* Allocate space for part */
 	part = calloc( 1, sizeof( struct part_t ) );
@@ -1434,7 +1431,7 @@ struct part_t* get_part_from_ipn( unsigned int ipn ){
 
 	/* Search part number by IPN */
 	redisReply* reply = NULL;
-	sprintf( ipn_s, "[ %ld %ld ]", ipn, ipn);
+	snprintf( ipn_s, sizeof( ipn_s ), "[ %ld %ld ]", ipn, ipn);
 	redis_json_index_search( rc, &reply, "partid", "ipn", ipn_s );
 
 	/* Returns back a few elements; need to grab the second one to get the
@@ -1466,11 +1463,22 @@ struct part_t* get_part_from_ipn( unsigned int ipn ){
 }
 
 /* Create bom struct from parsed item in database, from internal part number */
-struct bom_t* get_bom_from_ipn( unsigned int ipn ){
+struct bom_t* get_bom_from_ipn( unsigned int ipn, char* version ){
 	struct bom_t * bom = NULL;	
-	char ipn_s[32] = {0};
+	char* dbbom_name = NULL;
+//	char ipn_s[32] = {0};
 	if( NULL == rc ){
 		y_log_message( Y_LOG_LEVEL_ERROR, "Database is not connected. Could not get info of bom: %ld", ipn);
+		return NULL;
+	}
+
+	/* Allocate size for database name
+	 * should be in format of bom:ipn:version */
+//	dbbom_name = calloc( strlen(ipn) + strlen("bom:") + strnlen(version, 32) + 2, sizeof( char ) );
+	asprintf( &dbbom_name, "bom:%d:%s", ipn, version);
+
+	if( NULL == dbbom_name ){
+		y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate memory for dbbom_name");
 		return NULL;
 	}
 
@@ -1488,6 +1496,22 @@ struct bom_t* get_bom_from_ipn( unsigned int ipn ){
 	
 	/* Sanitize input? */
 
+	/* Get bom, store in json object */
+	if( !redis_json_get( rc, dbbom_name, "$", &jbom ) ){
+		/* Parse the json */
+		parse_json_bom( bom, jbom );
+
+		/* free json data; will segfault otherwise */
+//		json_object_put( jbom );
+	}
+	else {
+		y_log_message(Y_LOG_LEVEL_ERROR, "Could not get bom for %s", dbbom_name);
+		free_bom_t( bom );
+		bom = NULL;
+	}
+	
+
+#if 0
 	/* Search part number by IPN */
 	redisReply* reply;
 	sprintf( ipn_s, "[ %ld %ld ]", ipn, ipn);
@@ -1505,7 +1529,6 @@ struct bom_t* get_bom_from_ipn( unsigned int ipn ){
 
 	/* Should be correct response, get second element parsed into jbom */
 	jbom = json_tokener_parse( reply->element[2]->element[1]->str );	
-//	jbom = json_object_array_get_idx( root, 0 );	
 
 	/* Free redis reply */
 	freeReplyObject(reply);
@@ -1513,9 +1536,13 @@ struct bom_t* get_bom_from_ipn( unsigned int ipn ){
 	/* Parse the json */
 	parse_json_bom( bom, jbom );
 
+#endif
 
 	/* Free json */
 	json_object_put( jbom );
+
+	/* Free database name */
+	free( dbbom_name );
 
 	return bom;
 }
@@ -1545,7 +1572,7 @@ struct proj_t* get_proj_from_ipn( unsigned int ipn ){
 
 	/* Search part number by IPN */
 	redisReply* reply;
-	sprintf( ipn_s, "[ %ld %ld ]", ipn, ipn);
+	snprintf( ipn_s, sizeof( ipn_s ), "[ %ld %ld ]", ipn, ipn);
 	redis_json_index_search( rc, &reply, "prjid", "ipn", ipn_s );
 
 	/* Returns back a few elements; need to grab the second one to get the

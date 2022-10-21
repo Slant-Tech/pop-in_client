@@ -132,7 +132,7 @@ struct part_t* get_part_from_pn( const char* pn );
 struct part_t* get_part_from_ipn( unsigned int ipn );
 
 /* Create bom struct from parsed item in database, from internal part number */
-struct bom_t* get_bom_from_ipn( unsigned int ipn );
+struct bom_t* get_bom_from_ipn( unsigned int ipn, char* version );
 
 /* Create project struct from parsed item in database, from internal part number */
 struct proj_t* get_proj_from_ipn( unsigned int ipn );
