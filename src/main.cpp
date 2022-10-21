@@ -15,6 +15,7 @@
 #include <db_handle.h>
 #include <L2DFileDialog.h>
 #include <prjcache.h>
+#include <proj_funct.h>
 #include <ctype.h>
 
 #ifdef _WIN32
@@ -1246,6 +1247,15 @@ static void proj_bom_tab( struct bom_t* bom  ){
 
 static void proj_info_tab( struct proj_t* prj, int* bom_index ){
 
+	static unsigned int nitems = 0;
+	static unsigned int last_prjipn = 0;
+
+	/* Check if already retrieved data from this project */
+	if( last_prjipn != prj->ipn ){
+		nitems = get_num_all_proj_items( prj );
+		last_prjipn = prj->ipn;
+	}
+
 	/* Show information about project with selections for versions etc */
 	ImGui::Text("Project Information Tab");
 	ImGui::Separator();
@@ -1275,7 +1285,7 @@ static void proj_info_tab( struct proj_t* prj, int* bom_index ){
 
 	ImGui::Spacing();
 
-	ImGui::Text("Number of parts in BOM: %d", prj->boms[*bom_index].bom->nitems);
+	ImGui::Text("Number of parts in BOM: %d", nitems);
 
 }
 

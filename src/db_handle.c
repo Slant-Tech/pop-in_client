@@ -559,16 +559,14 @@ void free_part_t( struct part_t* part ){
 
 		if( NULL != part->info ){
 			for( unsigned int i = 0; i < part->info_len; i++ ){
-			//	if( NULL != part->info[i] ){
-					if( NULL != part->info[i].key ){
-						free( part->info[i].key );
-						part->info[i].key = NULL;
-					}
-					if( NULL != part->info[i].val ){
-						free( part->info[i].val );
-						part->info[i].val = NULL;
-					}
-			//	}
+				if( NULL != part->info[i].key ){
+					free( part->info[i].key );
+					part->info[i].key = NULL;
+				}
+				if( NULL != part->info[i].val ){
+					free( part->info[i].val );
+					part->info[i].val = NULL;
+				}
 
 			}
 

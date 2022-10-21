@@ -90,6 +90,12 @@ int Prjcache::_append_ipn( unsigned int ipn ){
 		y_log_message( Y_LOG_LEVEL_ERROR, "Could not add project:%d to cache; database error", ipn);
 		return -1;
 	}
+	/* Don't add cache for non top level, as it will make things more difficult */
+	else if( p->nsub == 0 ){
+		/* Free allocated project */
+		free_proj_t( p );
+		return 0;
+	}
 	else {
 		return _append(p);
 	}
