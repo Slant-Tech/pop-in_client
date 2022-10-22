@@ -280,6 +280,10 @@ int main( int, char** ){
 
 	/* Join threads */
 	ui.join();
+
+	/* Make sure that if the UI is closed, subsequent threads also close too */
+	run_flag = false;
+	
 	db.join();
 
 	/* Cleanup */
@@ -1204,12 +1208,36 @@ static void proj_bom_tab( struct bom_t* bom  ){
 							ImGui::Text("Unknown");
 							break;
 					}
+					ImGui::Text("Part Fields:");
+					ImGui::Indent();
 					for( unsigned int i = 0 ; i < selected_item->info_len; i++ ){
 						ImGui::Text("%s", selected_item->info[i].key );
 						ImGui::SameLine(PARTINFO_SPACING); 
 						ImGui::Text("%s", selected_item->info[i].val);
 					}
+					ImGui::Unindent();
 					ImGui::Spacing();
+
+					ImGui::Text("Inventory");
+					ImGui::Indent();
+					for( unsigned int i = 0; i <  selected_item->inv_len; i++ ){
+						ImGui::Text("%d", selected_item->inv[i].loc);	
+						ImGui::SameLine(PARTINFO_SPACING); 
+						ImGui::Text("%ld", selected_item->inv[i].q  );
+					}
+					ImGui::Unindent();
+					ImGui::Spacing();
+
+					ImGui::Text("Distributor P/Ns:");
+					ImGui::Indent();
+					for( unsigned int i = 0; i <  selected_item->dist_len; i++ ){
+						ImGui::Text("%s", selected_item->dist[i].name);	
+						ImGui::SameLine(PARTINFO_SPACING); 
+						ImGui::Text("%s", selected_item->dist[i].pn  );
+					}
+					ImGui::Unindent();
+					ImGui::Spacing();
+
 					ImGui::Text("Price Breaks:");
 					ImGui::Indent();
 					for( unsigned int i = 0; i <  selected_item->price_len; i++ ){
@@ -1218,6 +1246,7 @@ static void proj_bom_tab( struct bom_t* bom  ){
 						ImGui::Text("$%0.6lf", selected_item->price[i].price  );
 					}
 					ImGui::Unindent();
+					ImGui::Spacing();
 				}
 				else{
 					ImGui::Text("Part Number not found");

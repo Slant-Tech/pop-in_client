@@ -225,6 +225,13 @@ CXXSRC		+= $(wildcard $(SRC_DIR)/*.cpp)
 CXXOBJ		 = $(CXXSRC:.cpp=.o)
 CXXDEP		 = $(CXXOBJ:.o=.d)
 
+# Package for output files
+ifeq ($(OS), Windows)
+release: $(PRGNAME).exe $(LIBYDER_A) $(LIBORCANIA_A) $(LIBHIREDIS_A)
+	mkdir -p release
+	cp $^ ./release
+endif
+
 ifeq ($(OS), Windows)
 all: libyder libhiredis $(PRGNAME) 
 $(PRGNAME): $(COBJ) $(CXXOBJ) $(LIBYDER_A) $(LIBORCANIA_A) $(LIBHIREDIS_A) $(LIBS)
@@ -322,6 +329,7 @@ clean:
 	-@rm -f $(SRC_DIR)/*.gcda
 	-@rm -f $(SRC_DIR)/*.gcno
 	-@rm -f *.gcov
+	-@rm -rf ./release
 
 clean-lib:
 	-@echo "Cleaning libraries"

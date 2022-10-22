@@ -19,7 +19,7 @@ static int parse_json_part( struct part_t * part, struct json_object* restrict j
 
 	/* Need to create a bunch of json structs to parse everything out */
 	json_object *jipn, *jq, *jtype, *jmfg, *jmpn, *jinfo;
-	json_object *jprice, *jdist, *jstatus;
+	json_object *jprice, *jdist, *jstatus, *jinv;
 	json_object *jitr, *jkey, *jval;
 	
 	jipn    = json_object_object_get( jpart, "ipn" );
@@ -31,6 +31,7 @@ static int parse_json_part( struct part_t * part, struct json_object* restrict j
 	jinfo   = json_object_object_get( jpart, "info" );
 	jprice  = json_object_object_get( jpart, "price" ); 
 	jdist   = json_object_object_get( jpart, "dist" );
+	jinv    = json_object_object_get( jpart, "inv" );
 
 	/* Copy data from json objects */
 
@@ -172,6 +173,31 @@ static int parse_json_part( struct part_t * part, struct json_object* restrict j
 			/* price break price (sounds weird, but can't think of a better
 			 * name */
 			part->price[i].price = json_object_get_double( jval );
+		}
+	}
+	/* Get inventory information from array */
+	part->inv_len = (unsigned int)json_object_array_length( jinv );
+	if( part->inv_len > 0 ){
+		part->inv = calloc( part->inv_len, sizeof( struct part_inv_t ) );	
+		if( NULL == part->inv ){
+			y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate memory for location structure for part: %s", part->mpn );
+			free_part_t( part );
+			part = NULL;
+			return -1;
+		}
+		for( unsigned int i = 0; i < part->inv_len; i++){
+			/* Retrieve price object */
+			jitr = json_object_array_get_idx( jinv, (int)i );
+
+			/* Parse it out to get the required data */
+			jkey = json_object_object_get( jitr, "loc" );
+			jval = json_object_object_get( jitr, "q" );
+
+			/* location number */
+			part->inv[i].loc = json_object_get_int64( jval );
+
+			/* location quantity  */
+			part->inv[i].q = json_object_get_int64( jkey );
 		}
 	}
 
@@ -607,6 +633,18 @@ void free_part_t( struct part_t* part ){
 			part->price_len = 0;
 		}
 
+		if( NULL != part->inv ){
+			for( unsigned int i = 0; i < part->inv_len; i++ ){
+				part->inv[i].q = 0;
+				part->inv[i].loc = 0;
+			}
+
+			/* Finished iteration, free array pointer */
+			free( part->inv );
+			part->inv = NULL;
+			part->inv_len = 0;
+		}
+
 		/* Free allocated memory for the structure */
 		free( part );
 		part = NULL;
@@ -623,6 +661,10 @@ void free_bom_t( struct bom_t* bom ){
 		if( NULL !=  bom->line ){
 			free( bom->line );
 			bom->line = NULL;
+		}
+		if( NULL != bom->name ){
+			free( bom->name );
+			bom->name = NULL;
 		}
 		if( NULL != bom->ver ){
 			free( bom->ver );
@@ -735,9 +777,11 @@ int redis_write_part( struct part_t* part ){
 	json_object *info = json_object_new_object();
 	json_object *dist = json_object_new_array_ext(part->dist_len);
 	json_object *price = json_object_new_array_ext(part->price_len);
+	json_object *inv = json_object_new_array_ext(part->inv_len);
 
 
 	json_object* dist_itr;
+	json_object* inv_itr;
 	json_object* price_itr;
 
 	if( NULL == part_root ){
@@ -762,6 +806,15 @@ int redis_write_part( struct part_t* part ){
 		y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate new part price info json object" );
 		json_object_put(info);
 		json_object_put(dist);
+		json_object_put(part_root);
+		return -1;	
+	}
+
+	if( NULL == inv ){
+		y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate new part inventory info json object" );
+		json_object_put(info);
+		json_object_put(dist);
+		json_object_put(price);
 		json_object_put(part_root);
 		return -1;	
 	}
@@ -813,6 +866,26 @@ int redis_write_part( struct part_t* part ){
 
 	}
 
+	/* Inventory information */
+	if( part->inv_len != 0 ) {
+		for( unsigned int i = 0; i < part->inv_len; i++ ){
+			inv_itr = json_object_new_object();
+			if( NULL == inv_itr ){
+				y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate new part inventory iterator json object" );	
+				json_object_put(info);
+				json_object_put(dist);
+				json_object_put(price);
+				json_object_put(inv);
+				json_object_put( part_root );
+				return -1;
+			}			
+			json_object_object_add( price_itr, "loc", json_object_new_double(part->inv[i].loc) );
+			json_object_object_add( price_itr, "q", json_object_new_int64(part->inv[i].q) );
+			json_object_array_put_idx( inv, i, json_object_get( inv_itr ) );
+		}
+
+	}
+
 	y_log_message(Y_LOG_LEVEL_DEBUG, "Parsing");
 
 	/* Add all parts of the part struct to the json object */
@@ -825,6 +898,7 @@ int redis_write_part( struct part_t* part ){
 	json_object_object_add( part_root, "info", info );
 	json_object_object_add( part_root, "dist", dist );
 	json_object_object_add( part_root, "price", price );
+	json_object_object_add( part_root, "inv", inv );
 
 	y_log_message(Y_LOG_LEVEL_DEBUG, "Added items to object");
 
@@ -967,6 +1041,19 @@ struct part_t* copy_part_t( struct part_t* src ){
 	for( unsigned int i = 0; i < dest->price_len; i++ ){
 		dest->price[i].quantity = src->price[i].quantity;	
 		dest->price[i].price = src->price[i].price;
+	}
+
+	dest->inv_len = src->inv_len;
+
+	dest->inv = calloc( src->inv_len, sizeof( struct part_inv_t ) );
+	if( NULL == dest->price ){
+		y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate memory for destination part inventory" );
+		free_part_t( dest );
+		return NULL;
+	}
+	for( unsigned int i = 0; i < dest->inv_len; i++ ){
+		dest->inv[i].q = src->inv[i].q;	
+		dest->inv[i].loc = src->inv[i].loc;
 	}
 
 

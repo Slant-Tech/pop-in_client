@@ -15,13 +15,21 @@ struct dbver_t {
 	unsigned int patch;
 };
 
+/* Structure for inventory locations string mapping */
+struct inv_lookup_t {
+	unsigned int loc;		/* Location number*/
+	char* name;				/* Location name */
+};
+
 /* Struct for overall database information */
 struct dbinfo_t {
 	uint32_t flags;			/* Option flags */
 	unsigned int nprj;		/* Number of projects in database */
 	unsigned int nbom;		/* Number of boms in database */
 	unsigned int npart;		/* Number of parts in database */
+	unsigned int ninv;		/* Number of inventory locations */
 	struct dbver_t version;	/* Database version for keeping everything in sync */
+
 };
 
 /* dbinfo_t flags */
@@ -50,6 +58,12 @@ struct part_price_t {
 	double price;	/* Price in native currency. Dollars, need to figure out setting for this later */
 };
 
+/* Key Value pair for inventory location quantities */
+struct part_inv_t {
+	unsigned int loc;	/* Location number */
+	unsigned int q;		/* Quantity at location */
+};
+
 /* Part status information */
 enum part_status_t {
 	pstat_unknown,
@@ -68,12 +82,14 @@ struct part_t {
 	unsigned int info_len;			/* Number of key value pairs in info */
 	unsigned int price_len; 		/* Number of price breaks in price */
 	unsigned int dist_len;			/* Number of distributors */
+	unsigned int inv_len;			/* Number of locations */
 	char* type;						/* Part type */
 	char* mfg;						/* Manufacturer */
 	char* mpn;						/* Manufacturer Part Number */
 	struct part_info_t* info; 		/* Key Value info for dynamic part definitions */
-	struct part_dist_t* dist;	/* Key Value distributor info */
+	struct part_dist_t* dist;		/* Key Value distributor info */
 	struct part_price_t* price;		/* Key Value price break info */
+	struct part_inv_t* inv;			/* Key Value inventory location info */
 };
 
 /* Structure for part number with qua*/
