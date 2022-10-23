@@ -2,8 +2,16 @@ UNAME_S := $(shell uname -s)
 # For checking if using systemd
 INITSYSTEM := $(shell ps --no-headers -o comm 1)
 
-OS ?= Linux
+OS ?= web
 
+# Build for website (WASM)
+ifeq ($(OS), web)
+CMAKE=cmake
+CC=emcc
+CXX=em++
+LD=ld
+
+else
 # Linux specific options 
 ifeq ($(UNAME_S), Linux)
 CMAKE=cmake
@@ -11,6 +19,7 @@ CC=gcc
 CXX=g++
 LD=ld
 endif
+
 
 # Mac OSX specific options 
 ifeq ($(UNAME_S), Darwin)
@@ -26,6 +35,8 @@ CMAKE=x86_64-w64-mingw32-cmake
 CC=x86_64-w64-mingw32-gcc
 CXX=x86_64-w64-mingw32-g++
 LD=x86_64-w64-mingw32-ld
+endif
+
 endif
 
 PRGNAME=pop
@@ -82,8 +93,12 @@ CXXFLAGS.DEBUG=  -ggdb3
 
 # clang doesn't support these options
 ifneq ($(CC), clang)
+
+ifneq ($(OS), web)
 CFLAGS.DEBUG += -fvar-tracking -fvar-tracking-assignments -ginline-points -gstatement-frontiers # -fprofile-arcs -ftest-coverage
 CXXFLAGS.DEBUG += -fvar-tracking -fvar-tracking-assignments -ginline-points -gstatement-frontiers
+endif
+
 endif
 
 # Standard compile options
@@ -105,7 +120,6 @@ COPTIONS += $(OPTIONS)
 CXXOPTIONS  += -std=gnu++17
 CXXOPTIONS += $(OPTIONS)
 
-
 # External Library Locations
 LIBDIR= ./libs
 LIBYDER_DIR= $(LIBDIR)/yder
@@ -114,6 +128,12 @@ LIBJSONC_DIR= $(LIBDIR)/json-c
 LIBHIREDIS_DIR=$(LIBDIR)/hiredis
 
 LIB_INSTALL_DIR_BASE=$(shell pwd)/libs/install
+
+
+# hiredis libraries; since they can't be static
+ifeq ($(OS), web)
+LIB_INSTALL_DIR=$(LIB_INSTALL_DIR_BASE)/web
+else
 
 # Compiled libraries install directories
 ifeq ($(UNAME_S), Linux)
@@ -124,24 +144,25 @@ ifeq ($(UNAME_S), Darwin)
 LIB_INSTALL_DIR=$(LIB_INSTALL_DIR_BASE)/macos
 endif
 
+endif
+
 # hiredis libraries; since they can't be static
 ifeq ($(OS), Windows)
 LIB_INSTALL_DIR=$(LIB_INSTALL_DIR_BASE)/windows
 LIBHIREDIS_SO=$(LIB_INSTALL_DIR)/libhiredis.dll
-
 endif
 
 # Static libraries
 ifneq ($(OS), Windows)
 LIBORCANIA_A = $(LIB_INSTALL_DIR)/lib/liborcania.a
 LIBYDER_A = $(LIB_INSTALL_DIR)/lib/libyder.a
-#LIBJSONC_A= $(LIBJSONC_DIR)/build/libjson-c.a
+LIBJSONC_A= $(LIBJSONC_DIR)/build/libjson-c.a
 LIBHIREDIS_A=$(LIB_INSTALL_DIR)/libhiredis.a
 else 
 LIBORCANIA_A = $(LIB_INSTALL_DIR)/lib/liborcania.dll.a
 LIBYDER_A = $(LIB_INSTALL_DIR)/lib/libyder.dll.a
 LIBHIREDIS_A=$(LIB_INSTALL_DIR)/lib/libhiredis.dll.a
-#LIBJSONC_A= $(LIBJSONC_DIR)/build/libjson-c.a
+LIBJSONC_A= $(LIBJSONC_DIR)/build/libjson-c.dll.a
 endif
 
 
@@ -166,6 +187,10 @@ LIBS    += /usr/x86_64-w64-mingw32/lib/libjson-c.a
 #LDFLAGS +=  -ljson-c -lglfw3 -lgdi32 -lopengl32 -limm32
 else
 
+ifeq ($(OS), web)
+INC     += -I$(LIB_INSTALL_DIR)/include
+LDFLAGS += -L$(LIB_INSTALL_DIR)/lib 
+else
 ifeq ($(UNAME_S), Linux)
 INC      += -I$(LIB_INSTALL_DIR)/linux/include
 LDFLAGS   = -lhiredis -ljson-c -lyder -lpthread
@@ -183,6 +208,7 @@ endif
 
 endif
 
+endif
 
 CFLAGS  += -std=gnu17 -DHAVE_INLINE
 CFLAGS	+= $(INC)
@@ -201,6 +227,13 @@ CXXFLAGS += $(CXXOPTIONS) -D_GLIBCXX_USE_CXX11_ABI=0
 CXXFLAGS += ${CFLAGS.${BUILD}} 
 
 CXXFLAGS += $(WARNINGS)
+
+
+# emscripten specific flags
+ifeq ( $(OS), web )
+CXXFLAGS += -s USE_SDL=2 -s DISABLE_EXCEPTION_CATCHING=1
+LDFLAGS += -s WASM=1 -s ALLOW_MEMORY_GROWTH=1 -s NO_EXIT_RUNTIME=0 -s ASSERTIONS=1 --shell-file ./web/shell_minimal.html
+endif
 
 # IMGUI Source files
 IMGUI = ./imgui
@@ -241,18 +274,29 @@ $(PRGNAME): $(COBJ) $(CXXOBJ) $(LIBYDER_A) $(LIBORCANIA_A) $(LIBHIREDIS_A) $(LIB
 
 else
 
-all: $(PRGNAME)
+ifeq ($(OS), web)
+all: $(LIBYDER_A) $(LIBHIREDIS_A) $(LIBJSONC_A) $(PRGNAME) 
+$(PRGNAME): $(COBJ) $(CXXOBJ) $(LIBYDER_A) $(LIBORCANIA_A) $(LIBHIREDIS_A) $(LIBS)
+	@clear
+	@echo "Linking $@"
+	$(CXX) $(CXXFLAGS) $(LDFLAGS) $^ -o ./web/index.html
 
+else
+all: $(PRGNAME)
 $(PRGNAME): $(COBJ) $(CXXOBJ) ./redis/libredis-wrapper.a
 	-@echo "Linking $@"
 	-@$(CXX) $(CXXFLAGS) $(LDFLAGS) -o $@ $^
 
 endif
 
+endif
+
 ifneq ($(OS), Windows)
+ifneq ($(OS), web )
 ./redis/libredis-wrapper.a: ./redis
 	@echo "Building redis-wrapper"
 	@make -C ./redis all CC=$(CC) CXX=$(CXX) LD=$(LD)
+endif
 endif
 
 # Build Libraries
@@ -301,6 +345,15 @@ $(LIBHIREDIS_SO) $(LIBHIREDIS_A): $(LIBHIREDIS_DIR)/.git
 	$(CMAKE) -S $(LIBHIREDIS_DIR) -B $(LIBHIREDIS_DIR)/build -DENABLE_SSL=ON -DCMAKE_INSTALL_PREFIX=$(LIB_INSTALL_DIR)
 	make -C $(LIBHIREDIS_DIR)/build 
 	make -C $(LIBHIREDIS_DIR)/build install
+
+libjsonc: $(LIBJSONC_SO)
+
+$(LIBJSONC_SO) $(LIBJSONC_A): $(LIBJSONC_DIR)/.git
+	echo "Building library json-c"
+	mkdir -p $(LIBJSONC_DIR)/build
+	$(CMAKE) -S $(LIBJSONC_DIR) -B $(LIBJSONC_DIR)/build -DCMAKE_INSTALL_PREFIX=$(LIB_INSTALL_DIR)
+	make -C $(LIBJSONC_DIR)/build 
+	make -C $(LIBJSONC_DIR)/build install
 
 valgrind: $(PRGNAME)
 	valgrind --tool=memcheck --leak-check=full --show-leak-kinds=all --track-origins=yes --show-reachable=yes --read-inline-info=yes --show-leak-kinds=possible  --gen-suppressions=all --log-file="valgrind.log" ./$(PRGNAME)
