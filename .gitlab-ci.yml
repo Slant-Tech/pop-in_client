@@ -22,6 +22,7 @@ default:
       #        - docker
 
 variables:
+    GIT_STRATEGY: clone
     GIT_SUBMODULE_STRATEGY: recursive
 
 stages:          # List of stages for jobs, and their order of execution
