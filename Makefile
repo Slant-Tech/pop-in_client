@@ -280,7 +280,6 @@ endif
 ifeq ($(OS), Windows)
 all: libyder libhiredis $(PRGNAME) 
 $(PRGNAME): $(COBJ) $(CXXOBJ) $(LIBYDER_A) $(LIBORCANIA_A) $(LIBHIREDIS_A) $(LIBS)
-	@clear
 	@echo "Linking $@"
 	$(CXX) -static $(CXXFLAGS) $(LDFLAGS) $^ -o $@
 
@@ -289,7 +288,6 @@ else
 ifeq ($(OS), web)
 all: $(LIBYDER_A) $(LIBHIREDIS_A) $(LIBJSONC_A) $(PRGNAME) 
 $(PRGNAME): $(COBJ) $(CXXOBJ) $(LIBYDER_A) $(LIBORCANIA_A) $(LIBHIREDIS_A) $(LIBS)
-	@clear
 	@echo "Linking $@"
 	$(CXX) $(CXXFLAGS) $(LDFLAGS) $^ -o $@
 
