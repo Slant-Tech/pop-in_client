@@ -2,7 +2,7 @@ UNAME_S := $(shell uname -s)
 # For checking if using systemd
 INITSYSTEM := $(shell ps --no-headers -o comm 1)
 
-OS ?= web
+OS ?= Linux
 
 # Build for website (WASM)
 ifeq ($(OS), web)
@@ -14,6 +14,7 @@ LD=ld
 else
 # Linux specific options 
 ifeq ($(UNAME_S), Linux)
+OS=Linux
 CMAKE=cmake
 CC=gcc
 CXX=g++
@@ -23,6 +24,7 @@ endif
 
 # Mac OSX specific options 
 ifeq ($(UNAME_S), Darwin)
+OS=macOS
 CMAKE=cmake
 CC=clang
 CXX=clang++
@@ -40,6 +42,16 @@ endif
 endif
 
 PRGNAME=pop
+
+ifeq ($(OS), Windows)
+	PRGNAME=pop.exe
+else
+ifeq ($(OS), web )
+	PRGNAME=./web/index.html
+else
+	PRGNAME=pop
+endif
+endif
 
 #Build options 
 BUILD := DEBUG
@@ -136,11 +148,11 @@ LIB_INSTALL_DIR=$(LIB_INSTALL_DIR_BASE)/web
 else
 
 # Compiled libraries install directories
-ifeq ($(UNAME_S), Linux)
+ifeq ($(OS), Linux)
 LIB_INSTALL_DIR=$(LIB_INSTALL_DIR_BASE)/linux
 endif
 
-ifeq ($(UNAME_S), Darwin)
+ifeq ($(OS), Darwin)
 LIB_INSTALL_DIR=$(LIB_INSTALL_DIR_BASE)/macos
 endif
 
@@ -162,7 +174,7 @@ else
 LIBORCANIA_A = $(LIB_INSTALL_DIR)/lib/liborcania.dll.a
 LIBYDER_A = $(LIB_INSTALL_DIR)/lib/libyder.dll.a
 LIBHIREDIS_A=$(LIB_INSTALL_DIR)/lib/libhiredis.dll.a
-LIBJSONC_A= $(LIBJSONC_DIR)/build/libjson-c.dll.a
+LIBJSONC_A= $(LIB_INSTALL_DIR)/build/libjson-c.dll.a
 endif
 
 
@@ -191,7 +203,7 @@ ifeq ($(OS), web)
 INC     += -I$(LIB_INSTALL_DIR)/include
 LDFLAGS += -L$(LIB_INSTALL_DIR)/lib 
 else
-ifeq ($(UNAME_S), Linux)
+ifeq ($(OS), Linux)
 INC      += -I$(LIB_INSTALL_DIR)/linux/include
 LDFLAGS   = -lhiredis -ljson-c -lyder -lpthread
 LDFLAGS  += -lGL
@@ -199,7 +211,7 @@ LDFLAGS  += `pkg-config --static --libs glfw3`
 CXXFLAGS += `pkg-config --cflags glfw3`
 endif
 
-ifeq ($(UNAME_S), Darwin)
+ifeq ($(OS), Darwin)
 INC     += -I$(LIB_INSTALL_DIR)/include
 LDFLAGS += -framework OpenGL -framework Cocoa -framework IOKit -framework CoreVideo
 LDFLAGS += -L/usr/local/lib -L/opt/local/lib -L/opt/homebrew/lib
@@ -260,7 +272,7 @@ CXXDEP		 = $(CXXOBJ:.o=.d)
 
 # Package for output files
 ifeq ($(OS), Windows)
-release: $(PRGNAME).exe $(LIBYDER_A) $(LIBORCANIA_A) $(LIBHIREDIS_A)
+release: $(LIBYDER_A) $(LIBORCANIA_A) $(LIBHIREDIS_A) $(PRGNAME) 
 	mkdir -p release
 	cp $^ ./release
 endif
@@ -279,7 +291,7 @@ all: $(LIBYDER_A) $(LIBHIREDIS_A) $(LIBJSONC_A) $(PRGNAME)
 $(PRGNAME): $(COBJ) $(CXXOBJ) $(LIBYDER_A) $(LIBORCANIA_A) $(LIBHIREDIS_A) $(LIBS)
 	@clear
 	@echo "Linking $@"
-	$(CXX) $(CXXFLAGS) $(LDFLAGS) $^ -o ./web/index.html
+	$(CXX) $(CXXFLAGS) $(LDFLAGS) $^ -o $@
 
 else
 all: $(PRGNAME)
@@ -390,6 +402,7 @@ clean-lib:
 	-@rm -rf $(LIBORCANIA_DIR)/build
 	-@rm -rf $(LIBYDER_DIR)/build
 	-@rm -rf $(LIBHIREDIS_DIR)/build
+	-@rm -rf $(LIBJSONC_DIR)/build
 	-@rm -rf $(LIB_INSTALL_DIR_BASE)
 
 
