@@ -38,7 +38,7 @@ struct db_settings_t {
 };
 
 static struct db_settings_t db_set = {NULL, 0};
-static struct dbinfo_t dbinfo = {0,0,0,{0}};
+static struct dbinfo_t dbinfo;
 
 static void glfw_error_callback(int error, const char* description){
 	y_log_message(Y_LOG_LEVEL_ERROR, "GLFW Error %d: %s", error, description);
@@ -292,6 +292,7 @@ int main( int, char** ){
 	/* Disconnect from database */
 	redis_disconnect();
 
+	free_dbinfo_t( &dbinfo );
 	free( db_set.hostname );
 	delete prjcache;
 	y_close_logs();
@@ -345,7 +346,7 @@ static void show_project_select_window( class Prjcache* cache ){
 
 static void show_new_part_popup( struct dbinfo_t* info ){
 	static struct part_t part;
-
+	int err_flg = 0;
 	/* For entering in dynamic fields */
 	static unsigned int ninfo = 0;
 	static unsigned int nprice = 0;
@@ -572,17 +573,70 @@ static void show_new_part_popup( struct dbinfo_t* info ){
             	else {
             		part.status = pstat_unknown;
             	}
+				struct dbinfo_ptype_t* ptype = NULL;
+				/* Find existing part type in database info */
+				for( unsigned int i = 0; i < info->nptype; i++){
+					if( info->ptypes[i].name == type ){
+						ptype = &info->ptypes[i];
+					}
+						
+				}
+				if( nullptr == ptype ){
+					/* Type doesn't exist in database, need to add the new type */
+					y_log_message(Y_LOG_LEVEL_INFO, "Type: %s not found in database. Adding type to database", type);
 
-				/* Increment part in dbinfo */
-				info->npart++;
-				part.ipn = info->npart;
+					/* Should break this out into function */
 
-				/* Perform the write */
-				redis_write_part( &part );
-				y_log_message(Y_LOG_LEVEL_DEBUG, "Data written to database");
+					struct dbinfo_ptype_t* tmp = (struct dbinfo_ptype_t*)reallocarray( info->ptypes, info->nptype + 1, sizeof(struct dbinfo_ptype_t) );
+					if( nullptr == tmp ){
+						y_log_message(Y_LOG_LEVEL_ERROR, "Could not reallocate memory for new part type");
+						err_flg = 2;
+					}
+					else {
+						/* Able to reallocate, so continue adding to database  */
+						info->nptype++;	
+						info->ptypes = tmp;
+
+						/* Initialize dbinfo_ptype_t */
+						info->ptypes[info->nptype - 1].name = (char *)calloc( strnlen( type, sizeof( type )), sizeof( char ) );
+						if( nullptr == info->ptypes[info->nptype - 1].name ){
+							y_log_message(Y_LOG_LEVEL_ERROR, "Could not allocate memory for new database part type");							
+							err_flg = 3;
+						}
+						else {
+							/* Copy string */
+							strncpy( info->ptypes[info->nptype - 1].name, type, strnlen( type, sizeof( type )) );	
+
+							/* Ensure that the number of parts is equal to zero */
+							info->ptypes[info->nptype - 1].npart = 0;
+
+							/* Now make sure that ptype is pointed towards new
+							 * index */
+							ptype = &(info->ptypes[info->nptype - 1]);
+
+							/* Ensure that database is updated, even if the
+							 * write part fails */
+							redis_write_dbinfo( info );
+						}
+
+					}
+
+				}
+				else {
+					err_flg = 1;
+				}
+				if( !err_flg ) {
+					/* Increment part in dbinfo */
+					ptype->npart++;
+					part.ipn = ptype->npart;
+
+					/* Perform the write */
+					redis_write_part( &part );
+					y_log_message(Y_LOG_LEVEL_DEBUG, "Data written to database");
 
 
-				redis_write_dbinfo( info );
+					redis_write_dbinfo( info );
+				}
 			}
 			else {
 				y_log_message(Y_LOG_LEVEL_ERROR, "Could not write new part to database");

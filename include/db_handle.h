@@ -21,15 +21,22 @@ struct inv_lookup_t {
 	char* name;				/* Location name */
 };
 
+/* Struct for part types and the number of each type */
+struct dbinfo_ptype_t {
+	unsigned int npart;		/* Number of parts in database */
+	char* name;				/* Name of part type */
+};
+
 /* Struct for overall database information */
 struct dbinfo_t {
-	uint32_t flags;			/* Option flags */
-	unsigned int nprj;		/* Number of projects in database */
-	unsigned int nbom;		/* Number of boms in database */
-	unsigned int npart;		/* Number of parts in database */
-	unsigned int ninv;		/* Number of inventory locations */
-	struct dbver_t version;	/* Database version for keeping everything in sync */
-
+	uint32_t flags;					/* Option flags */
+	unsigned int nprj;				/* Number of projects in database */
+	unsigned int nbom;				/* Number of boms in database */
+	unsigned int ninv;				/* Number of inventory locations */
+	unsigned int nptype;			/* Number of part types */
+	struct dbver_t version;			/* Database version for keeping everything in sync */
+	struct dbinfo_ptype_t* ptypes;	/* Database part types */
+	struct inv_lookup_t* invs;		/* Inventory lookups */
 };
 
 /* dbinfo_t flags */
@@ -71,6 +78,7 @@ enum part_status_t {
 	pstat_low_stock,
 	pstat_unavailable,
 	pstat_nrnd,
+	pstat_lasttimebuy,
 	pstat_obsolete
 };
 
@@ -161,6 +169,9 @@ void free_bom_t( struct bom_t* bom );
 
 /* Free the project structure */
 void free_proj_t( struct proj_t* prj );
+
+/* Free the database structure */
+void free_dbinfo_t( struct dbinfo_t* db );
 
 /* Write part to database */
 int redis_write_part( struct part_t* part );

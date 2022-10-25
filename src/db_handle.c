@@ -517,25 +517,35 @@ static int parse_json_proj( struct proj_t * prj, struct json_object* restrict jp
 /* Parse bom json object to dbinfo_t */
 static int parse_json_dbinfo( struct dbinfo_t * db, struct json_object* restrict jdb ){
 
+	size_t jstrlen = 0;
+
 	json_object* jversion;
 	json_object* jnprj;
 	json_object* jnbom;
-	json_object* jnpart;
+	json_object* jnptype;
+	json_object* jninv;
 	json_object* jlock;
 	json_object* jinit;
 	json_object* jmajor;
 	json_object* jminor;
 	json_object* jpatch;
+	json_object* jptypes;
+	json_object* jinvs;
+	json_object* jitr;
+	json_object* jkey;
+	json_object* jval;
 	
-	jversion  = json_object_object_get( jdb, "version" ); 
-	jmajor  = json_object_object_get( jversion, "major" ); 
-	jminor  = json_object_object_get( jversion, "minor" ); 
-	jpatch  = json_object_object_get( jversion, "patch" ); 
-	jnprj     = json_object_object_get( jdb, "nprj" ); 
-	jnbom     = json_object_object_get( jdb, "nbom" ); 
-	jnpart    = json_object_object_get( jdb, "npart" ); 
-	jlock     = json_object_object_get( jdb, "lock" );
-	jinit     = json_object_object_get( jdb, "init" );
+	jversion  	= json_object_object_get( jdb, "version" ); 
+	jmajor		= json_object_object_get( jversion, "major" ); 
+	jminor 		= json_object_object_get( jversion, "minor" ); 
+	jpatch 		= json_object_object_get( jversion, "patch" ); 
+	jnprj     	= json_object_object_get( jdb, "nprj" ); 
+	jnbom     	= json_object_object_get( jdb, "nbom" ); 
+	jlock     	= json_object_object_get( jdb, "lock" );
+	jinit     	= json_object_object_get( jdb, "init" );
+	jptypes		= json_object_object_get( jdb, "ptypes" );
+	jinvs		= json_object_object_get( jdb, "invs" );
+
 
 	//y_log_message(Y_LOG_LEVEL_DEBUG, "JSON Object passed for dbinfo:\n%s\n", json_object_to_json_string_ext(jdb, JSON_C_TO_STRING_PRETTY));
 	
@@ -544,7 +554,8 @@ static int parse_json_dbinfo( struct dbinfo_t * db, struct json_object* restrict
 	/* Number of kinds of objects  */
 	db->nprj  = json_object_get_int64( jnprj );
 	db->nbom  = json_object_get_int64( jnbom );
-	db->npart = json_object_get_int64( jnpart );
+	db->nptype = (unsigned int)json_object_array_length( jptypes );
+	db->ninv = (unsigned int)json_object_array_length( jinvs );
 
 	/* Flags */
 	db->flags  = 0;
@@ -555,6 +566,70 @@ static int parse_json_dbinfo( struct dbinfo_t * db, struct json_object* restrict
 	db->version.major = json_object_get_int64( jmajor );
 	db->version.minor = json_object_get_int64( jminor );
 	db->version.patch = json_object_get_int64( jpatch );
+
+	/* Part Type table */
+	if( db->nptype != 0 ){
+		db->ptypes = calloc( db->nptype, sizeof( struct dbinfo_ptype_t ) );
+		if( NULL == db->ptypes ){
+			y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate memory for part type array" );
+			free_dbinfo_t( db );
+			db = NULL;
+			return -1;
+		}
+		for( unsigned int i = 0; i < db->nptype; i++ ){
+			/* Loop through array to get info */
+			jitr = json_object_array_get_idx( jptypes, (int) i );
+			jkey = json_object_object_get( jitr, "type" );
+			jval = json_object_object_get( jitr, "npart" );
+
+			/* Part type */
+			jstrlen = json_object_get_string_len( jkey );
+			db->ptypes[i].name = calloc( jstrlen + 1, sizeof( char ) );
+			if( NULL == db->ptypes[i].name  ){
+				y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate memory in dbinfo part type name" );
+				free_dbinfo_t( db );
+				db = NULL;
+				return -1;
+			}
+			strncpy( db->ptypes[i].name, json_object_get_string( jkey ), jstrlen );
+
+			/* Quantity of parts */
+			db->ptypes[i].npart = json_object_get_int64( jval );
+
+		}
+	}
+
+	/* Inventory String Lookup */
+	if( db->ninv != 0 ){
+		db->invs = calloc( db->ninv, sizeof( struct inv_lookup_t ) );
+		if( NULL == db->invs ){
+			y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate memory for inventory lookup array" );
+			free_dbinfo_t( db );
+			db = NULL;
+			return -1;
+		}
+		for( unsigned int i = 0; i < db->ninv; i++ ){
+			/* Loop through array to get info */
+			jitr = json_object_array_get_idx( jinvs, (int) i );
+			jkey = json_object_object_get( jitr, "name" );
+			jval = json_object_object_get( jitr, "loc" );
+
+			/* Part type */
+			jstrlen = json_object_get_string_len( jkey );
+			db->invs[i].name = calloc( jstrlen + 1, sizeof( char ) );
+			if( NULL == db->invs[i].name  ){
+				y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate memory in dbinfo inventory lookup name" );
+				free_dbinfo_t( db );
+				db = NULL;
+				return -1;
+			}
+			strncpy( db->invs[i].name, json_object_get_string( jkey ), jstrlen );
+
+			/* Index number */
+			db->invs[i].loc = json_object_get_int64( jval );
+		}
+	}
+
 
 	return 0;
 }
@@ -759,6 +834,41 @@ void free_proj_t( struct proj_t* prj ){
 	}
 }
 
+/* Free the database structure */
+void free_dbinfo_t( struct dbinfo_t* db ){
+	if( NULL != db ){
+		/* Zero out easy data */
+		db->flags = 0;
+		db->nprj = 0;
+		db->nbom = 0;
+		db->version.major = 0;
+		db->version.minor = 0;
+		db->version.patch = 0;
+	}
+	if( NULL != db->ptypes ){
+		for( unsigned int i = 0; i < db->nptype; i++ ){
+			if( NULL != db->ptypes[i].name ){
+				free( db->ptypes[i].name);
+				db->ptypes[i].name = NULL;
+				db->ptypes[i].npart = 0;
+			}
+		}
+		free( db->ptypes );
+	}
+	db->nptype = 0;
+
+	if( NULL != db->invs ){
+		for( unsigned int i = 0; i < db->ninv; i++ ){
+			if( NULL != db->invs[i].name ){
+				free( db->invs[i].name);
+				db->invs[i].name = NULL;
+				db->invs[i].loc = 0;
+			}
+		}
+		free( db->invs );
+	}
+	db->ninv = 0;
+}
 
 /* Write part to database */
 int redis_write_part( struct part_t* part ){
@@ -905,7 +1015,7 @@ int redis_write_part( struct part_t* part ){
 //	dbpart_name = calloc( strlen(part->mpn) + strlen("part:") + strlen(part->type) + 3, sizeof( char ) );
 
 	/* create name */
-	asprintf( dbpart_name, "part:%s:%s", part->type, part->mpn);
+	asprintf( &dbpart_name, "part:%s:%s", part->type, part->mpn);
 	int retval = -1;
 	if( NULL == dbpart_name ){
 		y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate memory for dbpart_name");
@@ -1309,7 +1419,7 @@ int redis_write_proj( struct proj_t* prj ){
 
 //	dbprj_name = calloc( strlen("prj:") + 2 + 16, sizeof( char ) ); /* IPN has to be less than 16 characters right now */
 	/* create name */
-	asprintf( dbprj_name, "prj:%d", prj->ipn);
+	asprintf( &dbprj_name, "prj:%d", prj->ipn);
 	int retval = -1;
 	if( NULL == dbprj_name ){
 		y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate memory for dbprj_name");
@@ -1451,7 +1561,7 @@ struct part_t* get_part_from_pn( const char* pn ){
 	}
 
 	/* Allocate size for database name */
-	asprintf( dbpart_name, "part:%s", pn);
+	asprintf( &dbpart_name, "part:%s", pn);
 
 	if( NULL == dbpart_name ){
 		y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate memory for dbpart_name");
@@ -1734,6 +1844,7 @@ int redis_read_dbinfo( struct dbinfo_t* db ){
 	json_object* jdb;
 	if( redis_json_get( rc, "popdb", "$", &jdb ) ){
 		y_log_message(Y_LOG_LEVEL_ERROR, "Could not get database information");
+		free_dbinfo_t( db );
 		return -1;
 	}
 
@@ -1759,6 +1870,10 @@ static int write_dbinfo( struct dbinfo_t* db ){
 	/* Create json object to write */
 	json_object *dbinfo_root = json_object_new_object();
 	json_object* version 	 = json_object_new_object();
+	json_object* ptypes	 	 = json_object_new_array_ext(db->nptype);
+	json_object* invs		 = json_object_new_array_ext(db->ninv);
+	json_object* inv_itr;
+	json_object* ptype_itr;
 
 	int lock = ((db->flags & DBINFO_FLAG_LOCK) == DBINFO_FLAG_LOCK);
 	int init = ((db->flags & DBINFO_FLAG_INIT) == DBINFO_FLAG_INIT);
@@ -1774,7 +1889,60 @@ static int write_dbinfo( struct dbinfo_t* db ){
 		return -1;	
 	}
 
+	if( NULL == ptypes ){
+		y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate dbinfo part types json object" );
+		json_object_put(version);
+		json_object_put(dbinfo_root);
+		return -1;	
+	}
+
+	if( NULL == invs ){
+		y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate dbinfo inventory lookup json object" );
+		json_object_put(ptypes);
+		json_object_put(version);
+		json_object_put(dbinfo_root);
+		return -1;	
+	}
+
 	y_log_message(Y_LOG_LEVEL_DEBUG, "Adding json objects");
+
+	/* Part type quantities */
+	if( db->nptype != 0 ){
+		for( unsigned int i = 0; i < db->nptype; i++ ){
+			ptype_itr = json_object_new_object();	
+			if( NULL == inv_itr ){
+				y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate part type iterator json object " );
+				json_object_put(invs);
+				json_object_put(ptypes);
+				json_object_put(version);
+				json_object_put(dbinfo_root);
+				free_dbinfo_t( db );
+				return -1;
+			}
+			json_object_object_add( ptype_itr, "type", json_object_new_string( db->ptypes[i].name ) );
+			json_object_object_add( ptype_itr, "npart", json_object_new_int64( db->ptypes[i].npart ) );
+			json_object_array_put_idx( ptypes, i, json_object_get( ptype_itr ) );
+		} 
+	}
+
+	/* Store inventory lookup table */
+	if( db->ninv != 0 ){
+		for( unsigned int i = 0; i < db->ninv; i++ ){
+			inv_itr = json_object_new_object();	
+			if( NULL == inv_itr ){
+				y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate inventory lookup iterator json object " );
+				json_object_put(invs);
+				json_object_put(ptypes);
+				json_object_put(version);
+				json_object_put(dbinfo_root);
+				free_dbinfo_t( db );
+				return -1;
+			}
+			json_object_object_add( inv_itr, "name", json_object_new_string( db->invs[i].name ) );
+			json_object_object_add( inv_itr, "loc", json_object_new_int64( db->invs[i].loc ) );
+			json_object_array_put_idx( invs, i, json_object_get( inv_itr ) );
+		} 
+	}
 
 	json_object_object_add( version, "major", json_object_new_int64( db->version.major ) );
 	json_object_object_add( version, "minor", json_object_new_int64( db->version.minor ) );
@@ -1784,9 +1952,10 @@ static int write_dbinfo( struct dbinfo_t* db ){
 	json_object_object_add( dbinfo_root, "version", version );
 	json_object_object_add( dbinfo_root, "nprj", json_object_new_int64(db->nprj) );
 	json_object_object_add( dbinfo_root, "nbom", json_object_new_int64(db->nbom) );
-	json_object_object_add( dbinfo_root, "npart", json_object_new_int64(db->npart) );
 	json_object_object_add( dbinfo_root, "init", json_object_new_int64( init ) );
 	json_object_object_add( dbinfo_root, "lock", json_object_new_int64( lock ) );
+	json_object_object_add( dbinfo_root, "ptypes", ptypes );
+	json_object_object_add( dbinfo_root, "invs", invs );
 
 	y_log_message(Y_LOG_LEVEL_DEBUG, "Added items to object");
 
@@ -1810,6 +1979,9 @@ int redis_write_dbinfo( struct dbinfo_t* db ){
 		}
 
 	} while( (db_check.flags & DBINFO_FLAG_LOCK) == DBINFO_FLAG_LOCK );
+
+	/* Cleanup temporary info */
+	free_dbinfo_t( &db_check );
 
 	/* now write data */
 	return write_dbinfo( db );
