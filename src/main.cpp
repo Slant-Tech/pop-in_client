@@ -1275,7 +1275,7 @@ static void proj_bom_tab( struct bom_t* bom  ){
 					ImGui::Text("Inventory");
 					ImGui::Indent();
 					for( unsigned int i = 0; i <  selected_item->inv_len; i++ ){
-						ImGui::Text("%d", selected_item->inv[i].loc);	
+						ImGui::Text("%s", dbinfo.invs[selected_item->inv[i].loc].name);	
 						ImGui::SameLine(PARTINFO_SPACING); 
 						ImGui::Text("%ld", selected_item->inv[i].q  );
 					}

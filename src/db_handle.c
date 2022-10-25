@@ -194,10 +194,10 @@ static int parse_json_part( struct part_t * part, struct json_object* restrict j
 			jval = json_object_object_get( jitr, "q" );
 
 			/* location number */
-			part->inv[i].loc = json_object_get_int64( jval );
+			part->inv[i].loc = json_object_get_int64( jkey );
 
 			/* location quantity  */
-			part->inv[i].q = json_object_get_int64( jkey );
+			part->inv[i].q = json_object_get_int64( jval );
 		}
 	}
 
