@@ -137,7 +137,7 @@ unsigned int Invcache::items(void){
 }
 
 /* Update part cache from database */
-int Invcache::update( struct dbinfo_t* info ){
+int Invcache::update( struct dbinfo_t** info ){
 	cmtx.lock();
 	/* Save current selected part index to use later */
 	unsigned int selected_idx = (unsigned int)-1;
@@ -162,7 +162,7 @@ int Invcache::update( struct dbinfo_t* info ){
 	unsigned int nprj = 0;
 	/* Get updated database information */
 	if( !redis_read_dbinfo( info ) ){
-		nprj = info->nprj;
+		nprj = (*info)->nprj;
 
 		/* Clear out cache since can't guarantee movement of parts, changing
 		 * ipns, which parts were removed, etc. */

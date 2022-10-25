@@ -38,7 +38,7 @@ struct db_settings_t {
 };
 
 static struct db_settings_t db_set = {NULL, 0};
-static struct dbinfo_t dbinfo;
+static struct dbinfo_t* dbinfo = nullptr;
 
 static void glfw_error_callback(int error, const char* description){
 	y_log_message(Y_LOG_LEVEL_ERROR, "GLFW Error %d: %s", error, description);
@@ -46,8 +46,8 @@ static void glfw_error_callback(int error, const char* description){
 
 /* Pass structure of projects and number of projects inside of struct */
 static void show_project_select_window( class Prjcache* cache );
-static void show_new_part_popup( struct dbinfo_t* info );
-static void new_proj_window( struct dbinfo_t* info );
+static void show_new_part_popup( struct dbinfo_t** info );
+static void new_proj_window( struct dbinfo_t** info );
 static void show_root_window( class Prjcache* cache );
 static void import_parts_window( void );
 static void db_settings_window( struct db_settings_t * set );
@@ -86,7 +86,9 @@ static int thread_db_connection( class Prjcache* cache ) {
 	while( run_flag ){
 		/* Check flags for projects and handle them */
 		if( db_stat == DB_STAT_CONNECTED ){
+			mutex_lock_dbinfo();
 			cache->update( &dbinfo );
+			mutex_unlock_dbinfo();
 		}
 
 		/* sleep for some period of time until refresh */
@@ -236,8 +238,8 @@ static int thread_ui( class Prjcache* cache ) {
 	return 0;
 }
 
-int open_db( struct db_settings_t* set, struct dbinfo_t * info, class Prjcache* cache){
-
+int open_db( struct db_settings_t* set, struct dbinfo_t** info, class Prjcache* cache){
+	
 	/* Wait for finish with displaying data */
 	while( PRJDISP_DISPLAYING == prj_disp_stat );
 	
@@ -267,6 +269,7 @@ int main( int, char** ){
 	/* Initialize logging */
 	y_init_logs("Pop:In", Y_LOG_MODE_CONSOLE, Y_LOG_LEVEL_DEBUG, NULL, "Pop:In Inventory Management");
 
+
 	if( open_db( &db_set, &dbinfo, prjcache ) ){ /* Use defaults of localhost and default port */
 		/* Failed to init database connection */
 		y_log_message( Y_LOG_LEVEL_WARNING, "Database connection failed on startup");
@@ -292,7 +295,9 @@ int main( int, char** ){
 	/* Disconnect from database */
 	redis_disconnect();
 
-	free_dbinfo_t( &dbinfo );
+	mutex_lock_dbinfo();
+	free_dbinfo_t( dbinfo );
+	mutex_lock_dbinfo();
 	free( db_set.hostname );
 	delete prjcache;
 	y_close_logs();
@@ -344,7 +349,7 @@ static void show_project_select_window( class Prjcache* cache ){
 
 }
 
-static void show_new_part_popup( struct dbinfo_t* info ){
+static void show_new_part_popup( struct dbinfo_t** info ){
 	static struct part_t part;
 	int err_flg = 0;
 	/* For entering in dynamic fields */
@@ -575,50 +580,57 @@ static void show_new_part_popup( struct dbinfo_t* info ){
             	}
 				struct dbinfo_ptype_t* ptype = NULL;
 				/* Find existing part type in database info */
-				for( unsigned int i = 0; i < info->nptype; i++){
-					if( info->ptypes[i].name == type ){
-						ptype = &info->ptypes[i];
+				mutex_lock_dbinfo();
+				for( unsigned int i = 0; i < (*info)->nptype; i++){
+					if( (*info)->ptypes[i].name == type ){
+						ptype = &((*info)->ptypes[i]);
 					}
 						
 				}
+				mutex_unlock_dbinfo();
+	
 				if( nullptr == ptype ){
 					/* Type doesn't exist in database, need to add the new type */
 					y_log_message(Y_LOG_LEVEL_INFO, "Type: %s not found in database. Adding type to database", type);
 
 					/* Should break this out into function */
-
-					struct dbinfo_ptype_t* tmp = (struct dbinfo_ptype_t*)reallocarray( info->ptypes, info->nptype + 1, sizeof(struct dbinfo_ptype_t) );
+					mutex_lock_dbinfo();
+					struct dbinfo_ptype_t* tmp = (struct dbinfo_ptype_t*)reallocarray( (*info)->ptypes, (*info)->nptype + 1, sizeof(struct dbinfo_ptype_t) );
+					mutex_unlock_dbinfo();
 					if( nullptr == tmp ){
 						y_log_message(Y_LOG_LEVEL_ERROR, "Could not reallocate memory for new part type");
 						err_flg = 2;
 					}
 					else {
+						mutex_lock_dbinfo();
 						/* Able to reallocate, so continue adding to database  */
-						info->nptype++;	
-						info->ptypes = tmp;
+						(*info)->nptype++;	
+						(*info)->ptypes = tmp;
 
 						/* Initialize dbinfo_ptype_t */
-						info->ptypes[info->nptype - 1].name = (char *)calloc( strnlen( type, sizeof( type )), sizeof( char ) );
-						if( nullptr == info->ptypes[info->nptype - 1].name ){
+						(*info)->ptypes[(*info)->nptype - 1].name = (char *)calloc( strnlen( type, sizeof( type )), sizeof( char ) );
+						if( nullptr == (*info)->ptypes[(*info)->nptype - 1].name ){
 							y_log_message(Y_LOG_LEVEL_ERROR, "Could not allocate memory for new database part type");							
 							err_flg = 3;
+							mutex_unlock_dbinfo();
 						}
 						else {
 							/* Copy string */
-							strncpy( info->ptypes[info->nptype - 1].name, type, strnlen( type, sizeof( type )) );	
+							strncpy( (*info)->ptypes[(*info)->nptype - 1].name, type, strnlen( type, sizeof( type )) );	
 
 							/* Ensure that the number of parts is equal to zero */
-							info->ptypes[info->nptype - 1].npart = 0;
+							(*info)->ptypes[(*info)->nptype - 1].npart = 0;
 
 							/* Now make sure that ptype is pointed towards new
 							 * index */
-							ptype = &(info->ptypes[info->nptype - 1]);
+							ptype = &((*info)->ptypes[(*info)->nptype - 1]);
 
 							/* Ensure that database is updated, even if the
 							 * write part fails */
-							redis_write_dbinfo( info );
+							redis_write_dbinfo( *info );
 						}
 
+						mutex_unlock_dbinfo();
 					}
 
 				}
@@ -635,7 +647,7 @@ static void show_new_part_popup( struct dbinfo_t* info ){
 					y_log_message(Y_LOG_LEVEL_DEBUG, "Data written to database");
 
 
-					redis_write_dbinfo( info );
+					redis_write_dbinfo( *info );
 				}
 			}
 			else {
@@ -679,7 +691,7 @@ static void show_new_part_popup( struct dbinfo_t* info ){
 
 }
 
-static void new_proj_window( struct dbinfo_t* info ){
+static void new_proj_window( struct dbinfo_t** info ){
 	static struct proj_t * prj = NULL;
 
 	/* Buffers for text input. Can also be used for santizing inputs */
@@ -862,16 +874,17 @@ static void new_proj_window( struct dbinfo_t* info ){
 			}
 
 			/* Increment database information */
-			info->nprj++;
-			prj->ipn = info->nprj;
-
+			mutex_lock_dbinfo();
+			(*info)->nprj++;
+			prj->ipn = (*info)->nprj;
+			mutex_unlock_dbinfo();
 			/* Perform the write */
 			redis_write_proj( prj );
 			y_log_message(Y_LOG_LEVEL_DEBUG, "Data written to database");
 			show_new_proj_window = false;
 
 
-			redis_write_dbinfo( info );
+			redis_write_dbinfo( *info );
 
 			/* Make sure to read back the same data incase something went wrong */
 			redis_read_dbinfo( info );
@@ -1275,7 +1288,9 @@ static void proj_bom_tab( struct bom_t* bom  ){
 					ImGui::Text("Inventory");
 					ImGui::Indent();
 					for( unsigned int i = 0; i <  selected_item->inv_len; i++ ){
-						ImGui::Text("%s", dbinfo.invs[selected_item->inv[i].loc].name);	
+						mutex_lock_dbinfo();
+						ImGui::Text("%s", dbinfo->invs[selected_item->inv[i].loc].name);	
+						mutex_unlock_dbinfo();
 						ImGui::SameLine(PARTINFO_SPACING); 
 						ImGui::Text("%ld", selected_item->inv[i].q  );
 					}

@@ -41,7 +41,7 @@ class Invcache {
 		Invcache( unsigned int size, std::string init_type );
 		~Invcache();
 		unsigned int items(void);
-		int update( struct dbinfo_t* info );
+		int update( struct dbinfo_t** info );
 		int write( struct part_t * p, unsigned int index );
 		struct part_t* read( unsigned int index );
 		int insert( struct part_t * p, unsigned int index );

@@ -139,7 +139,7 @@ unsigned int Prjcache::items(void){
 }
 
 /* Update project cache from database */
-int Prjcache::update( struct dbinfo_t* info ){
+int Prjcache::update( struct dbinfo_t** info ){
 	cmtx.lock();
 	/* Save current selected project index to use later */
 	unsigned int selected_idx = (unsigned int)-1;
@@ -164,7 +164,7 @@ int Prjcache::update( struct dbinfo_t* info ){
 	unsigned int nprj = 0;
 	/* Get updated database information */
 	if( !redis_read_dbinfo( info ) ){
-		nprj = info->nprj;
+		nprj = (*info)->nprj;
 
 		/* Clear out cache since can't guarantee movement of projects, changing
 		 * ipns, which projects were removed, etc. */

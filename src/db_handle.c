@@ -11,6 +11,20 @@
 /* Redis Context for handling in database */
 static redisContext *rc;
 
+static int dbinfo_mtx = 0;
+
+/* Lock method to enforce atomic access to dbinfo */
+static void lock( volatile int *exclusion ){
+	while( __sync_lock_test_and_set( exclusion, 1)){
+		while(*exclusion);
+	}
+}
+static void unlock( volatile int *exclusion ){
+	__sync_synchronize();
+	*exclusion = 0;
+}
+
+
 /* Parse part json object to part_t */
 static int parse_json_part( struct part_t * part, struct json_object* restrict jpart ){
 
@@ -519,22 +533,33 @@ static int parse_json_dbinfo( struct dbinfo_t * db, struct json_object* restrict
 
 	size_t jstrlen = 0;
 
-	json_object* jversion;
-	json_object* jnprj;
-	json_object* jnbom;
-	json_object* jnptype;
-	json_object* jninv;
-	json_object* jlock;
-	json_object* jinit;
-	json_object* jmajor;
-	json_object* jminor;
-	json_object* jpatch;
-	json_object* jptypes;
-	json_object* jinvs;
-	json_object* jitr;
-	json_object* jkey;
-	json_object* jval;
+	json_object* jversion = NULL;
+	json_object* jnprj = NULL;
+	json_object* jnbom = NULL;
+	json_object* jnptype = NULL;
+	json_object* jninv = NULL;
+	json_object* jlock = NULL;
+	json_object* jinit = NULL;
+	json_object* jmajor = NULL;
+	json_object* jminor = NULL;
+	json_object* jpatch = NULL;
+	json_object* jptypes = NULL;
+	json_object* jinvs = NULL;
+	json_object* jitr = NULL;
+	json_object* jkey = NULL;
+	json_object* jval = NULL;
 	
+	if( NULL == db ){
+		y_log_message(Y_LOG_LEVEL_ERROR, "dbinfo passed was NULL");
+		return -1;
+	}
+
+	if( NULL == jdb ){
+		y_log_message(Y_LOG_LEVEL_ERROR, "json passed was NULL");
+		return -1;
+	}
+
+
 	jversion  	= json_object_object_get( jdb, "version" ); 
 	jmajor		= json_object_object_get( jversion, "major" ); 
 	jminor 		= json_object_object_get( jversion, "minor" ); 
@@ -549,6 +574,15 @@ static int parse_json_dbinfo( struct dbinfo_t * db, struct json_object* restrict
 
 	//y_log_message(Y_LOG_LEVEL_DEBUG, "JSON Object passed for dbinfo:\n%s\n", json_object_to_json_string_ext(jdb, JSON_C_TO_STRING_PRETTY));
 	
+	/* Check if incoming data was even parsed properly */
+	if( NULL == jversion  || NULL == jmajor || NULL == jminor
+		|| NULL == jpatch || NULL == jnprj || NULL == jnbom
+		|| NULL == jlock  || NULL == jinit || NULL == jptypes
+		|| NULL == jinvs ){
+		y_log_message(Y_LOG_LEVEL_ERROR, "Issue parsing dbinfo");
+		return -1;
+	}
+
 	/* Copy data from json objects */
 
 	/* Number of kinds of objects  */
@@ -1839,18 +1873,48 @@ struct proj_t* get_proj_from_ipn( unsigned int ipn ){
 }
 
 /* Read database information */
-int redis_read_dbinfo( struct dbinfo_t* db ){
+int redis_read_dbinfo( struct dbinfo_t** db ){
 	int retval = -1;
 	json_object* jdb;
+
+
+	struct dbinfo_t* tmp = NULL;
+
+	/* Spin lock first */
+	lock( &dbinfo_mtx );
+
+
+	tmp = calloc( 1, sizeof( struct dbinfo_t ) );
+	if( NULL == tmp ){
+		y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate memory for database info" );
+		/* If failed, make sure to unlock */
+		unlock( &dbinfo_mtx );
+		return -1;
+	}
+
 	if( redis_json_get( rc, "popdb", "$", &jdb ) ){
 		y_log_message(Y_LOG_LEVEL_ERROR, "Could not get database information");
-		free_dbinfo_t( db );
+		free_dbinfo_t( tmp );
+		/* If failed, make sure to unlock */
+		unlock( &dbinfo_mtx );
 		return -1;
 	}
 
 	/* Parse data */
-	retval =  parse_json_dbinfo( db, jdb );
+	retval =  parse_json_dbinfo( tmp, jdb );
 	json_object_put( jdb );
+
+	/* Check if null first; need to free otherwise */
+	if( NULL != *db ){
+		free_dbinfo_t( *db );
+		*db = NULL;
+	}
+	else {
+		*db = tmp;
+	}
+
+	/* Make sure to unlock once done */
+	unlock( &dbinfo_mtx );
 	return retval;
 }
 
@@ -1971,19 +2035,30 @@ static int write_dbinfo( struct dbinfo_t* db ){
 
 /* Write database information; read modify write  */
 int redis_write_dbinfo( struct dbinfo_t* db ){
-	struct dbinfo_t db_check= {};
+	struct dbinfo_t* db_check;
 	do{
 		redis_read_dbinfo( &db_check );
-		if( (db_check.flags & DBINFO_FLAG_LOCK) == DBINFO_FLAG_LOCK ){
+		if( (db_check->flags & DBINFO_FLAG_LOCK) == DBINFO_FLAG_LOCK ){
 			sleep(2); /* Wait a little until lock is free */
 		}
 
-	} while( (db_check.flags & DBINFO_FLAG_LOCK) == DBINFO_FLAG_LOCK );
+	} while( (db_check->flags & DBINFO_FLAG_LOCK) == DBINFO_FLAG_LOCK );
 
 	/* Cleanup temporary info */
-	free_dbinfo_t( &db_check );
+	free_dbinfo_t( db_check );
+	free( db_check );
 
 	/* now write data */
 	return write_dbinfo( db );
 
+}
+
+/* Lock access to dbinfo */
+void mutex_lock_dbinfo( void ){
+	lock( &dbinfo_mtx );
+}
+
+/* Unlock access to dbinfo */
+void mutex_unlock_dbinfo( void ){
+	unlock( &dbinfo_mtx );
 }

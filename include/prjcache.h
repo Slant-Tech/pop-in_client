@@ -39,7 +39,7 @@ class Prjcache {
 		Prjcache( unsigned int size );
 		~Prjcache();
 		unsigned int items(void);
-		int update( struct dbinfo_t* info );
+		int update( struct dbinfo_t** info );
 		int write( struct proj_t * p, unsigned int index );
 		struct proj_t* read( unsigned int index );
 		int insert( struct proj_t * p, unsigned int index );
