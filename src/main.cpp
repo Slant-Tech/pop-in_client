@@ -10,11 +10,12 @@
 #include <mutex>
 #include <thread>
 #include <string>
-//#include <projectview.h>
 #include <yder.h>
 #include <db_handle.h>
 #include <L2DFileDialog.h>
 #include <prjcache.h>
+#include <partcache.h>
+//#include <invcache.h>
 #include <proj_funct.h>
 #include <ctype.h>
 
@@ -46,12 +47,12 @@ static void glfw_error_callback(int error, const char* description){
 
 /* Pass structure of projects and number of projects inside of struct */
 static void show_project_select_window( class Prjcache* cache );
+static void show_part_select_window( class Partcache* cache, int* i );
 static void show_new_part_popup( struct dbinfo_t** info );
 static void new_proj_window( struct dbinfo_t** info );
-static void show_root_window( class Prjcache* cache );
+static void show_root_window( class Prjcache* prj_cache, std::vector< Partcache*>* part_cache );
 static void import_parts_window( void );
 static void db_settings_window( struct db_settings_t * set );
-void DisplayNode( struct proj_t* node, class Prjcache* cache );
 
 #define DB_STAT_DISCONNECTED  0
 #define DB_STAT_CONNECTED  1
@@ -67,6 +68,14 @@ static int db_stat = DB_STAT_DISCONNECTED;
 #define DB_REFRESH_SEC (5 * 1000)
 #endif
 
+enum view_type {
+	project_view,
+	part_view,
+	inventory_view,
+};
+
+static enum view_type current_view = project_view;
+
 bool show_new_part_window = false;
 bool show_new_proj_window = false;
 bool show_import_parts_window = false;
@@ -78,7 +87,7 @@ bool show_db_settings_window = false;
 /* Variable to continue running */
 static bool run_flag = true;
 
-static int thread_db_connection( class Prjcache* cache ) {
+static int thread_db_connection( Prjcache* prj_cache, std::vector<Partcache*>* part_cache ) {
 	
 	y_log_message( Y_LOG_LEVEL_INFO, "Started thread_db_connection" );
 	
@@ -86,7 +95,10 @@ static int thread_db_connection( class Prjcache* cache ) {
 	while( run_flag ){
 		/* Check flags for projects and handle them */
 		if( db_stat == DB_STAT_CONNECTED ){
-			cache->update( &dbinfo );
+			prj_cache->update( &dbinfo );
+			for( unsigned int i = 0; i < dbinfo->nptype; i++ ){
+				(*part_cache)[i]->update( &dbinfo );
+			}
 		}
 
 		/* sleep for some period of time until refresh */
@@ -99,7 +111,7 @@ static int thread_db_connection( class Prjcache* cache ) {
 	return 0;
 }
 
-static int thread_ui( class Prjcache* cache ) {
+static int thread_ui( class Prjcache* prj_cache, std::vector<Partcache *>* part_cache  ) {
 
 	y_log_message( Y_LOG_LEVEL_INFO, "Start thread_ui" );
 
@@ -172,7 +184,7 @@ static int thread_ui( class Prjcache* cache ) {
 
 
 	/* Use first project as first selected node */
-	cache->select(0);
+	prj_cache->select(0);
 
 	/* Main application loop */
 	while( !glfwWindowShouldClose(window) ) {
@@ -205,7 +217,7 @@ static int thread_ui( class Prjcache* cache ) {
 		if( show_db_settings_window ){
 			db_settings_window(&db_set );
 		}
-		show_root_window(cache);
+		show_root_window(prj_cache, part_cache);
 		ImGui::End();
 
 		/* End Projects view creation */
@@ -236,7 +248,7 @@ static int thread_ui( class Prjcache* cache ) {
 	return 0;
 }
 
-int open_db( struct db_settings_t* set, struct dbinfo_t** info, class Prjcache* cache){
+int open_db( struct db_settings_t* set, struct dbinfo_t** info, class Prjcache* prjcache, std::vector< Partcache *>* partcaches){
 	
 	/* Wait for finish with displaying data */
 	while( PRJDISP_DISPLAYING == prj_disp_stat );
@@ -256,7 +268,25 @@ int open_db( struct db_settings_t* set, struct dbinfo_t** info, class Prjcache* 
 	else {
 		y_log_message( Y_LOG_LEVEL_INFO, "Successfully connected to database");
 
-		int retval = cache->update( info );
+		int retval = prjcache->update( info );
+
+		/* Ensure that the vector is the correct size for the part types */
+		if( (*info)->nptype != partcaches->size() ){
+			/* Fix the size */
+			partcaches->assign((*info)->nptype, nullptr);
+		}
+
+		/* For all the part types, update the list of part caches */
+		for( unsigned int i = 0; i < (*info)->nptype; i++ ){
+			/* If cache already exists, then erase it */
+			if( nullptr != (*partcaches)[i] ){
+				delete (*partcaches)[i];
+			}
+			/* Add new type to cache */
+			(*partcaches)[i] = new Partcache((*info)->ptypes[i].npart, (*info)->ptypes[i].name);
+			(*partcaches)[i]->update( &dbinfo );
+		}
+
 		db_stat = DB_STAT_CONNECTED;
 		return retval;
 	}
@@ -264,20 +294,21 @@ int open_db( struct db_settings_t* set, struct dbinfo_t** info, class Prjcache* 
 
 int main( int, char** ){
 	Prjcache* prjcache = new Prjcache(1);
+	std::vector< Partcache*> partcache;
 	/* Initialize logging */
 	y_init_logs("Pop:In", Y_LOG_MODE_CONSOLE, Y_LOG_LEVEL_DEBUG, NULL, "Pop:In Inventory Management");
 
 	
-	if( open_db( &db_set, &dbinfo, prjcache ) ){ /* Use defaults of localhost and default port */
+	if( open_db( &db_set, &dbinfo, prjcache, &partcache ) ){ /* Use defaults of localhost and default port */
 		/* Failed to init database connection */
 		y_log_message( Y_LOG_LEVEL_WARNING, "Database connection failed on startup");
 	}
 
 	/* Start UI thread */
-	std::thread ui( thread_ui, prjcache );
+	std::thread ui( thread_ui, prjcache, &partcache );
 
 	/* Start database connection thread */
-	std::thread db( thread_db_connection, prjcache );
+	std::thread db( thread_db_connection, prjcache, &partcache );
 
 	/* Join threads */
 	ui.join();
@@ -298,12 +329,72 @@ int main( int, char** ){
 	mutex_lock_dbinfo();
 	free( db_set.hostname );
 	delete prjcache;
+	for( unsigned int i = 0; i < partcache.size(); i++ ){
+		/* Clear memory inside of part cache vector */
+		delete (partcache[i]);
+	}
+	partcache.clear();
 	y_close_logs();
 
 	return 0;
 
 }
 
+static void show_part_select_window( std::vector< Partcache*>* cache, int* selected ){
+	
+	int open_action = -1;
+	ImGui::Text("Parts");
+
+	const float TEXT_BASE_WIDTH = ImGui::CalcTextSize("A").x;
+
+	if( open_action != -1 ){
+		ImGui::SetNextItemOpen(open_action != 0);
+	}
+
+	/* Flags for Table */
+	static ImGuiTableFlags flags = ImGuiTableFlags_BordersV | \
+								   ImGuiTableFlags_BordersOuterH | \
+								   ImGuiTableFlags_Resizable | \
+								   ImGuiTableFlags_RowBg | \
+								   ImGuiTableFlags_NoBordersInBody | \
+								   ImGuiTreeNodeFlags_OpenOnArrow | \
+								   ImGuiTreeNodeFlags_OpenOnDoubleClick | \
+								   ImGuiTreeNodeFlags_SpanFullWidth;
+
+	/* Set colums, items in table */
+	if( ImGui::BeginTable("parts", 3, flags)){
+		/* First column will use default _WidthStretch when ScrollX is
+		 * off and _WidthFixed when ScrollX is on */
+		ImGui::TableSetupColumn("Type/Part Number",   	ImGuiTableColumnFlags_NoHide);
+		ImGui::TableSetupColumn("Status",				ImGuiTableColumnFlags_WidthFixed, TEXT_BASE_WIDTH * 12.0f);
+		ImGui::TableSetupColumn("Quantity",				ImGuiTableColumnFlags_WidthFixed, TEXT_BASE_WIDTH * 18.0f);
+		ImGui::TableHeadersRow();
+
+		ImGuiTreeNodeFlags node_flags = ImGuiTreeNodeFlags_OpenOnArrow | \
+										ImGuiTreeNodeFlags_OpenOnDoubleClick | \
+										ImGuiTreeNodeFlags_SpanFullWidth; 
+	
+		/* Cache header */
+		ImGui::TableNextRow();
+		ImGui::TableNextColumn();
+		mutex_lock_dbinfo();
+		bool node_clicked[dbinfo->nptype] = {false};
+		if( DB_STAT_DISCONNECTED != db_stat ){
+			for( unsigned int i = 0; i < dbinfo->nptype; i++ ){
+				/* Check if item has been clicked */
+				(*cache)[i]->display_parts(&(node_clicked[i]));
+				if( node_clicked[i] ){
+					y_log_message( Y_LOG_LEVEL_DEBUG, "Part type %s is open", (*cache)[i]->type.c_str() );
+					*selected = i;
+				}
+			}
+		}
+		mutex_unlock_dbinfo();
+		prj_disp_stat = PRJDISP_IDLE;
+		ImGui::EndTable();
+	}
+
+}
 
 
 static void show_project_select_window( class Prjcache* cache ){
@@ -599,7 +690,11 @@ static void show_new_part_popup( struct dbinfo_t** info ){
 
 					/* Should break this out into function */
 					mutex_spin_lock_dbinfo();
+#ifndef _WIN32
 					struct dbinfo_ptype_t* tmp = (struct dbinfo_ptype_t*)reallocarray( (*info)->ptypes, (*info)->nptype + 1, sizeof(struct dbinfo_ptype_t) );
+#else
+					struct dbinfo_ptype_t* tmp = (struct dbinfo_ptype_t*)realloc( (*info)->ptypes, ((*info)->nptype + 1) *  sizeof(struct dbinfo_ptype_t) );
+#endif
 					mutex_unlock_dbinfo();
 					if( nullptr == tmp ){
 						y_log_message(Y_LOG_LEVEL_ERROR, "Could not reallocate memory for new part type");
@@ -1046,7 +1141,7 @@ static void db_settings_window( struct db_settings_t * set ){
 
 
 /* Menu items */
-static void show_menu_bar( class Prjcache* cache ){
+static void show_menu_bar( class Prjcache* prjcache, std::vector<Partcache*>* partcache ){
 
 	if( ImGui::BeginMenuBar() ){
 		/* File Menu */
@@ -1088,6 +1183,20 @@ static void show_menu_bar( class Prjcache* cache ){
 			ImGui::EndMenu();
 		}
 
+		/* View Menu */
+		if( ImGui::BeginMenu("View") ){
+			if( ImGui::MenuItem("Project View") ){
+				current_view = project_view;	
+			}
+			else if( ImGui::MenuItem("Part View") ){
+				current_view = part_view;
+			}
+			else if( ImGui::MenuItem("Inventory View") ){
+				current_view = inventory_view;
+			}
+			ImGui::EndMenu();
+		}
+
 		/* Project Menu */
 		if( ImGui::BeginMenu("Project") ){
 			if( ImGui::MenuItem("Generate Report") ){
@@ -1123,12 +1232,12 @@ static void show_menu_bar( class Prjcache* cache ){
 		if( ImGui::BeginMenu("Network") ){
 			if( ImGui::MenuItem("Connect") ){
 				y_log_message(Y_LOG_LEVEL_DEBUG, "Clicked Network->connect");
-				if( open_db( &db_set, &dbinfo, cache ) ){ /* Use defaults of localhost and default port */
+				if( open_db( &db_set, &dbinfo, prjcache, partcache ) ){ /* Use defaults of localhost and default port */
 					/* Failed to init database connection */
 					y_log_message( Y_LOG_LEVEL_WARNING, "Database connection failed on startup");
 				}
 				else{
-					cache->select(0);
+					prjcache->select(0);
 				}
 			}
 			else if( ImGui::MenuItem("Server Settings")){
@@ -1428,20 +1537,7 @@ static void proj_data_window( class Prjcache* cache ){
 
 }
 
-/* Setup root window, child windows */
-static void show_root_window( class Prjcache* cache ){
-
-	/* Create menu items */
-	show_menu_bar( cache );
-	
-	/* Put the different items into columns*/
-	static ImGuiTableFlags table_flags = ImGuiTableFlags_SizingStretchProp | \
-										 ImGuiTableFlags_Resizable | \
-										 ImGuiTableFlags_BordersOuter | \
-										 ImGuiTableFlags_BordersV | \
-										 ImGuiTableFlags_Reorderable | \
-										 ImGuiTableFlags_ContextMenuInBody;
-
+static void show_project_view( class Prjcache* cache, ImGuiTableFlags table_flags ){
 	if( ImGui::BeginTable("view_split", 2, table_flags) ){
 		ImGui::TableNextRow();
 
@@ -1466,6 +1562,379 @@ static void show_root_window( class Prjcache* cache ){
 		ImGui::EndChild();
 		ImGui::EndTable();	
 	}
+
+}
+
+
+
+
+static void part_info_tab( class Partcache* cache ){
+
+	static part_t *selected_item = NULL;	
+
+
+	ImGui::Text("Project BOM Tab");
+
+	/* Part Specific table view */
+
+	static ImGuiTableFlags table_flags = ImGuiTableFlags_SizingStretchProp | \
+										 ImGuiTableFlags_Resizable | \
+										 ImGuiTableFlags_NoSavedSettings | \
+										 ImGuiTableFlags_BordersOuter | \
+										 ImGuiTableFlags_Sortable | \
+										 ImGuiTableFlags_SortMulti | \
+										 ImGuiTableFlags_ScrollY | \
+										 ImGuiTableFlags_BordersV | \
+										 ImGuiTableFlags_Reorderable | \
+										 ImGuiTableFlags_ContextMenuInBody;
+
+	if( ImGui::BeginTable("Part", 5, table_flags ) ){
+		ImGui::TableSetupColumn("P/N", ImGuiTableColumnFlags_PreferSortAscending);
+		ImGui::TableSetupColumn("Manufacturer", ImGuiTableColumnFlags_PreferSortAscending);
+		ImGui::TableSetupColumn("Quantitiy", ImGuiTableColumnFlags_PreferSortAscending);
+		ImGui::TableSetupColumn("Type", ImGuiTableColumnFlags_PreferSortAscending);
+		ImGui::TableSetupColumn("Status", ImGuiTableColumnFlags_PreferSortAscending);
+
+		ImGui::TableHeadersRow();
+
+#if 0 
+		/* Sort the bom items list based off of what is currently
+		 * selected for sorting */
+		if(ImGuiTableSortSpecs* bom_sort_specs = ImGui::TableGetSortSpecs()){
+			/* Criteria changed; need to resort */
+			if( bom_sort_specs->SpecsDirty ){
+				if( bom.item.size() > 1 ){
+					//qsort( &bom.item[0], (size_t)bom.item.size(), sizeof( bom.item[0] ) );	
+				}
+				bom_sort_specs->SpecsDirty = false;
+			}
+		}
+#endif
+			
+		if( nullptr != cache ){
+			/* Used for selecting specific item in BOM */
+			bool item_sel[ cache->items() ] = {};
+			char part_mpn_label[64]; /* May need to change size at some point */
+			struct part_t* part = nullptr;
+			struct part_t* tmp = nullptr;
+			for( int i = 0; i < cache->items(); i++){
+				ImGui::TableNextRow();
+				if( nullptr != part ){
+					free_part_t( part );
+					part = nullptr;
+				}
+				tmp = cache->read(i);
+				/* Copy part to temporary storage */
+				part = copy_part_t( tmp );
+
+				/* Part number */
+				ImGui::TableSetColumnIndex(0);
+				snprintf(part_mpn_label, 64, "%s", part->mpn);
+				ImGui::Selectable(part_mpn_label, &item_sel[i], ImGuiSelectableFlags_SpanAllColumns);
+
+				/* Manufacturer */
+				ImGui::TableSetColumnIndex(1);
+				ImGui::Text("%s", part->mfg );
+
+				/* Quantity */
+				ImGui::TableSetColumnIndex(2);
+				ImGui::Text("%d", part->q );
+
+				/* Type */
+				ImGui::TableSetColumnIndex(3);
+				ImGui::Text("%s", part->type);
+
+				/* Status */
+				ImGui::TableSetColumnIndex(4);
+				switch ( part->status ) {
+					case pstat_prod:
+						ImGui::Text("Production");
+						break;
+					case pstat_low_stock:
+						ImGui::TextColored(ImVec4(1.0f, 0.8117647f, 0.0f, 1.0f),"Low Stock");
+						break;
+					case pstat_unavailable:
+						ImGui::TextColored(ImVec4(1.0f, 0.0f, 0.0f, 1.0f),"Unavailable");
+						break;
+					case pstat_nrnd:
+						ImGui::TextColored(ImVec4(1.0f, 0.0f, 0.0f, 1.0f),"Not Recommended for New Designs");
+						break;
+					case pstat_lasttimebuy:
+						ImGui::TextColored(ImVec4(1.0f, 0.0f, 0.0f, 1.0f),"Last Time Buy");
+						break;
+					case pstat_obsolete:
+						ImGui::TextColored(ImVec4(1.0f, 0.0f, 0.0f, 1.0f),"Obsolete");
+						break;
+					case pstat_unknown:
+					default:
+						/* FALLTHRU */
+						ImGui::TextColored(ImVec4(1.0f, 0.8117647f, 0.0f, 1.0f),"Unknown");
+						break;
+				}
+
+
+				if( item_sel[i] ){
+					/* Open popup for part info */
+					ImGui::OpenPopup("PartInfo");
+					y_log_message(Y_LOG_LEVEL_DEBUG, "%s was selected", part->mpn);
+					if( nullptr != selected_item ){
+						free_part_t( selected_item );
+						selected_item = nullptr;
+					}
+					selected_item = copy_part_t(part);
+				}
+
+				if( nullptr != part ){
+					free_part_t( part );
+					part = nullptr;
+				}
+
+			}
+			/* Popup window for Part info */
+			ImVec2 center = ImGui::GetMainViewport()->GetCenter();
+			ImGui::SetNextWindowPos(center, ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
+			if( ImGui::BeginPopupModal("PartInfo", NULL, ImGuiWindowFlags_AlwaysAutoResize) ){
+				ImGui::Text("Part Info");
+				ImGui::Separator();
+				
+				if( NULL != selected_item ){
+					ImGui::Text("Part Number:"); 
+					ImGui::SameLine(PARTINFO_SPACING); 
+					ImGui::Text("%s", selected_item->mpn);
+
+					ImGui::Text("Part Status:");
+					ImGui::SameLine(PARTINFO_SPACING); 
+					switch( selected_item->status ){
+						case pstat_prod:
+							ImGui::Text("In Production");
+							break;
+						case pstat_low_stock:
+							ImGui::Text("Low Stock Available");
+							break;
+						case pstat_unavailable:
+							ImGui::Text("Unavailable");
+							break;
+						case pstat_nrnd:
+							ImGui::Text("Not Recommended for New Designs");
+							break;
+						case pstat_obsolete:
+							ImGui::Text("Obsolete");
+							break;
+						case pstat_unknown:
+						default:
+							/* FALLTHRU */
+							ImGui::Text("Unknown");
+							break;
+					}
+					ImGui::Text("Part Fields:");
+					ImGui::Indent();
+					for( unsigned int i = 0 ; i < selected_item->info_len; i++ ){
+						ImGui::Text("%s", selected_item->info[i].key );
+						ImGui::SameLine(PARTINFO_SPACING); 
+						ImGui::Text("%s", selected_item->info[i].val);
+					}
+					ImGui::Unindent();
+					ImGui::Spacing();
+
+					ImGui::Text("Inventory");
+					ImGui::Indent();
+					for( unsigned int i = 0; i <  selected_item->inv_len; i++ ){
+						mutex_lock_dbinfo();
+						ImGui::Text("%s", dbinfo->invs[selected_item->inv[i].loc].name);	
+						mutex_unlock_dbinfo();
+						ImGui::SameLine(PARTINFO_SPACING); 
+						ImGui::Text("%ld", selected_item->inv[i].q  );
+					}
+					ImGui::Unindent();
+					ImGui::Spacing();
+
+					ImGui::Text("Distributor P/Ns:");
+					ImGui::Indent();
+					for( unsigned int i = 0; i <  selected_item->dist_len; i++ ){
+						ImGui::Text("%s", selected_item->dist[i].name);	
+						ImGui::SameLine(PARTINFO_SPACING); 
+						ImGui::Text("%s", selected_item->dist[i].pn  );
+					}
+					ImGui::Unindent();
+					ImGui::Spacing();
+
+					ImGui::Text("Price Breaks:");
+					ImGui::Indent();
+					for( unsigned int i = 0; i <  selected_item->price_len; i++ ){
+						ImGui::Text("%ld:", selected_item->price[i].quantity);	
+						ImGui::SameLine(PARTINFO_SPACING); 
+						ImGui::Text("$%0.6lf", selected_item->price[i].price  );
+					}
+					ImGui::Unindent();
+					ImGui::Spacing();
+				}
+				else{
+					ImGui::Text("Part Number not found");
+				}
+
+				ImGui::Separator();
+	
+				if( ImGui::Button("OK", ImVec2(120,0))){
+					if( nullptr != selected_item ){
+						selected_item = nullptr;
+					}
+					
+					ImGui::CloseCurrentPopup();
+				}
+				ImGui::SetItemDefaultFocus();
+				
+				ImGui::EndPopup();
+			}
+		}
+		else{
+			y_log_message(Y_LOG_LEVEL_ERROR, "Issue getting selected item for part type info tab");
+		}
+		ImGui::EndTable();
+	}
+
+}
+
+static void part_analytic_tab( class Partcache* cache ){
+
+	static std::string last_type = "";
+
+	/* Check if cache is valid */
+	if( nullptr != cache ){
+		/* Check if already retrieved data from this project */
+		if( last_type != cache->type ){
+			/* Grab new data */
+
+			/* Save last ipn */
+			last_type = cache->type;
+		}
+
+		/* Show information about project with selections for versions etc */
+		ImGui::Text("Part Analytics Tab");
+		ImGui::Separator();
+		
+		ImGui::Text("Type: %s", cache->type.c_str());
+		ImGui::Text("Number of unique parts: %d", cache->items());
+
+		ImGui::Spacing();
+	}
+	else {
+		ImGui::Text("Part Type cache is invalid");
+	}
+
+}
+
+static void part_data_window( std::vector< Partcache*>* cache, int index ){
+	static part_t* p = nullptr;
+	static class Partcache* selected = (*cache)[index];
+	/* Show BOM/Information View */
+	ImGuiTabBarFlags tabbar_flags = ImGuiTabBarFlags_None;
+
+	/* Update index */
+	if( index > 0 || index <= (*cache).size() ){
+		selected = (*cache)[index];	
+	}
+
+	if( ImGui::BeginTabBar("Part Info", tabbar_flags ) ){
+		if( ImGui::BeginTabItem("Analytics") ){
+			part_analytic_tab( selected );
+			ImGui::EndTabItem();
+		}
+		if( ImGui::BeginTabItem("Info") ){
+			part_info_tab( selected );
+			ImGui::EndTabItem();
+		}
+		
+		ImGui::EndTabBar();
+	}
+
+}
+
+static void show_part_view( std::vector< Partcache*>* cache, ImGuiTableFlags table_flags ){
+	static int selected_cache = 0;
+
+	if( ImGui::BeginTable("view_split", 2, table_flags) ){
+		ImGui::TableNextRow();
+
+		ImGui::TableSetColumnIndex(0);
+		/* Show project view */
+		ImGui::BeginChild("Part Type Selector", ImVec2(ImGui::GetContentRegionAvail().x * 0.95f, ImGui::GetContentRegionAvail().y * 0.95f ));
+		if( nullptr != cache && DB_STAT_DISCONNECTED != db_stat ){
+			show_part_select_window(cache, &selected_cache);
+		}
+		ImGui::EndChild();
+
+		/* Info view on the right */
+		ImGui::TableSetColumnIndex(1);
+		ImGui::BeginChild("Part Type Information", ImVec2(ImGui::GetContentRegionAvail().x * 0.95f, ImGui::GetContentRegionAvail().y*0.95f));
+
+		/* Get selected part type cache info */
+		if( nullptr != cache ){
+			part_data_window( cache, selected_cache );
+		} 
+
+		ImGui::EndChild();
+		ImGui::EndTable();	
+	}
+
+}
+
+#if 0
+static show_inventory_view( class InvCache* cache, static ImGuiTableFlags table_flags ){
+	if( ImGui::BeginTable("view_split", 2, table_flags) ){
+		ImGui::TableNextRow();
+
+		/* Project view on the left */
+		ImGui::TableSetColumnIndex(0);
+		/* Show project view */
+		ImGui::BeginChild("Project Selector", ImVec2(ImGui::GetContentRegionAvail().x * 0.95f, ImGui::GetContentRegionAvail().y * 0.95f ));
+		if( nullptr != cache && DB_STAT_DISCONNECTED != db_stat ){
+			show_project_select_window(cache);
+		}
+		ImGui::EndChild();
+
+		/* Info view on the right */
+		ImGui::TableSetColumnIndex(1);
+		ImGui::BeginChild("Project Information", ImVec2(ImGui::GetContentRegionAvail().x * 0.95f, ImGui::GetContentRegionAvail().y*0.95f));
+
+		/* Get selected project */
+		if( nullptr != cache->get_selected() ){
+			proj_data_window( cache );
+		} 
+
+		ImGui::EndChild();
+		ImGui::EndTable();	
+	}
+
+}
+
+#endif
+
+/* Setup root window, child windows */
+static void show_root_window( class Prjcache* prj_cache, std::vector< Partcache*>* part_cache ){
+
+	/* Create menu items */
+	show_menu_bar( prj_cache, part_cache );
+	
+	/* Put the different items into columns*/
+	static ImGuiTableFlags table_flags = ImGuiTableFlags_SizingStretchProp | \
+										 ImGuiTableFlags_Resizable | \
+										 ImGuiTableFlags_BordersOuter | \
+										 ImGuiTableFlags_BordersV | \
+										 ImGuiTableFlags_Reorderable | \
+										 ImGuiTableFlags_ContextMenuInBody;
+	switch( current_view ){
+
+		case part_view:
+			show_part_view( part_cache, table_flags );
+			break;
+		case inventory_view:
+			break;
+		case project_view:
+		default:
+			show_project_view( prj_cache, table_flags );
+			break;
+	}
+
 
 	/* Show status of database connection*/
 	switch(db_stat){

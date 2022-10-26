@@ -1,11 +1,11 @@
-#include <invcache.h>
+#include <partcache.h>
 #include <imgui.h>
 #include <string>
 #include <cstring>
 /* Private functions for operations; NOT THREAD SAVE. USE MUTEX IN CALLED
  * FUNCTION */
 
-int Invcache::_write( struct part_t * p, unsigned int index ){
+int Partcache::_write( struct part_t * p, unsigned int index ){
 	if( index > cache.size()-1 ){
 		y_log_message(Y_LOG_LEVEL_ERROR, "Cache index %d is larger than the cache size", index);
 		return -1;
@@ -27,7 +27,7 @@ int Invcache::_write( struct part_t * p, unsigned int index ){
 	}
 }
 
-struct part_t* Invcache::_read( unsigned int index ){
+struct part_t* Partcache::_read( unsigned int index ){
 	if( index > cache.size()-1 ){
 		y_log_message(Y_LOG_LEVEL_ERROR, "Cache index %d is larger than the cache size", index);
 		return nullptr;
@@ -37,7 +37,7 @@ struct part_t* Invcache::_read( unsigned int index ){
 	}
 }
 
-int Invcache::_clean( void ){
+int Partcache::_clean( void ){
 	const std::lock_guard<std::mutex> lock(clean_mtx);
 	/* Clear out selected poitner */
 	if( nullptr != selected ){
@@ -57,7 +57,7 @@ int Invcache::_clean( void ){
 	return 0;
 }
 
-int Invcache::_insert( struct part_t * p, unsigned int index ){
+int Partcache::_insert( struct part_t * p, unsigned int index ){
 	if( index > cache.size()+1 ){
 		y_log_message(Y_LOG_LEVEL_WARNING, "Adding element to part cache that is further than one index from current size");
 	}	
@@ -66,7 +66,7 @@ int Invcache::_insert( struct part_t * p, unsigned int index ){
 	return 0;
 }
 
-int Invcache::_insert_ipn( unsigned int ipn, unsigned int index ){
+int Partcache::_insert_ipn( unsigned int ipn, unsigned int index ){
 	struct part_t* p = nullptr;
 	p = get_part_from_ipn(type.c_str(), ipn);
 	if( nullptr == p ){
@@ -78,13 +78,13 @@ int Invcache::_insert_ipn( unsigned int ipn, unsigned int index ){
 	}
 }
 
-int Invcache::_append( struct part_t * p ){
+int Partcache::_append( struct part_t * p ){
 	cache.push_back(p);
 	y_log_message(Y_LOG_LEVEL_DEBUG, "Appended part:%d in cache", p->ipn );
 	return 0;
 }
 
-int Invcache::_append_ipn( unsigned int ipn ){
+int Partcache::_append_ipn( unsigned int ipn ){
 	struct part_t* p = nullptr;
 	p = get_part_from_ipn(type.c_str(), ipn);
 	if( nullptr == p ){
@@ -96,7 +96,7 @@ int Invcache::_append_ipn( unsigned int ipn ){
 	}
 }
 
-int Invcache::_remove( unsigned int index ){
+int Partcache::_remove( unsigned int index ){
 	if( nullptr != cache[index] ){
 		free_part_t( cache[index] );
 		cache[index] = nullptr;
@@ -108,7 +108,7 @@ int Invcache::_remove( unsigned int index ){
 
 /* Constructor; make sure cache is created for specific size; don't allocate
  * memory, but ensure each item is NULL */
-Invcache::Invcache( unsigned int size, std::string init_type ){
+Partcache::Partcache( unsigned int size, std::string init_type ){
 	cmtx.lock();
 	/* save the type */
 	type = init_type;
@@ -120,7 +120,7 @@ Invcache::Invcache( unsigned int size, std::string init_type ){
 }
 
 /* Destructor; check for non null pointers, and clear them out */
-Invcache::~Invcache(){
+Partcache::~Partcache(){
 	cmtx.lock();
 	_clean();
 	cmtx.unlock();
@@ -128,7 +128,7 @@ Invcache::~Invcache(){
 }
 
 /* Return number of items in cache */
-unsigned int Invcache::items(void){
+unsigned int Partcache::items(void){
 	unsigned int len = 0;
 	cmtx.lock();
 	len = cache.size();	
@@ -137,7 +137,7 @@ unsigned int Invcache::items(void){
 }
 
 /* Update part cache from database */
-int Invcache::update( struct dbinfo_t** info ){
+int Partcache::update( struct dbinfo_t** info ){
 	cmtx.lock();
 	/* Save current selected part index to use later */
 	unsigned int selected_idx = (unsigned int)-1;
@@ -202,7 +202,7 @@ int Invcache::update( struct dbinfo_t** info ){
 	return 0;
 }
 
-int Invcache::write( struct part_t * p, unsigned int index ){
+int Partcache::write( struct part_t * p, unsigned int index ){
 	int retval = -1;
 	/* Check if in bounds first */
 	cmtx.lock();
@@ -213,7 +213,7 @@ int Invcache::write( struct part_t * p, unsigned int index ){
 
 /* Get pointer from cache; should be careful as this could have unintended
  * sideeffects if data is not copied. Will attempt without copying data first */
-struct part_t* Invcache::read( unsigned int index ){
+struct part_t* Partcache::read( unsigned int index ){
 	struct part_t * p = nullptr;
 	cmtx.lock();
 	p = _read( index );
@@ -222,7 +222,7 @@ struct part_t* Invcache::read( unsigned int index ){
 }
 
 /* Add new item to cache at specified index */
-int Invcache::insert( struct part_t* p, unsigned int index ){
+int Partcache::insert( struct part_t* p, unsigned int index ){
 	int retval = -1;
 	cmtx.lock();
 	retval = _insert( p, index );	
@@ -232,7 +232,7 @@ int Invcache::insert( struct part_t* p, unsigned int index ){
 
 /* Add new item to cache at specified index, while querying the database for
  * a specific part number */
-int Invcache::insert_ipn( unsigned int ipn, unsigned int index ){
+int Partcache::insert_ipn( unsigned int ipn, unsigned int index ){
 	int retval = -1;
 	cmtx.lock();
 	retval = _insert_ipn( ipn, index );
@@ -240,7 +240,7 @@ int Invcache::insert_ipn( unsigned int ipn, unsigned int index ){
 	return retval;
 }
 
-int Invcache::append( struct part_t* p ){
+int Partcache::append( struct part_t* p ){
 	int retval = -1;
 	cmtx.lock();
 	retval = _append(p);
@@ -248,7 +248,7 @@ int Invcache::append( struct part_t* p ){
 	return retval;
 }
 
-int Invcache::append_ipn( unsigned int ipn ){
+int Partcache::append_ipn( unsigned int ipn ){
 	int retval = -1;
 	cmtx.lock();
 	retval = _append_ipn( ipn );
@@ -256,7 +256,7 @@ int Invcache::append_ipn( unsigned int ipn ){
 	return retval;
 }
 
-int Invcache::remove( unsigned int index ){
+int Partcache::remove( unsigned int index ){
 	int retval = -1;
 	cmtx.lock();
 	retval = _remove(index);
@@ -265,7 +265,7 @@ int Invcache::remove( unsigned int index ){
 }
 
 /* Select from index or pointer */
-int Invcache::select( unsigned int index ){
+int Partcache::select( unsigned int index ){
 	cmtx.lock();
 
 	/* Clear out selected poitner */
@@ -299,7 +299,7 @@ int Invcache::select( unsigned int index ){
 	}
 }
 
-int Invcache::select_ptr( struct part_t* p ){
+int Partcache::select_ptr( struct part_t* p ){
 	unsigned int selected_idx = (unsigned int)-1;
 	cmtx.lock();
 	/* Look through cache to find where pointer matches in vector */
@@ -334,7 +334,7 @@ int Invcache::select_ptr( struct part_t* p ){
 	return 0;
 }
 
-struct part_t* Invcache::get_selected( void ){
+struct part_t* Partcache::get_selected( void ){
 	struct part_t* p;
 	cmtx.lock();
 	p = selected;
@@ -342,29 +342,37 @@ struct part_t* Invcache::get_selected( void ){
 	return p;
 }
 
-void Invcache::display_parts( void ){
+void Partcache::display_parts( bool* clicked ){
 
 	cmtx.lock();
 
 	ImGuiTreeNodeFlags node_flags = ImGuiTreeNodeFlags_OpenOnArrow | \
 									ImGuiTreeNodeFlags_OpenOnDoubleClick | \
 									ImGuiTreeNodeFlags_SpanFullWidth; 
-	ImGui::TableNextRow();
-	ImGui::TableNextColumn();
 
 	/* Cache header */
+	ImGui::TableNextRow();
+	ImGui::TableNextColumn();
 
 	bool open = ImGui::TreeNodeEx(type.c_str(), node_flags);
 	
 	/* Check if item has been clicked */
 	if( ImGui::IsItemClicked() && !ImGui::IsItemToggledOpen() ){
 		y_log_message(Y_LOG_LEVEL_DEBUG, "Part cache: type %s clicked", type);
+		*clicked = true;
+	}
+	else {
+		*clicked = false;
 	}
 	
 	/* Display parts if node is open */
 	if( open ){
 		for( unsigned int i = 0; i < cache.size(); i++ ){
-			_DisplayNode( cache[i] );
+			ImGui::TableNextRow();
+			ImGui::TableNextColumn();
+			if( nullptr != cache[i]) {
+				_DisplayNode( cache[i] );
+			}
 		}
 		ImGui::TreePop();
 	}
@@ -372,15 +380,15 @@ void Invcache::display_parts( void ){
 	cmtx.unlock();
 }
 
-void Invcache::_DisplayNode( struct part_t* node ){
+void Partcache::_DisplayNode( struct part_t* node ){
 
 	ImGuiTreeNodeFlags node_flags = ImGuiTreeNodeFlags_Leaf | \
 				 ImGuiTreeNodeFlags_NoTreePushOnOpen | \
 				 ImGuiTreeNodeFlags_SpanFullWidth;
 	
-	if( node == selected ){
-		node_flags |= ImGuiTreeNodeFlags_Selected;
-	}
+//	if( node == selected ){
+//		node_flags |= ImGuiTreeNodeFlags_Selected;
+		//	}
 	
 	ImGui::TreeNodeEx(node->mpn, node_flags );
 	
@@ -426,7 +434,6 @@ void Invcache::_DisplayNode( struct part_t* node ){
 
 
 	ImGui::TableNextColumn();
-//	ImGui::TextUnformatted("%d", total);
 	ImGui::Text("%d", total);
 
 
