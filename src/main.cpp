@@ -599,7 +599,11 @@ static void show_new_part_popup( struct dbinfo_t** info ){
 
 					/* Should break this out into function */
 					mutex_spin_lock_dbinfo();
+#ifndef _WIN32
 					struct dbinfo_ptype_t* tmp = (struct dbinfo_ptype_t*)reallocarray( (*info)->ptypes, (*info)->nptype + 1, sizeof(struct dbinfo_ptype_t) );
+#else
+					struct dbinfo_ptype_t* tmp = (struct dbinfo_ptype_t*)realloc( (*info)->ptypes, ((*info)->nptype + 1) *  sizeof(struct dbinfo_ptype_t) );
+#endif
 					mutex_unlock_dbinfo();
 					if( nullptr == tmp ){
 						y_log_message(Y_LOG_LEVEL_ERROR, "Could not reallocate memory for new part type");
