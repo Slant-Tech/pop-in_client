@@ -54,7 +54,7 @@ class Partcache {
 		int select( unsigned int index );
 		int select_ptr( struct part_t * p );
 		struct part_t* get_selected( void );
-		void display_parts( void );
+		void display_parts( bool* clicked );
 
 };
 

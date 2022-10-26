@@ -18,15 +18,11 @@ static struct dbinfo_t dbinfo = {0};
 /* Lock method to enforce atomic access to dbinfo */
 static int lock( volatile int *exclusion ){
 	int retval = 0;
-	y_log_message( Y_LOG_LEVEL_DEBUG, "Enter lock" );
 	retval = __sync_lock_test_and_set( exclusion, 1);
-	y_log_message( Y_LOG_LEVEL_DEBUG, "dbinfo locked");
 	return retval;
 }
 static void unlock( volatile int *exclusion ){
-	y_log_message( Y_LOG_LEVEL_DEBUG, "Enter unlock" );
 	__sync_lock_release( exclusion );
-	y_log_message( Y_LOG_LEVEL_DEBUG, "dbinfo unlocked");
 }
 
 
@@ -786,6 +782,12 @@ void free_bom_t( struct bom_t* bom ){
 
 		/* Free all the arrays if not NULL */
 		if( NULL !=  bom->line ){
+			for( unsigned int i = 0; i < bom->nitems; i++){
+				if( NULL != bom->line[i].type ){
+					free( bom->line[i].type );
+					bom->line[i].type = NULL;
+				}
+			}
 			free( bom->line );
 			bom->line = NULL;
 		}
@@ -946,6 +948,21 @@ int redis_write_part( struct part_t* part ){
 	json_object* inv_itr;
 	json_object* price_itr;
 
+
+	y_log_message(Y_LOG_LEVEL_DEBUG, "Parsing");
+	/* Add all parts of the part struct to the json object */
+	json_object_object_add( part_root, "ipn", json_object_new_int64(part->ipn) ); /* This should be generated somehow */
+	json_object_object_add( part_root, "q", json_object_new_int64(part->q) );
+	json_object_object_add( part_root, "status", json_object_new_int64(part->status) );
+	json_object_object_add( part_root, "type", json_object_new_string( part->type ) );
+	json_object_object_add( part_root, "mfg", json_object_new_string( part->mfg ) );
+	json_object_object_add( part_root, "mpn", json_object_new_string( part->mpn ) );
+	json_object_object_add( part_root, "info", info );
+	json_object_object_add( part_root, "dist", dist );
+	json_object_object_add( part_root, "price", price );
+	json_object_object_add( part_root, "inv", inv );
+
+
 	if( NULL == part_root ){
 		y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate new root json object" );
 		return -1;
@@ -953,30 +970,30 @@ int redis_write_part( struct part_t* part ){
 
 	if( NULL == info ){
 		y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate new part info json object" );
-		json_object_put(part_root);
+//		json_object_put(part_root);
 		return -1;	
 	}
 
 	if( NULL == dist ){
 		y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate new part distributor info json object" );
-		json_object_put(info);
+//		json_object_put(info);
 		json_object_put(part_root);
 		return -1;	
 	}
 
 	if( NULL == price ){
 		y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate new part price info json object" );
-		json_object_put(info);
-		json_object_put(dist);
+//		json_object_put(info);
+//		json_object_put(dist);
 		json_object_put(part_root);
 		return -1;	
 	}
 
 	if( NULL == inv ){
 		y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate new part inventory info json object" );
-		json_object_put(info);
-		json_object_put(dist);
-		json_object_put(price);
+//		json_object_put(info);
+//		json_object_put(dist);
+//		json_object_put(price);
 		json_object_put(part_root);
 		return -1;	
 	}
@@ -996,9 +1013,9 @@ int redis_write_part( struct part_t* part ){
 			dist_itr = json_object_new_object();
 			if( NULL == dist_itr ){
 				y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate new part distributor iterator json object" );	
-				json_object_put(info);
-				json_object_put(dist);
-				json_object_put(price);
+//				json_object_put(info);
+//				json_object_put(dist);
+//				json_object_put(price);
 				json_object_put( part_root );
 				return -1;
 			}
@@ -1015,9 +1032,9 @@ int redis_write_part( struct part_t* part ){
 			price_itr = json_object_new_object();
 			if( NULL == price_itr ){
 				y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate new part price iterator json object" );	
-				json_object_put(info);
-				json_object_put(dist);
-				json_object_put(price);
+//				json_object_put(info);
+//				json_object_put(dist);
+//				json_object_put(price);
 				json_object_put( part_root );
 				return -1;
 			}			
@@ -1034,10 +1051,10 @@ int redis_write_part( struct part_t* part ){
 			inv_itr = json_object_new_object();
 			if( NULL == inv_itr ){
 				y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate new part inventory iterator json object" );	
-				json_object_put(info);
-				json_object_put(dist);
-				json_object_put(price);
-				json_object_put(inv);
+//				json_object_put(info);
+//				json_object_put(dist);
+//				json_object_put(price);
+//				json_object_put(inv);
 				json_object_put( part_root );
 				return -1;
 			}			
@@ -1047,20 +1064,6 @@ int redis_write_part( struct part_t* part ){
 		}
 
 	}
-
-	y_log_message(Y_LOG_LEVEL_DEBUG, "Parsing");
-
-	/* Add all parts of the part struct to the json object */
-	json_object_object_add( part_root, "ipn", json_object_new_int64(part->ipn) ); /* This should be generated somehow */
-	json_object_object_add( part_root, "q", json_object_new_int64(part->q) );
-	json_object_object_add( part_root, "status", json_object_new_int64(part->status) );
-	json_object_object_add( part_root, "type", json_object_new_string( part->type ) );
-	json_object_object_add( part_root, "mfg", json_object_new_string( part->mfg ) );
-	json_object_object_add( part_root, "mpn", json_object_new_string( part->mpn ) );
-	json_object_object_add( part_root, "info", info );
-	json_object_object_add( part_root, "dist", dist );
-	json_object_object_add( part_root, "price", price );
-	json_object_object_add( part_root, "inv", inv );
 
 	y_log_message(Y_LOG_LEVEL_DEBUG, "Added items to object");
 
@@ -1315,6 +1318,14 @@ int redis_write_bom( struct bom_t* bom ){
 	json_object *line = json_object_new_array_ext(bom->nitems);
 	json_object *line_itr = NULL;
 
+
+	y_log_message(Y_LOG_LEVEL_DEBUG, "Added items to object");
+	/* Add all parts of the part struct to the json object */
+	json_object_object_add( bom_root, "ipn", json_object_new_int64(bom->ipn) ); /* This should be generated somehow */
+	json_object_object_add( bom_root, "ver", json_object_new_string(bom->ver) );
+	json_object_object_add( bom_root, "items", line );
+	json_object_object_add( bom_root, "name", json_object_new_string(bom->name) );
+
 	if( NULL == bom_root ){
 		y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate new root json object" );
 		return -1;
@@ -1327,6 +1338,7 @@ int redis_write_bom( struct bom_t* bom ){
 	}
 
 	y_log_message(Y_LOG_LEVEL_DEBUG, "Adding json objects");
+
 
 	/* Internal part numbers for bom items */
 	if( bom->nitems != 0 ) {
@@ -1347,13 +1359,8 @@ int redis_write_bom( struct bom_t* bom ){
 
 	y_log_message(Y_LOG_LEVEL_DEBUG, "Parsing");
 
-	/* Add all parts of the part struct to the json object */
-	json_object_object_add( bom_root, "ipn", json_object_new_int64(bom->ipn) ); /* This should be generated somehow */
-	json_object_object_add( bom_root, "ver", json_object_new_string(bom->ver) );
-	json_object_object_add( bom_root, "items", line );
-	json_object_object_add( bom_root, "name", json_object_new_string(bom->name) );
 
-	y_log_message(Y_LOG_LEVEL_DEBUG, "Added items to object");
+
 
 //	dbbom_name = calloc( strlen("bom:") + 2 + 16, sizeof( char ) ); /* IPN has to be less than 16 characters right now */
 	asprintf( &dbbom_name, "bom:%d:%s", bom->ipn, bom->ver);
@@ -1400,6 +1407,19 @@ int redis_write_proj( struct proj_t* prj ){
 	json_object *sub_itr = NULL;
 	json_object *bom_itr = NULL;
 
+	y_log_message(Y_LOG_LEVEL_DEBUG, "Parsing");
+
+	/* Add all parts of the part struct to the json object */
+	json_object_object_add( prj_root, "ipn", json_object_new_int64(prj->ipn) ); /* This should be generated somehow */
+	json_object_object_add( prj_root, "ver", json_object_new_string( prj->ver ) );
+	json_object_object_add( prj_root, "name", json_object_new_string( prj->name ) );
+	json_object_object_add( prj_root, "author", json_object_new_string( prj->author) );
+	json_object_object_add( prj_root, "time_created", json_object_new_int64( prj->time_created ) );
+	json_object_object_add( prj_root, "time_mod", json_object_new_int64( prj->time_mod ) );
+	json_object_object_add( prj_root, "sub_prj", sub );
+	json_object_object_add( prj_root, "boms", boms );
+
+
 	if( NULL == prj_root ){
 		y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate new root json object" );
 		return -1;
@@ -1413,7 +1433,7 @@ int redis_write_proj( struct proj_t* prj ){
 
 	if( NULL == boms ){
 		y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate project boms json object" );
-		json_object_put(sub);
+//		json_object_put(sub);
 		json_object_put(prj_root);
 		return -1;	
 	}
@@ -1455,17 +1475,7 @@ int redis_write_proj( struct proj_t* prj ){
 		
 	}
 
-	y_log_message(Y_LOG_LEVEL_DEBUG, "Parsing");
 
-	/* Add all parts of the part struct to the json object */
-	json_object_object_add( prj_root, "ipn", json_object_new_int64(prj->ipn) ); /* This should be generated somehow */
-	json_object_object_add( prj_root, "ver", json_object_new_string( prj->ver ) );
-	json_object_object_add( prj_root, "name", json_object_new_string( prj->name ) );
-	json_object_object_add( prj_root, "author", json_object_new_string( prj->author) );
-	json_object_object_add( prj_root, "time_created", json_object_new_int64( prj->time_created ) );
-	json_object_object_add( prj_root, "time_mod", json_object_new_int64( prj->time_mod ) );
-	json_object_object_add( prj_root, "sub_prj", sub );
-	json_object_object_add( prj_root, "boms", boms );
 
 	y_log_message(Y_LOG_LEVEL_DEBUG, "Added items to object");
 
@@ -1936,6 +1946,21 @@ static int write_dbinfo( struct dbinfo_t* db ){
 	int lock = ((db->flags & DBINFO_FLAG_LOCK) == DBINFO_FLAG_LOCK);
 	int init = ((db->flags & DBINFO_FLAG_INIT) == DBINFO_FLAG_INIT);
 
+
+	json_object_object_add( version, "major", json_object_new_int64( db->version.major ) );
+	json_object_object_add( version, "minor", json_object_new_int64( db->version.minor ) );
+	json_object_object_add( version, "patch", json_object_new_int64( db->version.patch ) );
+
+	/* Add all parts of the part struct to the json object */
+	json_object_object_add( dbinfo_root, "version", version );
+	json_object_object_add( dbinfo_root, "nprj", json_object_new_int64(db->nprj) );
+	json_object_object_add( dbinfo_root, "nbom", json_object_new_int64(db->nbom) );
+	json_object_object_add( dbinfo_root, "init", json_object_new_int64( init ) );
+	json_object_object_add( dbinfo_root, "lock", json_object_new_int64( lock ) );
+	json_object_object_add( dbinfo_root, "ptypes", ptypes );
+	json_object_object_add( dbinfo_root, "invs", invs );
+
+
 	if( NULL == dbinfo_root ){
 		y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate new root for dbinfojson object" );
 		return -1;
@@ -1949,15 +1974,15 @@ static int write_dbinfo( struct dbinfo_t* db ){
 
 	if( NULL == ptypes ){
 		y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate dbinfo part types json object" );
-		json_object_put(version);
+//		json_object_put(version);
 		json_object_put(dbinfo_root);
 		return -1;	
 	}
 
 	if( NULL == invs ){
 		y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate dbinfo inventory lookup json object" );
-		json_object_put(ptypes);
-		json_object_put(version);
+//		json_object_put(ptypes);
+//		json_object_put(version);
 		json_object_put(dbinfo_root);
 		return -1;	
 	}
@@ -1970,9 +1995,9 @@ static int write_dbinfo( struct dbinfo_t* db ){
 			ptype_itr = json_object_new_object();	
 			if( NULL == inv_itr ){
 				y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate part type iterator json object " );
-				json_object_put(invs);
-				json_object_put(ptypes);
-				json_object_put(version);
+//				json_object_put(invs);
+//				json_object_put(ptypes);
+//				json_object_put(version);
 				json_object_put(dbinfo_root);
 				free_dbinfo_t( db );
 				return -1;
@@ -1989,9 +2014,9 @@ static int write_dbinfo( struct dbinfo_t* db ){
 			inv_itr = json_object_new_object();	
 			if( NULL == inv_itr ){
 				y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate inventory lookup iterator json object " );
-				json_object_put(invs);
-				json_object_put(ptypes);
-				json_object_put(version);
+//				json_object_put(invs);
+//				json_object_put(ptypes);
+//				json_object_put(version);
 				json_object_put(dbinfo_root);
 				free_dbinfo_t( db );
 				return -1;
@@ -2002,18 +2027,7 @@ static int write_dbinfo( struct dbinfo_t* db ){
 		} 
 	}
 
-	json_object_object_add( version, "major", json_object_new_int64( db->version.major ) );
-	json_object_object_add( version, "minor", json_object_new_int64( db->version.minor ) );
-	json_object_object_add( version, "patch", json_object_new_int64( db->version.patch ) );
 
-	/* Add all parts of the part struct to the json object */
-	json_object_object_add( dbinfo_root, "version", version );
-	json_object_object_add( dbinfo_root, "nprj", json_object_new_int64(db->nprj) );
-	json_object_object_add( dbinfo_root, "nbom", json_object_new_int64(db->nbom) );
-	json_object_object_add( dbinfo_root, "init", json_object_new_int64( init ) );
-	json_object_object_add( dbinfo_root, "lock", json_object_new_int64( lock ) );
-	json_object_object_add( dbinfo_root, "ptypes", ptypes );
-	json_object_object_add( dbinfo_root, "invs", invs );
 
 	y_log_message(Y_LOG_LEVEL_DEBUG, "Added items to object");
 

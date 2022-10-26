@@ -342,7 +342,7 @@ struct part_t* Partcache::get_selected( void ){
 	return p;
 }
 
-void Partcache::display_parts( void ){
+void Partcache::display_parts( bool* clicked ){
 
 	cmtx.lock();
 
@@ -359,6 +359,10 @@ void Partcache::display_parts( void ){
 	/* Check if item has been clicked */
 	if( ImGui::IsItemClicked() && !ImGui::IsItemToggledOpen() ){
 		y_log_message(Y_LOG_LEVEL_DEBUG, "Part cache: type %s clicked", type);
+		*clicked = true;
+	}
+	else {
+		*clicked = false;
 	}
 	
 	/* Display parts if node is open */
@@ -382,9 +386,9 @@ void Partcache::_DisplayNode( struct part_t* node ){
 				 ImGuiTreeNodeFlags_NoTreePushOnOpen | \
 				 ImGuiTreeNodeFlags_SpanFullWidth;
 	
-	if( node == selected ){
-		node_flags |= ImGuiTreeNodeFlags_Selected;
-	}
+//	if( node == selected ){
+//		node_flags |= ImGuiTreeNodeFlags_Selected;
+		//	}
 	
 	ImGui::TreeNodeEx(node->mpn, node_flags );
 	
@@ -430,7 +434,6 @@ void Partcache::_DisplayNode( struct part_t* node ){
 
 
 	ImGui::TableNextColumn();
-//	ImGui::TextUnformatted("%d", total);
 	ImGui::Text("%d", total);
 
 

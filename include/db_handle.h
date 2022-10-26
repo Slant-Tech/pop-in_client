@@ -104,7 +104,7 @@ struct part_t {
 struct bom_line_t{
 	unsigned int ipn;				/* Part IPN */
 	unsigned int q;					/* Quantity */
-	const char* type;				/* Part type*/
+	char* type;						/* Part type*/
 };
 
 /* Structure for bill of materials */
