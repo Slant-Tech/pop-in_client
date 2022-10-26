@@ -61,7 +61,7 @@ static int parse_json_part( struct part_t * part, struct json_object* restrict j
 	part->q = json_object_get_int64( jq );
 
 	/* Part Type */
-	jstrlen = strlen( json_object_get_string( jtype ) );
+	jstrlen = json_object_get_string_len( jtype );
 	part->type = calloc( jstrlen + 1,sizeof( char ) );
 	if( NULL == part->type ){
 		y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate memory for part type");
@@ -72,7 +72,7 @@ static int parse_json_part( struct part_t * part, struct json_object* restrict j
 	strncpy( part->type, json_object_get_string( jtype ), jstrlen );
 
 	/* Manufacturer */
-	jstrlen = strlen( json_object_get_string( jmfg ) );
+	jstrlen = json_object_get_string_len( jmfg );
 	part->mfg = calloc( jstrlen + 1, sizeof( char ) );
 	if( NULL == part->mfg ){
 		y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate memory for part manufacturer");
@@ -83,7 +83,7 @@ static int parse_json_part( struct part_t * part, struct json_object* restrict j
 	strncpy( part->mfg, json_object_get_string( jmfg ), jstrlen );
 
 	/* Manufacturer part number */
-	jstrlen = strlen( json_object_get_string( jmpn ) );
+	jstrlen = json_object_get_string_len( jmpn );
 	part->mpn = calloc( jstrlen + 1, sizeof( char ) );
 	if( NULL == part->mpn ){
 		y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate memory for manufacturer part number");
@@ -118,9 +118,9 @@ static int parse_json_part( struct part_t * part, struct json_object* restrict j
 		part->info[count].key = calloc( (strlen( key ) + 1 ), sizeof( char ) );
 		strcpy( part->info[count].key, key );
 
-		jstrlen = strlen( json_object_get_string( val ) ) + 1;
-		part->info[count].val = calloc( jstrlen, sizeof( char ) );
-		strcpy( part->info[count].val, json_object_get_string( val ) );
+		jstrlen = json_object_get_string_len( val );
+		part->info[count].val = calloc( jstrlen + 1, sizeof( char ) );
+		strncpy( part->info[count].val, json_object_get_string( val ), jstrlen );
 
 		count++;
 	}
@@ -144,7 +144,7 @@ static int parse_json_part( struct part_t * part, struct json_object* restrict j
 			jval = json_object_object_get( jitr, "pn" );
 
 			/* Distributor Name  */
-			jstrlen = strlen( json_object_get_string( jkey ) );
+			jstrlen = json_object_get_string_len( jkey );
 			part->dist[i].name = calloc( jstrlen + 1, sizeof( char ) );
 			if( NULL == part->dist[i].name ){
 				y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate memory in distributor name" );
@@ -152,10 +152,10 @@ static int parse_json_part( struct part_t * part, struct json_object* restrict j
 				part = NULL;
 				return -1;
 			}
-			strcpy( part->dist[i].name, json_object_get_string( jkey ) );
+			strncpy( part->dist[i].name, json_object_get_string( jkey ), jstrlen );
 
 			/* Distributor part number */
-			jstrlen = strlen( json_object_get_string( jval ) );
+			jstrlen = json_object_get_string_len( jval );
 			part->dist[i].pn = calloc( jstrlen + 1, sizeof( char ) );
 			if( NULL == part->dist[i].pn ){
 				y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate memory in price break" );
@@ -163,7 +163,7 @@ static int parse_json_part( struct part_t * part, struct json_object* restrict j
 				part = NULL;
 				return -1;
 			}
-			strcpy( part->dist[i].pn, json_object_get_string( jval ) );
+			strncpy( part->dist[i].pn, json_object_get_string( jval ), jstrlen);
 
 		}
 	}
@@ -235,8 +235,9 @@ static int parse_json_bom( struct bom_t * bom, struct json_object* restrict jbom
 	json_object* jversion;
 	json_object* jlines;
 	json_object* jline_itr;
-	json_object* jkey;
-	json_object* jval;
+	json_object* jline_ipn;
+	json_object* jline_q;
+	json_object* jline_type;
 	
 	jipn       = json_object_object_get( jbom, "ipn" );
 	jname      = json_object_object_get( jbom, "name" ); 
@@ -251,7 +252,7 @@ static int parse_json_bom( struct bom_t * bom, struct json_object* restrict jbom
 	bom->ipn = json_object_get_int64( jipn );
 
 	/* BOM Version */
-	jstrlen = strlen( json_object_get_string( jversion ) );
+	jstrlen = json_object_get_string_len( jversion );
 	bom->ver = calloc( jstrlen + 1, sizeof( char ) );
 	if( NULL == bom->ver ){
 		y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate memory for bom version");
@@ -291,14 +292,26 @@ static int parse_json_bom( struct bom_t * bom, struct json_object* restrict jbom
 			jline_itr = json_object_array_get_idx( jlines, (int)i );
 
 			/* Parse it out to get the required data */
-			jkey = json_object_object_get( jline_itr, "ipn" );
-			jval = json_object_object_get( jline_itr, "q" );
+			jline_ipn = json_object_object_get( jline_itr, "ipn" );
+			jline_q = json_object_object_get( jline_itr, "q" );
+			jline_type = json_object_object_get( jline_itr, "type" );
 
 			/* part ipn */
-			bom->line[i].ipn = json_object_get_int64( jkey );
+			bom->line[i].ipn = json_object_get_int64( jline_ipn );
 
 			/* quantity of part in bom */
-			bom->line[i].q = json_object_get_double( jval );
+			bom->line[i].q = json_object_get_double( jline_q );
+
+			/* part type */
+			jstrlen = json_object_get_string_len( jline_type );
+			bom->line[i].type = calloc( jstrlen + 1, sizeof( char ) );
+			if( NULL == bom->line[i].type ){
+				y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate memory for bom version");
+				free_bom_t( bom );
+				bom = NULL;
+				return -1;
+			}
+			strncpy( bom->line[i].type, json_object_get_string( jline_type ), jstrlen );
 		}
 	}
 
@@ -311,7 +324,7 @@ static int parse_json_bom( struct bom_t * bom, struct json_object* restrict jbom
 		return -1;
 	}
 	for( int i = 0; i< bom->nitems; i++ ){
-		bom->parts[i] = get_part_from_ipn( bom->line[i].ipn );
+		bom->parts[i] = get_part_from_ipn( bom->line[i].type, bom->line[i].ipn );
 		if( NULL == bom->parts[i] ){
 			y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate memory for bom part array" );
 			free_bom_t( bom );
@@ -1593,17 +1606,13 @@ void redis_disconnect( void ){
 /* Create struct from parsed item in database, from part number */
 struct part_t* get_part_from_pn( const char* pn ){
 	struct part_t * part = NULL;	
-	char* dbpart_name = NULL;
 	if( NULL == rc ){
 		y_log_message( Y_LOG_LEVEL_ERROR, "Database is not connected. Could not get info of part: %s", pn);
 		return NULL;
 	}
 
-	/* Allocate size for database name */
-	asprintf( &dbpart_name, "part:%s", pn);
-
-	if( NULL == dbpart_name ){
-		y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate memory for dbpart_name");
+	if( NULL == pn ){
+		y_log_message( Y_LOG_LEVEL_ERROR, "Was not passed valid string for part number search");
 		return NULL;
 	}
 
@@ -1611,7 +1620,6 @@ struct part_t* get_part_from_pn( const char* pn ){
 	part = calloc( 1, sizeof( struct part_t ) );
 	if( NULL == part ){
 		y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate memory for part: %s", pn);
-		free( dbpart_name );
 		return NULL;
 	}
 
@@ -1619,33 +1627,38 @@ struct part_t* get_part_from_pn( const char* pn ){
 
 	/* Query database for part number */
 	struct json_object* jpart;
-	
+	redisReply* reply = NULL;
 	/* Sanitize input? */
 
-	/* Get part number, store in json object */
-	if( !redis_json_get( rc, dbpart_name, "$", &jpart ) ){
-		/* Parse the json */
-		parse_json_part( part, jpart );
+	redis_json_index_search( rc, &reply, "partid", "mpn", pn );
 
-		/* free json data; will segfault otherwise */
-		json_object_put( jpart );
+	/* Returns back a few elements; need to grab the second one to get the
+	 * right object */
+	if( NULL == reply || reply->type != REDIS_REPLY_ARRAY || reply->elements != 3 ){
+		y_log_message( Y_LOG_LEVEL_ERROR, "Database search did not reply correctly for part pn %d", pn );
+		free( part ); /* don't need to free other parts of array as they have not been allocated yet */
+		/* Free redis reply */
+		freeReplyObject(reply);
+		return NULL;
 	}
-	else {
-		y_log_message(Y_LOG_LEVEL_ERROR, "Could not get part for %s", dbpart_name);
-		part = NULL;
-	}
+
+	/* Should be correct response, get second element parsed into jbom */
+	jpart = json_tokener_parse( reply->element[2]->element[1]->str );	
+
+	/* Parse the json */
+	parse_json_part( part, jpart );
 
 	/* Free data */
-	free( dbpart_name );
+	json_object_put( jpart );
 
 	return part;
 
 }
 
 /* Create struct from parsed item in database, from internal part number */
-struct part_t* get_part_from_ipn( unsigned int ipn ){
+struct part_t* get_part_from_ipn( const char* type, unsigned int ipn ){
 	struct part_t * part = NULL;	
-	char ipn_s[32] = {0};
+	char* dbpart_name = NULL;
 	if( NULL == rc ){
 		y_log_message( Y_LOG_LEVEL_ERROR, "Database is not connected. Could not get info of part: %ld", ipn);
 		return NULL;
@@ -1666,33 +1679,25 @@ struct part_t* get_part_from_ipn( unsigned int ipn ){
 	/* Sanitize input? */
 
 	/* Search part number by IPN */
-	redisReply* reply = NULL;
-	snprintf( ipn_s, sizeof( ipn_s ), "[ %ld %ld ]", ipn, ipn);
-	redis_json_index_search( rc, &reply, "partid", "ipn", ipn_s );
+	y_log_message(Y_LOG_LEVEL_DEBUG, "Part type: %s; part IPN: %ld", type, ipn);
 
-	/* Returns back a few elements; need to grab the second one to get the
-	 * right object */
-	if( NULL == reply || reply->type != REDIS_REPLY_ARRAY || reply->elements != 3 ){
-		y_log_message( Y_LOG_LEVEL_ERROR, "Database search did not reply correctly for part ipn %d", ipn );
-		free( part ); /* don't need to free other parts of array as they have not been allocated yet */
-		/* Free redis reply */
-		freeReplyObject(reply);
-		return NULL;
+	asprintf( &dbpart_name, "part:%s:%d", type, ipn);
+
+	/* Get part number, store in json object */
+	if( !redis_json_get( rc, dbpart_name, "$", &jpart ) ){
+		/* Parse the json */
+		parse_json_part( part, jpart );
+
+		/* free json data; will segfault otherwise */
+		json_object_put( jpart );
+	}
+	else {
+		y_log_message(Y_LOG_LEVEL_ERROR, "Could not get part for %ld", ipn);
+		part = NULL;
 	}
 
-	/* Should be correct response, get second element parsed into jbom */
-	jpart = json_tokener_parse( reply->element[2]->element[1]->str );	
-
-
-	/* Free redis reply */
-	freeReplyObject(reply);
-
-	/* Parse the json */
-	parse_json_part( part, jpart );
-
-
 	/* Free json */
-	json_object_put( jpart );
+	free( dbpart_name );
 
 	return part;
 

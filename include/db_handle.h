@@ -102,8 +102,9 @@ struct part_t {
 
 /* Structure for part number with qua*/
 struct bom_line_t{
-	unsigned int ipn;
-	unsigned int q;
+	unsigned int ipn;				/* Part IPN */
+	unsigned int q;					/* Quantity */
+	const char* type;				/* Part type*/
 };
 
 /* Structure for bill of materials */
@@ -153,7 +154,7 @@ struct proj_t {
 struct part_t* get_part_from_pn( const char* pn );
 
 /* Create part struct from parsed item in database, from internal part number */
-struct part_t* get_part_from_ipn( unsigned int ipn );
+struct part_t* get_part_from_ipn( const char* type, unsigned int ipn );
 
 /* Create bom struct from parsed item in database, from internal part number */
 struct bom_t* get_bom_from_ipn( unsigned int ipn, char* version );
