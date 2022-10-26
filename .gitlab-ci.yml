@@ -88,7 +88,7 @@ flawfinder-sast:   # This job runs in the test stage.
 
   image: alpine:latest
   script:
-    - apk add flawfinder
+    - apk add git flawfinder
     - flawfinder --sarif ./src > src-sast-report.json
     #- flawfinder --sarif ./ > all-sast-report.json
   rules:
