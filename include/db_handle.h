@@ -15,13 +15,28 @@ struct dbver_t {
 	unsigned int patch;
 };
 
+/* Structure for inventory locations string mapping */
+struct inv_lookup_t {
+	unsigned int loc;		/* Location number*/
+	char* name;				/* Location name */
+};
+
+/* Struct for part types and the number of each type */
+struct dbinfo_ptype_t {
+	unsigned int npart;		/* Number of parts in database */
+	char* name;				/* Name of part type */
+};
+
 /* Struct for overall database information */
 struct dbinfo_t {
-	uint32_t flags;			/* Option flags */
-	unsigned int nprj;		/* Number of projects in database */
-	unsigned int nbom;		/* Number of boms in database */
-	unsigned int npart;		/* Number of parts in database */
-	struct dbver_t version;	/* Database version for keeping everything in sync */
+	uint32_t flags;					/* Option flags */
+	unsigned int nprj;				/* Number of projects in database */
+	unsigned int nbom;				/* Number of boms in database */
+	unsigned int ninv;				/* Number of inventory locations */
+	unsigned int nptype;			/* Number of part types */
+	struct dbver_t version;			/* Database version for keeping everything in sync */
+	struct dbinfo_ptype_t* ptypes;	/* Database part types */
+	struct inv_lookup_t* invs;		/* Inventory lookups */
 };
 
 /* dbinfo_t flags */
@@ -50,6 +65,12 @@ struct part_price_t {
 	double price;	/* Price in native currency. Dollars, need to figure out setting for this later */
 };
 
+/* Key Value pair for inventory location quantities */
+struct part_inv_t {
+	unsigned int loc;	/* Location number */
+	unsigned int q;		/* Quantity at location */
+};
+
 /* Part status information */
 enum part_status_t {
 	pstat_unknown,
@@ -57,6 +78,7 @@ enum part_status_t {
 	pstat_low_stock,
 	pstat_unavailable,
 	pstat_nrnd,
+	pstat_lasttimebuy,
 	pstat_obsolete
 };
 
@@ -68,12 +90,14 @@ struct part_t {
 	unsigned int info_len;			/* Number of key value pairs in info */
 	unsigned int price_len; 		/* Number of price breaks in price */
 	unsigned int dist_len;			/* Number of distributors */
+	unsigned int inv_len;			/* Number of locations */
 	char* type;						/* Part type */
 	char* mfg;						/* Manufacturer */
 	char* mpn;						/* Manufacturer Part Number */
 	struct part_info_t* info; 		/* Key Value info for dynamic part definitions */
-	struct part_dist_t* dist;	/* Key Value distributor info */
+	struct part_dist_t* dist;		/* Key Value distributor info */
 	struct part_price_t* price;		/* Key Value price break info */
+	struct part_inv_t* inv;			/* Key Value inventory location info */
 };
 
 /* Structure for part number with qua*/
@@ -132,7 +156,7 @@ struct part_t* get_part_from_pn( const char* pn );
 struct part_t* get_part_from_ipn( unsigned int ipn );
 
 /* Create bom struct from parsed item in database, from internal part number */
-struct bom_t* get_bom_from_ipn( unsigned int ipn );
+struct bom_t* get_bom_from_ipn( unsigned int ipn, char* version );
 
 /* Create project struct from parsed item in database, from internal part number */
 struct proj_t* get_proj_from_ipn( unsigned int ipn );
@@ -146,11 +170,17 @@ void free_bom_t( struct bom_t* bom );
 /* Free the project structure */
 void free_proj_t( struct proj_t* prj );
 
+/* Free the database structure */
+void free_dbinfo_t( struct dbinfo_t* db );
+
 /* Write part to database */
 int redis_write_part( struct part_t* part );
 
 /* Copy part structure to new structure */
 struct part_t* copy_part_t( struct part_t* src );
+
+/* Copy bom structure to new structure */
+struct bom_t* copy_bom_t( struct bom_t* src );
 
 /* Write bom to database */
 int redis_write_bom( struct bom_t* bom );
@@ -159,7 +189,7 @@ int redis_write_bom( struct bom_t* bom );
 int redis_write_proj( struct proj_t* prj );
 
 /* Read database information */
-int redis_read_dbinfo( struct dbinfo_t* db );
+struct dbinfo_t* redis_read_dbinfo( void );
 
 /* Write database information */
 int redis_write_dbinfo( struct dbinfo_t* db );
@@ -172,6 +202,15 @@ int redis_connect( const char* hostname, int port );
 
 /* Free memory for redis connection */
 void redis_disconnect( void );
+
+/* Lock access to dbinfo, only check once */
+int mutex_lock_dbinfo( void );
+
+/* Lock access to dbinfo, spin until free */
+void mutex_spin_lock_dbinfo( void );
+
+/* Unlock access to dbinfo */
+void mutex_unlock_dbinfo( void );
 
 #ifdef __cplusplus
 }

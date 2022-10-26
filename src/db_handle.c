@@ -5,11 +5,30 @@
 #include <yder.h>
 #include <db_handle.h>
 #include <unistd.h>
-
+#include <stdio.h>
 	
 
 /* Redis Context for handling in database */
 static redisContext *rc;
+
+static int dbinfo_mtx = 0;
+
+static struct dbinfo_t dbinfo = {0};
+
+/* Lock method to enforce atomic access to dbinfo */
+static int lock( volatile int *exclusion ){
+	int retval = 0;
+	y_log_message( Y_LOG_LEVEL_DEBUG, "Enter lock" );
+	retval = __sync_lock_test_and_set( exclusion, 1);
+	y_log_message( Y_LOG_LEVEL_DEBUG, "dbinfo locked");
+	return retval;
+}
+static void unlock( volatile int *exclusion ){
+	y_log_message( Y_LOG_LEVEL_DEBUG, "Enter unlock" );
+	__sync_lock_release( exclusion );
+	y_log_message( Y_LOG_LEVEL_DEBUG, "dbinfo unlocked");
+}
+
 
 /* Parse part json object to part_t */
 static int parse_json_part( struct part_t * part, struct json_object* restrict jpart ){
@@ -19,7 +38,7 @@ static int parse_json_part( struct part_t * part, struct json_object* restrict j
 
 	/* Need to create a bunch of json structs to parse everything out */
 	json_object *jipn, *jq, *jtype, *jmfg, *jmpn, *jinfo;
-	json_object *jprice, *jdist, *jstatus;
+	json_object *jprice, *jdist, *jstatus, *jinv;
 	json_object *jitr, *jkey, *jval;
 	
 	jipn    = json_object_object_get( jpart, "ipn" );
@@ -31,6 +50,7 @@ static int parse_json_part( struct part_t * part, struct json_object* restrict j
 	jinfo   = json_object_object_get( jpart, "info" );
 	jprice  = json_object_object_get( jpart, "price" ); 
 	jdist   = json_object_object_get( jpart, "dist" );
+	jinv    = json_object_object_get( jpart, "inv" );
 
 	/* Copy data from json objects */
 
@@ -174,6 +194,31 @@ static int parse_json_part( struct part_t * part, struct json_object* restrict j
 			part->price[i].price = json_object_get_double( jval );
 		}
 	}
+	/* Get inventory information from array */
+	part->inv_len = (unsigned int)json_object_array_length( jinv );
+	if( part->inv_len > 0 ){
+		part->inv = calloc( part->inv_len, sizeof( struct part_inv_t ) );	
+		if( NULL == part->inv ){
+			y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate memory for location structure for part: %s", part->mpn );
+			free_part_t( part );
+			part = NULL;
+			return -1;
+		}
+		for( unsigned int i = 0; i < part->inv_len; i++){
+			/* Retrieve price object */
+			jitr = json_object_array_get_idx( jinv, (int)i );
+
+			/* Parse it out to get the required data */
+			jkey = json_object_object_get( jitr, "loc" );
+			jval = json_object_object_get( jitr, "q" );
+
+			/* location number */
+			part->inv[i].loc = json_object_get_int64( jkey );
+
+			/* location quantity  */
+			part->inv[i].q = json_object_get_int64( jval );
+		}
+	}
 
 	return 0;
 }
@@ -215,6 +260,17 @@ static int parse_json_bom( struct bom_t * bom, struct json_object* restrict jbom
 		return -1;
 	}
 	strncpy( bom->ver, json_object_get_string( jversion ), jstrlen );
+
+	/* BOM Name */
+	jstrlen = strlen( json_object_get_string( jname ) );
+	bom->name = calloc( jstrlen + 1, sizeof( char ) );
+	if( NULL == bom->name ){
+		y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate memory for bom name");
+		free_bom_t( bom );
+		bom = NULL;
+		return -1;
+	}
+	strncpy( bom->name, json_object_get_string( jname ), jstrlen );
 
 	/* Get number of elements in info key value array */
 	bom->nitems = json_object_array_length( jlines );
@@ -378,16 +434,8 @@ static int parse_json_proj( struct proj_t * prj, struct json_object* restrict jp
 				/* Parse it out to get the required data */
 				jkey = json_object_object_get( jbom_itr, "ipn" );
 				jval = json_object_object_get( jbom_itr, "ver" );
-				unsigned int bom_ipn = json_object_get_int64( jkey );
-				prj->boms[i].bom = get_bom_from_ipn( bom_ipn );
-				if( NULL == prj->boms[i].bom ){
-					y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate memory for bom %d at %d in part array", bom_ipn, i );
-					free_proj_t( prj );
-					prj = NULL;
-					return -1;
-				}
 
-				/* subproject version */
+				/* bom version */
 				jstrlen = strlen( json_object_get_string( jval ) );
 				prj->boms[i].ver = calloc( jstrlen + 1, sizeof( char ) );
 				if( NULL == prj->boms[i].ver ){
@@ -397,7 +445,16 @@ static int parse_json_proj( struct proj_t * prj, struct json_object* restrict jp
 					return -1;
 				}
 				strcpy( prj->boms[i].ver, json_object_get_string( jval ) );
+
 				//json_object_put( jbom_itr );
+				unsigned int bom_ipn = json_object_get_int64( jkey );
+				prj->boms[i].bom = get_bom_from_ipn( bom_ipn, prj->boms[i].ver );
+				if( NULL == prj->boms[i].bom ){
+					y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate memory for bom %d at %d in part array", bom_ipn, i );
+					free_proj_t( prj );
+					prj = NULL;
+					return -1;
+				}
 			}
 			else {
 				/* Issue with getting BOM */
@@ -479,34 +536,65 @@ static int parse_json_proj( struct proj_t * prj, struct json_object* restrict jp
 /* Parse bom json object to dbinfo_t */
 static int parse_json_dbinfo( struct dbinfo_t * db, struct json_object* restrict jdb ){
 
-	json_object* jversion;
-	json_object* jnprj;
-	json_object* jnbom;
-	json_object* jnpart;
-	json_object* jlock;
-	json_object* jinit;
-	json_object* jmajor;
-	json_object* jminor;
-	json_object* jpatch;
+	size_t jstrlen = 0;
+
+	json_object* jversion = NULL;
+	json_object* jnprj = NULL;
+	json_object* jnbom = NULL;
+	json_object* jnptype = NULL;
+	json_object* jninv = NULL;
+	json_object* jlock = NULL;
+	json_object* jinit = NULL;
+	json_object* jmajor = NULL;
+	json_object* jminor = NULL;
+	json_object* jpatch = NULL;
+	json_object* jptypes = NULL;
+	json_object* jinvs = NULL;
+	json_object* jitr = NULL;
+	json_object* jkey = NULL;
+	json_object* jval = NULL;
 	
-	jversion  = json_object_object_get( jdb, "version" ); 
-	jmajor  = json_object_object_get( jversion, "major" ); 
-	jminor  = json_object_object_get( jversion, "minor" ); 
-	jpatch  = json_object_object_get( jversion, "patch" ); 
-	jnprj     = json_object_object_get( jdb, "nprj" ); 
-	jnbom     = json_object_object_get( jdb, "nbom" ); 
-	jnpart    = json_object_object_get( jdb, "npart" ); 
-	jlock     = json_object_object_get( jdb, "lock" );
-	jinit     = json_object_object_get( jdb, "init" );
+	if( NULL == db ){
+		y_log_message(Y_LOG_LEVEL_ERROR, "dbinfo passed was NULL");
+		return -1;
+	}
+
+	if( NULL == jdb ){
+		y_log_message(Y_LOG_LEVEL_ERROR, "json passed was NULL");
+		return -1;
+	}
+
+
+	jversion  	= json_object_object_get( jdb, "version" ); 
+	jmajor		= json_object_object_get( jversion, "major" ); 
+	jminor 		= json_object_object_get( jversion, "minor" ); 
+	jpatch 		= json_object_object_get( jversion, "patch" ); 
+	jnprj     	= json_object_object_get( jdb, "nprj" ); 
+	jnbom     	= json_object_object_get( jdb, "nbom" ); 
+	jlock     	= json_object_object_get( jdb, "lock" );
+	jinit     	= json_object_object_get( jdb, "init" );
+	jptypes		= json_object_object_get( jdb, "ptypes" );
+	jinvs		= json_object_object_get( jdb, "invs" );
+
 
 	//y_log_message(Y_LOG_LEVEL_DEBUG, "JSON Object passed for dbinfo:\n%s\n", json_object_to_json_string_ext(jdb, JSON_C_TO_STRING_PRETTY));
 	
+	/* Check if incoming data was even parsed properly */
+	if( NULL == jversion  || NULL == jmajor || NULL == jminor
+		|| NULL == jpatch || NULL == jnprj || NULL == jnbom
+		|| NULL == jlock  || NULL == jinit || NULL == jptypes
+		|| NULL == jinvs ){
+		y_log_message(Y_LOG_LEVEL_ERROR, "Issue parsing dbinfo");
+		return -1;
+	}
+
 	/* Copy data from json objects */
 
 	/* Number of kinds of objects  */
 	db->nprj  = json_object_get_int64( jnprj );
 	db->nbom  = json_object_get_int64( jnbom );
-	db->npart = json_object_get_int64( jnpart );
+	db->nptype = (unsigned int)json_object_array_length( jptypes );
+	db->ninv = (unsigned int)json_object_array_length( jinvs );
 
 	/* Flags */
 	db->flags  = 0;
@@ -517,6 +605,70 @@ static int parse_json_dbinfo( struct dbinfo_t * db, struct json_object* restrict
 	db->version.major = json_object_get_int64( jmajor );
 	db->version.minor = json_object_get_int64( jminor );
 	db->version.patch = json_object_get_int64( jpatch );
+
+	/* Part Type table */
+	if( db->nptype != 0 ){
+		db->ptypes = calloc( db->nptype, sizeof( struct dbinfo_ptype_t ) );
+		if( NULL == db->ptypes ){
+			y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate memory for part type array" );
+			free_dbinfo_t( db );
+			db = NULL;
+			return -1;
+		}
+		for( unsigned int i = 0; i < db->nptype; i++ ){
+			/* Loop through array to get info */
+			jitr = json_object_array_get_idx( jptypes, (int) i );
+			jkey = json_object_object_get( jitr, "type" );
+			jval = json_object_object_get( jitr, "npart" );
+
+			/* Part type */
+			jstrlen = json_object_get_string_len( jkey );
+			db->ptypes[i].name = calloc( jstrlen + 1, sizeof( char ) );
+			if( NULL == db->ptypes[i].name  ){
+				y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate memory in dbinfo part type name" );
+				free_dbinfo_t( db );
+				db = NULL;
+				return -1;
+			}
+			strncpy( db->ptypes[i].name, json_object_get_string( jkey ), jstrlen );
+
+			/* Quantity of parts */
+			db->ptypes[i].npart = json_object_get_int64( jval );
+
+		}
+	}
+
+	/* Inventory String Lookup */
+	if( db->ninv != 0 ){
+		db->invs = calloc( db->ninv, sizeof( struct inv_lookup_t ) );
+		if( NULL == db->invs ){
+			y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate memory for inventory lookup array" );
+			free_dbinfo_t( db );
+			db = NULL;
+			return -1;
+		}
+		for( unsigned int i = 0; i < db->ninv; i++ ){
+			/* Loop through array to get info */
+			jitr = json_object_array_get_idx( jinvs, (int) i );
+			jkey = json_object_object_get( jitr, "name" );
+			jval = json_object_object_get( jitr, "loc" );
+
+			/* Part type */
+			jstrlen = json_object_get_string_len( jkey );
+			db->invs[i].name = calloc( jstrlen + 1, sizeof( char ) );
+			if( NULL == db->invs[i].name  ){
+				y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate memory in dbinfo inventory lookup name" );
+				free_dbinfo_t( db );
+				db = NULL;
+				return -1;
+			}
+			strncpy( db->invs[i].name, json_object_get_string( jkey ), jstrlen );
+
+			/* Index number */
+			db->invs[i].loc = json_object_get_int64( jval );
+		}
+	}
+
 
 	return 0;
 }
@@ -595,6 +747,18 @@ void free_part_t( struct part_t* part ){
 			part->price_len = 0;
 		}
 
+		if( NULL != part->inv ){
+			for( unsigned int i = 0; i < part->inv_len; i++ ){
+				part->inv[i].q = 0;
+				part->inv[i].loc = 0;
+			}
+
+			/* Finished iteration, free array pointer */
+			free( part->inv );
+			part->inv = NULL;
+			part->inv_len = 0;
+		}
+
 		/* Free allocated memory for the structure */
 		free( part );
 		part = NULL;
@@ -611,6 +775,10 @@ void free_bom_t( struct bom_t* bom ){
 		if( NULL !=  bom->line ){
 			free( bom->line );
 			bom->line = NULL;
+		}
+		if( NULL != bom->name ){
+			free( bom->name );
+			bom->name = NULL;
 		}
 		if( NULL != bom->ver ){
 			free( bom->ver );
@@ -705,6 +873,41 @@ void free_proj_t( struct proj_t* prj ){
 	}
 }
 
+/* Free the database structure */
+void free_dbinfo_t( struct dbinfo_t* db ){
+	if( NULL != db ){
+		/* Zero out easy data */
+		db->flags = 0;
+		db->nprj = 0;
+		db->nbom = 0;
+		db->version.major = 0;
+		db->version.minor = 0;
+		db->version.patch = 0;
+	}
+	if( NULL != db->ptypes ){
+		for( unsigned int i = 0; i < db->nptype; i++ ){
+			if( NULL != db->ptypes[i].name ){
+				free( db->ptypes[i].name);
+				db->ptypes[i].name = NULL;
+				db->ptypes[i].npart = 0;
+			}
+		}
+		free( db->ptypes );
+	}
+	db->nptype = 0;
+
+	if( NULL != db->invs ){
+		for( unsigned int i = 0; i < db->ninv; i++ ){
+			if( NULL != db->invs[i].name ){
+				free( db->invs[i].name);
+				db->invs[i].name = NULL;
+				db->invs[i].loc = 0;
+			}
+		}
+		free( db->invs );
+	}
+	db->ninv = 0;
+}
 
 /* Write part to database */
 int redis_write_part( struct part_t* part ){
@@ -723,9 +926,11 @@ int redis_write_part( struct part_t* part ){
 	json_object *info = json_object_new_object();
 	json_object *dist = json_object_new_array_ext(part->dist_len);
 	json_object *price = json_object_new_array_ext(part->price_len);
+	json_object *inv = json_object_new_array_ext(part->inv_len);
 
 
 	json_object* dist_itr;
+	json_object* inv_itr;
 	json_object* price_itr;
 
 	if( NULL == part_root ){
@@ -750,6 +955,15 @@ int redis_write_part( struct part_t* part ){
 		y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate new part price info json object" );
 		json_object_put(info);
 		json_object_put(dist);
+		json_object_put(part_root);
+		return -1;	
+	}
+
+	if( NULL == inv ){
+		y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate new part inventory info json object" );
+		json_object_put(info);
+		json_object_put(dist);
+		json_object_put(price);
 		json_object_put(part_root);
 		return -1;	
 	}
@@ -801,6 +1015,26 @@ int redis_write_part( struct part_t* part ){
 
 	}
 
+	/* Inventory information */
+	if( part->inv_len != 0 ) {
+		for( unsigned int i = 0; i < part->inv_len; i++ ){
+			inv_itr = json_object_new_object();
+			if( NULL == inv_itr ){
+				y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate new part inventory iterator json object" );	
+				json_object_put(info);
+				json_object_put(dist);
+				json_object_put(price);
+				json_object_put(inv);
+				json_object_put( part_root );
+				return -1;
+			}			
+			json_object_object_add( price_itr, "loc", json_object_new_double(part->inv[i].loc) );
+			json_object_object_add( price_itr, "q", json_object_new_int64(part->inv[i].q) );
+			json_object_array_put_idx( inv, i, json_object_get( inv_itr ) );
+		}
+
+	}
+
 	y_log_message(Y_LOG_LEVEL_DEBUG, "Parsing");
 
 	/* Add all parts of the part struct to the json object */
@@ -813,20 +1047,20 @@ int redis_write_part( struct part_t* part ){
 	json_object_object_add( part_root, "info", info );
 	json_object_object_add( part_root, "dist", dist );
 	json_object_object_add( part_root, "price", price );
+	json_object_object_add( part_root, "inv", inv );
 
 	y_log_message(Y_LOG_LEVEL_DEBUG, "Added items to object");
 
-	dbpart_name = calloc( strlen(part->mpn) + strlen("part:") + strlen(part->type) + 3, sizeof( char ) );
+//	dbpart_name = calloc( strlen(part->mpn) + strlen("part:") + strlen(part->type) + 3, sizeof( char ) );
 
+	/* create name */
+	asprintf( &dbpart_name, "part:%s:%s", part->type, part->mpn);
 	int retval = -1;
 	if( NULL == dbpart_name ){
 		y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate memory for dbpart_name");
 		retval = -1;
 	}
 	else{
-		/* create name */
-		sprintf( dbpart_name, "part:%s:%s", part->type, part->mpn);
-
 		y_log_message(Y_LOG_LEVEL_DEBUG, "Created name: %s", dbpart_name);
 
 		/* Write object to database */
@@ -853,6 +1087,8 @@ struct part_t* copy_part_t( struct part_t* src ){
 		y_log_message( Y_LOG_LEVEL_ERROR, "Source for part copy is invalid" );
 		return NULL;
 	}
+
+	y_log_message( Y_LOG_LEVEL_DEBUG, "IPN Of Part to copy: %d", src->ipn );
 
 	/* Allocate memory for struct */
 	dest = calloc( 1, sizeof( struct part_t ) );
@@ -956,6 +1192,95 @@ struct part_t* copy_part_t( struct part_t* src ){
 		dest->price[i].price = src->price[i].price;
 	}
 
+	dest->inv_len = src->inv_len;
+
+	dest->inv = calloc( src->inv_len, sizeof( struct part_inv_t ) );
+	if( NULL == dest->price ){
+		y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate memory for destination part inventory" );
+		free_part_t( dest );
+		return NULL;
+	}
+	for( unsigned int i = 0; i < dest->inv_len; i++ ){
+		dest->inv[i].q = src->inv[i].q;	
+		dest->inv[i].loc = src->inv[i].loc;
+	}
+
+
+	return dest;
+}
+
+/* Copy bom structure to new structure */
+struct bom_t* copy_bom_t( struct bom_t* src ){
+	struct bom_t* dest;
+	
+	/* Check if source is valid */
+	if( NULL == src ){
+		y_log_message( Y_LOG_LEVEL_ERROR, "Source for bom copy is invalid" );
+		return NULL;
+	}
+
+	y_log_message( Y_LOG_LEVEL_DEBUG, "IPN Of BOM to copy: %d", src->ipn );
+
+	/* Allocate memory for struct */
+	dest = calloc( 1, sizeof( struct bom_t ) );
+	if( NULL == dest ){
+		y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate memory for destination bom");
+		return NULL;
+	}
+
+	/* Copy data over */
+	dest->ipn = src->ipn;
+	dest->name = calloc( strlen(src->name) + 1, sizeof( char ) );
+	if( NULL == dest->name ){
+		y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate memory for destination bom name" );
+		free_bom_t( dest );
+		return NULL;
+	}
+	strcpy( dest->name, src->name );
+
+	dest->ver = calloc( strlen(src->ver) + 1, sizeof( char ) );
+	if( NULL == dest->ver ){
+		y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate memory for destination bom version" );
+		free_bom_t( dest );
+		return NULL;
+	}
+	strcpy( dest->ver, src->ver );
+
+
+	dest->nitems = src->nitems;
+	
+	/* Create line items */
+	dest->line = calloc( src->nitems, sizeof( struct bom_line_t ) );
+	if( NULL == dest->line ){
+		y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate memory for destination bom line items" );
+		free_bom_t( dest );
+		return NULL;	
+	}
+
+	/* Wait to copy data until parts array is also created, saves another for
+	 * loop */
+
+	dest->parts = calloc( src->nitems, sizeof( struct part_t* ) );
+	if( NULL == dest->parts ){
+		y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate memory for destination bom parts" );
+		free_bom_t( dest );
+		return NULL;
+	}
+	for( unsigned int i = 0; i < dest->nitems; i++ ){
+		dest->parts[i] = copy_part_t( src->parts[i] );
+
+		if( NULL == dest->parts[i] ){
+			y_log_message( Y_LOG_LEVEL_ERROR, "Failed to copy part to destination bom" );
+			free_bom_t( dest );
+			return NULL;			
+		}
+
+		/* Now copy line item data */
+		dest->line[i].ipn = src->line[i].ipn;
+		dest->line[i].q = src->line[i].q;
+
+	}
+
 
 	return dest;
 }
@@ -974,8 +1299,6 @@ int redis_write_bom( struct bom_t* bom ){
 
 	/* Create json object to write */
 	json_object *bom_root = json_object_new_object();
-	json_object *ipn = json_object_new_object();
-	json_object *version = json_object_new_object();
 	json_object *line = json_object_new_array_ext(bom->nitems);
 	json_object *line_itr = NULL;
 
@@ -984,23 +1307,8 @@ int redis_write_bom( struct bom_t* bom ){
 		return -1;
 	}
 
-	if( NULL == ipn ){
-		y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate new bom ipn json object" );
-		json_object_put(bom_root);
-		return -1;	
-	}
-
-	if( NULL == version ){
-		y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate bom version json object" );
-		json_object_put( ipn );
-		json_object_put(bom_root);
-		return -1;	
-	}
-
 	if( NULL == line ){
 		y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate new bom items json object" );
-		json_object_put(ipn);
-		json_object_put(version);
 		json_object_put(bom_root);
 		return -1;	
 	}
@@ -1013,8 +1321,6 @@ int redis_write_bom( struct bom_t* bom ){
 			line_itr = json_object_new_object();
 			if( NULL == line_itr ){
 				y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate new bom line iterator json object" );	
-				json_object_put(ipn);
-				json_object_put(version);
 				json_object_put(line);
 				json_object_put(bom_root);
 				return -1;
@@ -1030,12 +1336,14 @@ int redis_write_bom( struct bom_t* bom ){
 
 	/* Add all parts of the part struct to the json object */
 	json_object_object_add( bom_root, "ipn", json_object_new_int64(bom->ipn) ); /* This should be generated somehow */
-	json_object_object_add( bom_root, "ver", version );
+	json_object_object_add( bom_root, "ver", json_object_new_string(bom->ver) );
 	json_object_object_add( bom_root, "items", line );
+	json_object_object_add( bom_root, "name", json_object_new_string(bom->name) );
 
 	y_log_message(Y_LOG_LEVEL_DEBUG, "Added items to object");
 
-	dbbom_name = calloc( strlen("bom:") + 2 + 16, sizeof( char ) ); /* IPN has to be less than 16 characters right now */
+//	dbbom_name = calloc( strlen("bom:") + 2 + 16, sizeof( char ) ); /* IPN has to be less than 16 characters right now */
+	asprintf( &dbbom_name, "bom:%d:%s", bom->ipn, bom->ver);
 
 	int retval = -1;
 	if( NULL == dbbom_name ){
@@ -1044,7 +1352,7 @@ int redis_write_bom( struct bom_t* bom ){
 	}
 	else{
 		/* create name */
-		sprintf( dbbom_name, "bom:%d", bom->ipn);
+//		sprintf( dbbom_name, "bom:%d", bom->ipn);
 
 		y_log_message(Y_LOG_LEVEL_DEBUG, "Created name: %s", dbbom_name);
 
@@ -1148,17 +1456,15 @@ int redis_write_proj( struct proj_t* prj ){
 
 	y_log_message(Y_LOG_LEVEL_DEBUG, "Added items to object");
 
-	dbprj_name = calloc( strlen("prj:") + 2 + 16, sizeof( char ) ); /* IPN has to be less than 16 characters right now */
-
+//	dbprj_name = calloc( strlen("prj:") + 2 + 16, sizeof( char ) ); /* IPN has to be less than 16 characters right now */
+	/* create name */
+	asprintf( &dbprj_name, "prj:%d", prj->ipn);
 	int retval = -1;
 	if( NULL == dbprj_name ){
 		y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate memory for dbprj_name");
 		retval = -1;
 	}
 	else{
-		/* create name */
-		sprintf( dbprj_name, "prj:%d", prj->ipn);
-
 		y_log_message(Y_LOG_LEVEL_DEBUG, "Created name: %s", dbprj_name);
 
 		/* Write object to database */
@@ -1294,14 +1600,12 @@ struct part_t* get_part_from_pn( const char* pn ){
 	}
 
 	/* Allocate size for database name */
-	dbpart_name = calloc( strlen(pn) + strlen("part:") + 2, sizeof( char ) );
+	asprintf( &dbpart_name, "part:%s", pn);
 
 	if( NULL == dbpart_name ){
 		y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate memory for dbpart_name");
 		return NULL;
 	}
-
-	sprintf( dbpart_name, "part:%s", pn);
 
 	/* Allocate space for part */
 	part = calloc( 1, sizeof( struct part_t ) );
@@ -1363,7 +1667,7 @@ struct part_t* get_part_from_ipn( unsigned int ipn ){
 
 	/* Search part number by IPN */
 	redisReply* reply = NULL;
-	sprintf( ipn_s, "[ %ld %ld ]", ipn, ipn);
+	snprintf( ipn_s, sizeof( ipn_s ), "[ %ld %ld ]", ipn, ipn);
 	redis_json_index_search( rc, &reply, "partid", "ipn", ipn_s );
 
 	/* Returns back a few elements; need to grab the second one to get the
@@ -1395,11 +1699,22 @@ struct part_t* get_part_from_ipn( unsigned int ipn ){
 }
 
 /* Create bom struct from parsed item in database, from internal part number */
-struct bom_t* get_bom_from_ipn( unsigned int ipn ){
+struct bom_t* get_bom_from_ipn( unsigned int ipn, char* version ){
 	struct bom_t * bom = NULL;	
-	char ipn_s[32] = {0};
+	char* dbbom_name = NULL;
+//	char ipn_s[32] = {0};
 	if( NULL == rc ){
 		y_log_message( Y_LOG_LEVEL_ERROR, "Database is not connected. Could not get info of bom: %ld", ipn);
+		return NULL;
+	}
+
+	/* Allocate size for database name
+	 * should be in format of bom:ipn:version */
+//	dbbom_name = calloc( strlen(ipn) + strlen("bom:") + strnlen(version, 32) + 2, sizeof( char ) );
+	asprintf( &dbbom_name, "bom:%d:%s", ipn, version);
+
+	if( NULL == dbbom_name ){
+		y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate memory for dbbom_name");
 		return NULL;
 	}
 
@@ -1417,6 +1732,22 @@ struct bom_t* get_bom_from_ipn( unsigned int ipn ){
 	
 	/* Sanitize input? */
 
+	/* Get bom, store in json object */
+	if( !redis_json_get( rc, dbbom_name, "$", &jbom ) ){
+		/* Parse the json */
+		parse_json_bom( bom, jbom );
+
+		/* free json data; will segfault otherwise */
+//		json_object_put( jbom );
+	}
+	else {
+		y_log_message(Y_LOG_LEVEL_ERROR, "Could not get bom for %s", dbbom_name);
+		free_bom_t( bom );
+		bom = NULL;
+	}
+	
+
+#if 0
 	/* Search part number by IPN */
 	redisReply* reply;
 	sprintf( ipn_s, "[ %ld %ld ]", ipn, ipn);
@@ -1434,7 +1765,6 @@ struct bom_t* get_bom_from_ipn( unsigned int ipn ){
 
 	/* Should be correct response, get second element parsed into jbom */
 	jbom = json_tokener_parse( reply->element[2]->element[1]->str );	
-//	jbom = json_object_array_get_idx( root, 0 );	
 
 	/* Free redis reply */
 	freeReplyObject(reply);
@@ -1442,9 +1772,13 @@ struct bom_t* get_bom_from_ipn( unsigned int ipn ){
 	/* Parse the json */
 	parse_json_bom( bom, jbom );
 
+#endif
 
 	/* Free json */
 	json_object_put( jbom );
+
+	/* Free database name */
+	free( dbbom_name );
 
 	return bom;
 }
@@ -1474,7 +1808,7 @@ struct proj_t* get_proj_from_ipn( unsigned int ipn ){
 
 	/* Search part number by IPN */
 	redisReply* reply;
-	sprintf( ipn_s, "[ %ld %ld ]", ipn, ipn);
+	snprintf( ipn_s, sizeof( ipn_s ), "[ %ld %ld ]", ipn, ipn);
 	redis_json_index_search( rc, &reply, "prjid", "ipn", ipn_s );
 
 	/* Returns back a few elements; need to grab the second one to get the
@@ -1544,18 +1878,33 @@ struct proj_t* get_proj_from_ipn( unsigned int ipn ){
 }
 
 /* Read database information */
-int redis_read_dbinfo( struct dbinfo_t* db ){
-	int retval = -1;
+struct dbinfo_t* redis_read_dbinfo( void ){
 	json_object* jdb;
+
+	struct dbinfo_t* tmp = NULL;
+
+	tmp = calloc( 1, sizeof( struct dbinfo_t ) );
+	if( NULL == tmp ){
+		y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate memory for database info" );
+		return NULL;
+	}
+
 	if( redis_json_get( rc, "popdb", "$", &jdb ) ){
 		y_log_message(Y_LOG_LEVEL_ERROR, "Could not get database information");
-		return -1;
+		free_dbinfo_t( tmp );
+		/* If failed, make sure to unlock */
+		tmp = NULL;
 	}
 
 	/* Parse data */
-	retval =  parse_json_dbinfo( db, jdb );
+	if( parse_json_dbinfo( tmp, jdb ) ){
+		/* Error occurred, free memory */
+		free_dbinfo_t( tmp );
+		tmp = NULL;
+	}
+
 	json_object_put( jdb );
-	return retval;
+	return tmp;
 }
 
 /* Write database information */
@@ -1574,6 +1923,10 @@ static int write_dbinfo( struct dbinfo_t* db ){
 	/* Create json object to write */
 	json_object *dbinfo_root = json_object_new_object();
 	json_object* version 	 = json_object_new_object();
+	json_object* ptypes	 	 = json_object_new_array_ext(db->nptype);
+	json_object* invs		 = json_object_new_array_ext(db->ninv);
+	json_object* inv_itr;
+	json_object* ptype_itr;
 
 	int lock = ((db->flags & DBINFO_FLAG_LOCK) == DBINFO_FLAG_LOCK);
 	int init = ((db->flags & DBINFO_FLAG_INIT) == DBINFO_FLAG_INIT);
@@ -1589,7 +1942,60 @@ static int write_dbinfo( struct dbinfo_t* db ){
 		return -1;	
 	}
 
+	if( NULL == ptypes ){
+		y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate dbinfo part types json object" );
+		json_object_put(version);
+		json_object_put(dbinfo_root);
+		return -1;	
+	}
+
+	if( NULL == invs ){
+		y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate dbinfo inventory lookup json object" );
+		json_object_put(ptypes);
+		json_object_put(version);
+		json_object_put(dbinfo_root);
+		return -1;	
+	}
+
 	y_log_message(Y_LOG_LEVEL_DEBUG, "Adding json objects");
+
+	/* Part type quantities */
+	if( db->nptype != 0 ){
+		for( unsigned int i = 0; i < db->nptype; i++ ){
+			ptype_itr = json_object_new_object();	
+			if( NULL == inv_itr ){
+				y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate part type iterator json object " );
+				json_object_put(invs);
+				json_object_put(ptypes);
+				json_object_put(version);
+				json_object_put(dbinfo_root);
+				free_dbinfo_t( db );
+				return -1;
+			}
+			json_object_object_add( ptype_itr, "type", json_object_new_string( db->ptypes[i].name ) );
+			json_object_object_add( ptype_itr, "npart", json_object_new_int64( db->ptypes[i].npart ) );
+			json_object_array_put_idx( ptypes, i, json_object_get( ptype_itr ) );
+		} 
+	}
+
+	/* Store inventory lookup table */
+	if( db->ninv != 0 ){
+		for( unsigned int i = 0; i < db->ninv; i++ ){
+			inv_itr = json_object_new_object();	
+			if( NULL == inv_itr ){
+				y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate inventory lookup iterator json object " );
+				json_object_put(invs);
+				json_object_put(ptypes);
+				json_object_put(version);
+				json_object_put(dbinfo_root);
+				free_dbinfo_t( db );
+				return -1;
+			}
+			json_object_object_add( inv_itr, "name", json_object_new_string( db->invs[i].name ) );
+			json_object_object_add( inv_itr, "loc", json_object_new_int64( db->invs[i].loc ) );
+			json_object_array_put_idx( invs, i, json_object_get( inv_itr ) );
+		} 
+	}
 
 	json_object_object_add( version, "major", json_object_new_int64( db->version.major ) );
 	json_object_object_add( version, "minor", json_object_new_int64( db->version.minor ) );
@@ -1599,9 +2005,10 @@ static int write_dbinfo( struct dbinfo_t* db ){
 	json_object_object_add( dbinfo_root, "version", version );
 	json_object_object_add( dbinfo_root, "nprj", json_object_new_int64(db->nprj) );
 	json_object_object_add( dbinfo_root, "nbom", json_object_new_int64(db->nbom) );
-	json_object_object_add( dbinfo_root, "npart", json_object_new_int64(db->npart) );
 	json_object_object_add( dbinfo_root, "init", json_object_new_int64( init ) );
 	json_object_object_add( dbinfo_root, "lock", json_object_new_int64( lock ) );
+	json_object_object_add( dbinfo_root, "ptypes", ptypes );
+	json_object_object_add( dbinfo_root, "invs", invs );
 
 	y_log_message(Y_LOG_LEVEL_DEBUG, "Added items to object");
 
@@ -1617,16 +2024,33 @@ static int write_dbinfo( struct dbinfo_t* db ){
 
 /* Write database information; read modify write  */
 int redis_write_dbinfo( struct dbinfo_t* db ){
-	struct dbinfo_t db_check= {};
+	struct dbinfo_t* db_check;
 	do{
-		redis_read_dbinfo( &db_check );
-		if( (db_check.flags & DBINFO_FLAG_LOCK) == DBINFO_FLAG_LOCK ){
+		db_check = redis_read_dbinfo();
+		if( (db_check->flags & DBINFO_FLAG_LOCK) == DBINFO_FLAG_LOCK ){
 			sleep(2); /* Wait a little until lock is free */
 		}
 
-	} while( (db_check.flags & DBINFO_FLAG_LOCK) == DBINFO_FLAG_LOCK );
+	} while( (db_check->flags & DBINFO_FLAG_LOCK) == DBINFO_FLAG_LOCK );
+
+	/* Cleanup temporary info */
+	free_dbinfo_t( db_check );
+	free( db_check );
 
 	/* now write data */
 	return write_dbinfo( db );
 
+}
+
+/* Lock access to dbinfo */
+int mutex_lock_dbinfo( void ){
+	lock( &dbinfo_mtx );
+}
+void mutex_spin_lock_dbinfo( void ){
+	while( !lock( &dbinfo_mtx ) );
+}
+
+/* Unlock access to dbinfo */
+void mutex_unlock_dbinfo( void ){
+	unlock( &dbinfo_mtx );
 }
