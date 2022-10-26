@@ -16,6 +16,9 @@
 # This specific template is located at:
 # https://gitlab.com/gitlab-org/gitlab/-/blob/master/lib/gitlab/ci/templates/Getting-Started.gitlab-ci.yml
 
+default:
+  image: gitlab.slant.tech:5050/docker-images/popin_build
+
 variables:
   GIT_STRATEGY: clone
 
@@ -32,7 +35,6 @@ before_script:
   - git submodule sync && git submodule update --init
 
 build-linux:       # This job runs in the build stage, which runs first.
-  image: gitlab.slant.tech:5050/docker-images/popin_build
   stage: build
   script:
     - echo "Compiling the code..."
@@ -46,7 +48,6 @@ build-linux:       # This job runs in the build stage, which runs first.
       - ./pop
 
 build-windows:       # This job runs in the build stage, which runs first.
-  image: gitlab.slant.tech:5050/docker-images/popin_build
   stage: build
   script:
     - echo "Compiling the code..."
