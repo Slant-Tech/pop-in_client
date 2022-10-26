@@ -75,6 +75,7 @@ sast:
   extends: sast
   allow_failure: true
   script:
+    - echo "$SAST_ANALYZER_IMAGE"
     - /analyzer run
 
 flawfinder-sast:   # This job runs in the test stage.
