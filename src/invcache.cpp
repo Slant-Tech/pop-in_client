@@ -161,24 +161,34 @@ int Invcache::update( struct dbinfo_t** info ){
 
 	unsigned int nprj = 0;
 	/* Get updated database information */
-	if( !redis_read_dbinfo( info ) ){
-		nprj = (*info)->nprj;
 
-		/* Clear out cache since can't guarantee movement of parts, changing
-		 * ipns, which parts were removed, etc. */
-		_clean();
-		/* Insert new elements to cache; start from index of 1 */
-		for( unsigned int i = 1; i <= nprj; i++ ){
-			/* Internal part numbers should be contiguous... but not sure if
-			 * there is a better way. */
-			_append_ipn( i );
+	if( mutex_lock_dbinfo() == 0 ){
+		if( nullptr != (*info) ){
+			/* free existing data */
+			free_dbinfo_t( (*info) );
+			free( *info );
 		}
+		(*info) = redis_read_dbinfo();
+		if( nullptr != (*info) ){
+			nprj = (*info)->nprj;
 
-		/* Recreate selected part */
-		if( (unsigned int)-1 != selected_idx ){
-			selected = cache[selected_idx];
+			/* Clear out cache since can't guarantee movement of parts, changing
+			 * ipns, which parts were removed, etc. */
+			_clean();
+			/* Insert new elements to cache; start from index of 1 */
+			for( unsigned int i = 1; i <= nprj; i++ ){
+				/* Internal part numbers should be contiguous... but not sure if
+				 * there is a better way. */
+				_append_ipn( i );
+			}
+
+			/* Recreate selected part */
+			if( (unsigned int)-1 != selected_idx ){
+				selected = cache[selected_idx];
+			}
 		}
 		
+		mutex_unlock_dbinfo();
 	}
 
 	else {

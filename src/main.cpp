@@ -86,9 +86,7 @@ static int thread_db_connection( class Prjcache* cache ) {
 	while( run_flag ){
 		/* Check flags for projects and handle them */
 		if( db_stat == DB_STAT_CONNECTED ){
-			mutex_lock_dbinfo();
 			cache->update( &dbinfo );
-			mutex_unlock_dbinfo();
 		}
 
 		/* sleep for some period of time until refresh */
@@ -269,7 +267,7 @@ int main( int, char** ){
 	/* Initialize logging */
 	y_init_logs("Pop:In", Y_LOG_MODE_CONSOLE, Y_LOG_LEVEL_DEBUG, NULL, "Pop:In Inventory Management");
 
-
+	
 	if( open_db( &db_set, &dbinfo, prjcache ) ){ /* Use defaults of localhost and default port */
 		/* Failed to init database connection */
 		y_log_message( Y_LOG_LEVEL_WARNING, "Database connection failed on startup");
@@ -559,7 +557,13 @@ static void show_new_part_popup( struct dbinfo_t** info ){
 		if( ImGui::Button("Save", ImVec2(0,0)) ){
 
 			/* Check if can save first */
-			if( !redis_read_dbinfo( info ) ){
+			if( nullptr != (*info) ){
+				/* free existing data */
+				free_dbinfo_t( (*info) );
+				free( *info );
+			}
+			*info = redis_read_dbinfo();
+			if( nullptr != *info ){
                                                                          
             	/* Need to do simple checks here at some point */
             	part.q = atoi( quantity );
@@ -580,7 +584,7 @@ static void show_new_part_popup( struct dbinfo_t** info ){
             	}
 				struct dbinfo_ptype_t* ptype = NULL;
 				/* Find existing part type in database info */
-				mutex_lock_dbinfo();
+				mutex_spin_lock_dbinfo();
 				for( unsigned int i = 0; i < (*info)->nptype; i++){
 					if( (*info)->ptypes[i].name == type ){
 						ptype = &((*info)->ptypes[i]);
@@ -594,7 +598,7 @@ static void show_new_part_popup( struct dbinfo_t** info ){
 					y_log_message(Y_LOG_LEVEL_INFO, "Type: %s not found in database. Adding type to database", type);
 
 					/* Should break this out into function */
-					mutex_lock_dbinfo();
+					mutex_spin_lock_dbinfo();
 					struct dbinfo_ptype_t* tmp = (struct dbinfo_ptype_t*)reallocarray( (*info)->ptypes, (*info)->nptype + 1, sizeof(struct dbinfo_ptype_t) );
 					mutex_unlock_dbinfo();
 					if( nullptr == tmp ){
@@ -602,7 +606,7 @@ static void show_new_part_popup( struct dbinfo_t** info ){
 						err_flg = 2;
 					}
 					else {
-						mutex_lock_dbinfo();
+						mutex_spin_lock_dbinfo();
 						/* Able to reallocate, so continue adding to database  */
 						(*info)->nptype++;	
 						(*info)->ptypes = tmp;
@@ -874,10 +878,9 @@ static void new_proj_window( struct dbinfo_t** info ){
 			}
 
 			/* Increment database information */
-			mutex_lock_dbinfo();
+			mutex_spin_lock_dbinfo();
 			(*info)->nprj++;
 			prj->ipn = (*info)->nprj;
-			mutex_unlock_dbinfo();
 			/* Perform the write */
 			redis_write_proj( prj );
 			y_log_message(Y_LOG_LEVEL_DEBUG, "Data written to database");
@@ -887,7 +890,14 @@ static void new_proj_window( struct dbinfo_t** info ){
 			redis_write_dbinfo( *info );
 
 			/* Make sure to read back the same data incase something went wrong */
-			redis_read_dbinfo( info );
+			if( nullptr != (*info) ){
+				/* free existing data */
+				free_dbinfo_t( (*info) );
+				free( *info );
+			}
+			(*info) = redis_read_dbinfo();
+
+			mutex_unlock_dbinfo();
 
 			/* Clear all input data */
 			free_proj_t( prj );

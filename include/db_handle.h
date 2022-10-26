@@ -189,7 +189,7 @@ int redis_write_bom( struct bom_t* bom );
 int redis_write_proj( struct proj_t* prj );
 
 /* Read database information */
-int redis_read_dbinfo( struct dbinfo_t** db );
+struct dbinfo_t* redis_read_dbinfo( void );
 
 /* Write database information */
 int redis_write_dbinfo( struct dbinfo_t* db );
@@ -203,13 +203,14 @@ int redis_connect( const char* hostname, int port );
 /* Free memory for redis connection */
 void redis_disconnect( void );
 
-/* Lock access to dbinfo */
-void mutex_lock_dbinfo( void );
+/* Lock access to dbinfo, only check once */
+int mutex_lock_dbinfo( void );
+
+/* Lock access to dbinfo, spin until free */
+void mutex_spin_lock_dbinfo( void );
 
 /* Unlock access to dbinfo */
 void mutex_unlock_dbinfo( void );
-
-
 
 #ifdef __cplusplus
 }

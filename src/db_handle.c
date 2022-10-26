@@ -13,15 +13,20 @@ static redisContext *rc;
 
 static int dbinfo_mtx = 0;
 
+static struct dbinfo_t dbinfo = {0};
+
 /* Lock method to enforce atomic access to dbinfo */
-static void lock( volatile int *exclusion ){
-	while( __sync_lock_test_and_set( exclusion, 1)){
-		while(*exclusion);
-	}
+static int lock( volatile int *exclusion ){
+	int retval = 0;
+	y_log_message( Y_LOG_LEVEL_DEBUG, "Enter lock" );
+	retval = __sync_lock_test_and_set( exclusion, 1);
+	y_log_message( Y_LOG_LEVEL_DEBUG, "dbinfo locked");
+	return retval;
 }
 static void unlock( volatile int *exclusion ){
-	__sync_synchronize();
-	*exclusion = 0;
+	y_log_message( Y_LOG_LEVEL_DEBUG, "Enter unlock" );
+	__sync_lock_release( exclusion );
+	y_log_message( Y_LOG_LEVEL_DEBUG, "dbinfo unlocked");
 }
 
 
@@ -1873,49 +1878,33 @@ struct proj_t* get_proj_from_ipn( unsigned int ipn ){
 }
 
 /* Read database information */
-int redis_read_dbinfo( struct dbinfo_t** db ){
-	int retval = -1;
+struct dbinfo_t* redis_read_dbinfo( void ){
 	json_object* jdb;
 
-
 	struct dbinfo_t* tmp = NULL;
-
-	/* Spin lock first */
-	lock( &dbinfo_mtx );
-
 
 	tmp = calloc( 1, sizeof( struct dbinfo_t ) );
 	if( NULL == tmp ){
 		y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate memory for database info" );
-		/* If failed, make sure to unlock */
-		unlock( &dbinfo_mtx );
-		return -1;
+		return NULL;
 	}
 
 	if( redis_json_get( rc, "popdb", "$", &jdb ) ){
 		y_log_message(Y_LOG_LEVEL_ERROR, "Could not get database information");
 		free_dbinfo_t( tmp );
 		/* If failed, make sure to unlock */
-		unlock( &dbinfo_mtx );
-		return -1;
+		tmp = NULL;
 	}
 
 	/* Parse data */
-	retval =  parse_json_dbinfo( tmp, jdb );
+	if( parse_json_dbinfo( tmp, jdb ) ){
+		/* Error occurred, free memory */
+		free_dbinfo_t( tmp );
+		tmp = NULL;
+	}
+
 	json_object_put( jdb );
-
-	/* Check if null first; need to free otherwise */
-	if( NULL != *db ){
-		free_dbinfo_t( *db );
-		*db = NULL;
-	}
-	else {
-		*db = tmp;
-	}
-
-	/* Make sure to unlock once done */
-	unlock( &dbinfo_mtx );
-	return retval;
+	return tmp;
 }
 
 /* Write database information */
@@ -2037,7 +2026,7 @@ static int write_dbinfo( struct dbinfo_t* db ){
 int redis_write_dbinfo( struct dbinfo_t* db ){
 	struct dbinfo_t* db_check;
 	do{
-		redis_read_dbinfo( &db_check );
+		db_check = redis_read_dbinfo();
 		if( (db_check->flags & DBINFO_FLAG_LOCK) == DBINFO_FLAG_LOCK ){
 			sleep(2); /* Wait a little until lock is free */
 		}
@@ -2054,8 +2043,11 @@ int redis_write_dbinfo( struct dbinfo_t* db ){
 }
 
 /* Lock access to dbinfo */
-void mutex_lock_dbinfo( void ){
+int mutex_lock_dbinfo( void ){
 	lock( &dbinfo_mtx );
+}
+void mutex_spin_lock_dbinfo( void ){
+	while( !lock( &dbinfo_mtx ) );
 }
 
 /* Unlock access to dbinfo */
