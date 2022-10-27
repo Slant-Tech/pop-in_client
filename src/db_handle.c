@@ -1442,7 +1442,7 @@ int redis_write_bom( struct bom_t* bom ){
 			}			
 			json_object_object_add( line_itr, "ipn", json_object_new_int64(bom->parts[i]->ipn) );
 			json_object_object_add( line_itr, "q", json_object_new_int64(bom->parts[i]->q) );
-			json_object_array_put_idx( line, i, json_object_get( line_itr ) );
+			json_object_array_put_idx( line, i, line_itr );
 		}
 
 	}
@@ -1543,7 +1543,7 @@ int redis_write_proj( struct proj_t* prj ){
 			}			
 			json_object_object_add( bom_itr, "ipn", json_object_new_int64(prj->boms[i].bom->ipn) );
 			json_object_object_add( bom_itr, "ver", json_object_new_string(prj->boms[i].ver) );
-			json_object_array_put_idx( boms, i, json_object_get( bom_itr ) );
+			json_object_array_put_idx( boms, i, bom_itr);
 		}
 
 	}
@@ -1560,7 +1560,7 @@ int redis_write_proj( struct proj_t* prj ){
 			}			
 			json_object_object_add( sub_itr, "ipn", json_object_new_int64(prj->sub[i].prj->ipn) );
 			json_object_object_add( sub_itr, "ver", json_object_new_string(prj->sub[i].ver) );
-			json_object_array_put_idx( sub, i, json_object_get( sub_itr ) );
+			json_object_array_put_idx( sub, i, sub_itr );
 		}
 		
 	}
@@ -2094,7 +2094,7 @@ static int write_dbinfo( struct dbinfo_t* db ){
 			}
 			json_object_object_add( ptype_itr, "type", json_object_new_string( db->ptypes[i].name ) );
 			json_object_object_add( ptype_itr, "npart", json_object_new_int64( db->ptypes[i].npart ) );
-			json_object_array_put_idx( ptypes, i, json_object_get( ptype_itr ) );
+			json_object_array_put_idx( ptypes, i, ptype_itr );
 		} 
 	}
 
@@ -2113,7 +2113,7 @@ static int write_dbinfo( struct dbinfo_t* db ){
 			}
 			json_object_object_add( inv_itr, "name", json_object_new_string( db->invs[i].name ) );
 			json_object_object_add( inv_itr, "loc", json_object_new_int64( db->invs[i].loc ) );
-			json_object_array_put_idx( invs, i, json_object_get( inv_itr ) );
+			json_object_array_put_idx( invs, i, inv_itr );
 		} 
 	}
 
@@ -2133,6 +2133,7 @@ static int write_dbinfo( struct dbinfo_t* db ){
 
 /* Write database information; read modify write  */
 int redis_write_dbinfo( struct dbinfo_t* db ){
+#if 0
 	struct dbinfo_t* db_check;
 	do{
 		db_check = redis_read_dbinfo();
@@ -2145,6 +2146,7 @@ int redis_write_dbinfo( struct dbinfo_t* db ){
 	/* Cleanup temporary info */
 	free_dbinfo_t( db_check );
 	free( db_check );
+#endif
 
 	/* now write data */
 	return write_dbinfo( db );

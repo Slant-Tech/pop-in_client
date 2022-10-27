@@ -173,6 +173,7 @@ int Partcache::update( struct dbinfo_t** info ){
 			for( unsigned int i = 0; i < (*info)->nptype; i++){
 				if( !strncmp( type.c_str(), (*info)->ptypes[i].name, type.size() ) ){
 					npart = (*info)->ptypes[i].npart;
+					y_log_message(Y_LOG_LEVEL_DEBUG, "Number of parts for type %s:%u", type.c_str(), npart);
 					break;
 				}
 			}
@@ -355,7 +356,7 @@ struct part_t* Partcache::get_selected( void ){
 
 void Partcache::display_parts( bool* clicked ){
 
-	cmtx.lock();
+//	cmtx.lock();
 
 	ImGuiTreeNodeFlags node_flags = ImGuiTreeNodeFlags_OpenOnArrow | \
 									ImGuiTreeNodeFlags_OpenOnDoubleClick | \
@@ -369,7 +370,7 @@ void Partcache::display_parts( bool* clicked ){
 	
 	/* Check if item has been clicked */
 	if( ImGui::IsItemClicked() && !ImGui::IsItemToggledOpen() ){
-		y_log_message(Y_LOG_LEVEL_DEBUG, "Part cache: type %s clicked", type);
+		y_log_message(Y_LOG_LEVEL_DEBUG, "Part cache: type %s clicked", type.c_str());
 		*clicked = true;
 	}
 	else {
@@ -390,7 +391,7 @@ void Partcache::display_parts( bool* clicked ){
 		ImGui::TreePop();
 	}
 
-	cmtx.unlock();
+	//cmtx.unlock();
 }
 
 void Partcache::_DisplayNode( struct part_t* node ){

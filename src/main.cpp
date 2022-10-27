@@ -97,14 +97,14 @@ static int thread_db_connection( Prjcache* prj_cache, std::vector<Partcache*>* p
 	/* Constantly run, until told to stop */
 	while( run_flag ){
 		/* Check flags for projects and handle them */
-		if( db_stat == DB_STAT_CONNECTED && mutex_lock_dbinfo() ){
+		if( db_stat == DB_STAT_CONNECTED ){
 			prj_cache->update( &dbinfo );
-			for( unsigned int i = 0; i < dbinfo->nptype; i++ ){
-				(*part_cache)[i]->update( &dbinfo );
-			}
+				for( unsigned int i = 0; i < dbinfo->nptype; i++ ){
+					if( (*part_cache)[i]->update( &dbinfo ) ){
+						y_log_message( Y_LOG_LEVEL_ERROR,"Could not update part cache: %s", (*part_cache)[i]->type.c_str()); 
+					}
+				}
 		}
-		mutex_unlock_dbinfo();
-
 		/* sleep for some period of time until refresh */
 		sleep( DB_REFRESH_SEC );
 		y_log_message( Y_LOG_LEVEL_DEBUG, "Finished sleeping for %d seconds in thread_db", DB_REFRESH_SEC );
@@ -288,7 +288,9 @@ int open_db( struct db_settings_t* set, struct dbinfo_t** info, class Prjcache* 
 			}
 			/* Add new type to cache */
 			(*partcaches)[i] = new Partcache((*info)->ptypes[i].npart, (*info)->ptypes[i].name);
-			(*partcaches)[i]->update( &dbinfo );
+			if( (*partcaches)[i]->update( &dbinfo ) ){
+				y_log_message( Y_LOG_LEVEL_ERROR,"Could not update part cache: %s", (*partcaches)[i]->type.c_str());
+			}
 		}
 
 		db_stat = DB_STAT_CONNECTED;
