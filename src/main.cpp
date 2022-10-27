@@ -89,6 +89,9 @@ static bool run_flag = true;
 
 static int thread_db_connection( Prjcache* prj_cache, std::vector<Partcache*>* part_cache ) {
 	
+	/* Just need some buffer before beginning */
+	sleep( DB_REFRESH_SEC );
+
 	y_log_message( Y_LOG_LEVEL_INFO, "Started thread_db_connection" );
 	
 	/* Constantly run, until told to stop */
@@ -304,11 +307,11 @@ int main( int, char** ){
 		y_log_message( Y_LOG_LEVEL_WARNING, "Database connection failed on startup");
 	}
 
-	/* Start UI thread */
-	std::thread ui( thread_ui, prjcache, &partcache );
-
 	/* Start database connection thread */
 	std::thread db( thread_db_connection, prjcache, &partcache );
+
+	/* Start UI thread */
+	std::thread ui( thread_ui, prjcache, &partcache );
 
 	/* Join threads */
 	ui.join();
