@@ -97,12 +97,13 @@ static int thread_db_connection( Prjcache* prj_cache, std::vector<Partcache*>* p
 	/* Constantly run, until told to stop */
 	while( run_flag ){
 		/* Check flags for projects and handle them */
-		if( db_stat == DB_STAT_CONNECTED ){
+		if( db_stat == DB_STAT_CONNECTED && mutex_lock_dbinfo() ){
 			prj_cache->update( &dbinfo );
 			for( unsigned int i = 0; i < dbinfo->nptype; i++ ){
 				(*part_cache)[i]->update( &dbinfo );
 			}
 		}
+		mutex_unlock_dbinfo();
 
 		/* sleep for some period of time until refresh */
 		sleep( DB_REFRESH_SEC );
@@ -328,7 +329,9 @@ int main( int, char** ){
 	redis_disconnect();
 
 	mutex_lock_dbinfo();
-	free_dbinfo_t( dbinfo );
+	if( nullptr != dbinfo ){
+		free_dbinfo_t( dbinfo );
+	}
 	mutex_lock_dbinfo();
 	free( db_set.hostname );
 	delete prjcache;
@@ -448,6 +451,7 @@ static void show_new_part_popup( struct dbinfo_t** info ){
 	static unsigned int ninfo = 0;
 	static unsigned int nprice = 0;
 	static unsigned int ndist = 0;
+	static unsigned int ninv = 0;
 
 	/* Info fields */
 	static std::vector<std::string> info_key;
@@ -460,6 +464,11 @@ static void show_new_part_popup( struct dbinfo_t** info ){
 	/* Pricing info */
 	static std::vector<int> price_q;
 	static std::vector<double> price_cost;
+
+	/* Inventory info */
+	static std::vector<std::string> inv_loc;
+	static std::vector<unsigned int> inv_amount;
+
 
 	/* Buffers for text input. Can also be used for santizing inputs */
 	static char quantity[128] = {};
@@ -522,9 +531,9 @@ static void show_new_part_popup( struct dbinfo_t** info ){
 			ImGui::EndCombo();
 		}
 
-		ImGui::Text("Local Stock");
-		ImGui::SameLine(NEWPART_SPACING);
-		ImGui::InputText("##newpart_stock", quantity, 127, ImGuiInputTextFlags_CharsNoBlank | ImGuiInputTextFlags_CharsDecimal );
+//		ImGui::Text("Local Stock");
+//		ImGui::SameLine(NEWPART_SPACING);
+//		ImGui::InputText("##newpart_stock", quantity, 127, ImGuiInputTextFlags_CharsNoBlank | ImGuiInputTextFlags_CharsDecimal );
 
 		ImGui::Spacing();
 
@@ -540,6 +549,10 @@ static void show_new_part_popup( struct dbinfo_t** info ){
 		ImGui::Text("Number of price breaks");
 		ImGui::SameLine(NEWPART_SPACING);
 		ImGui::InputInt("##newpart_nprice", (int*)&nprice);
+
+		ImGui::Text("Number of inventory locations");
+		ImGui::SameLine(NEWPART_SPACING);
+		ImGui::InputInt("##newpart_ninv", (int*)&ninv);
 
 		/* Resize vectors as needed */
 
@@ -647,6 +660,41 @@ static void show_new_part_popup( struct dbinfo_t** info ){
 			price_cost_itr++;
 		}
 
+
+		/* Inventory locations */
+		if( ninv > 0 ){
+			if( inv_loc.size() != ninv){
+				inv_loc.resize( ninv );
+			}
+			if( inv_amount.size() != ninv ){
+				inv_amount.resize( ninv );
+			}
+			ImGui::Text("Inventory Locations");
+			ImGui::Text("Location"); ImGui::SameLine(NEWPART_SPACING); ImGui::Text("Quantitiy");
+		}
+		/* Inventory entries */
+		std::vector<std::string>::iterator inv_loc_itr;
+		inv_loc_itr = inv_loc.begin();
+		std::vector<unsigned int>::iterator inv_amount_itr;
+		inv_amount_itr = inv_amount.begin();
+
+		std::string inv_loc_ident;
+		std::string inv_amount_ident;
+
+		for( unsigned int i = 0; i < ninv; i++ ){
+			inv_loc_ident = "##inv_loc" + std::to_string(i);
+			inv_amount_ident = "##inv_amount" + std::to_string(i);
+
+			ImGui::InputText(inv_loc_ident.c_str(), &(*inv_loc_itr), ImGuiInputTextFlags_CharsNoBlank );
+			ImGui::SameLine(NEWPART_SPACING);
+			ImGui::InputInt(inv_amount_ident.c_str(), (int*)&(*inv_amount_itr), ImGuiInputTextFlags_CharsNoBlank );
+
+			inv_loc_itr++;
+			inv_amount_itr++;
+		}
+
+
+
 		/* Save and cancel buttons */
 		if( ImGui::Button("Save", ImVec2(0,0)) ){
 
@@ -676,11 +724,101 @@ static void show_new_part_popup( struct dbinfo_t** info ){
             	else {
             		part.status = pstat_unknown;
             	}
+
+
+				/* Store variable data information */
+				part.info_len = ninfo;
+				part.info = (struct part_info_t *)calloc( part.info_len, sizeof( struct part_info_t ) );
+				if( nullptr == part.info ){
+					y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate memory for info array in new part");
+					free_part_addr_t( &part );
+					show_new_part_window = false;
+				}
+				/* copy data over */
+				for( unsigned int i = 0; i < part.info_len; i++ ){
+					part.info[i].key = (char*)calloc( info_key[i].size()+1, sizeof( char ) );
+					if( nullptr == part.info[i].key ){
+						y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate memory for info key in new part");
+						free_part_addr_t( &part );
+						show_new_part_window = false;
+					}
+					strncpy(part.info[i].key, info_key[i].c_str(), info_key[i].size() );
+					
+					part.info[i].val = (char*)calloc( info_val[i].size()+1, sizeof( char ) );
+					if( nullptr == part.info[i].val ){
+						y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate memory for info val in new part");
+						free_part_addr_t( &part );
+						show_new_part_window = false;
+					}
+					strncpy(part.info[i].val, info_val[i].c_str(), info_val[i].size() );
+				}
+
+				part.price_len = nprice;
+
+				part.price= (struct part_price_t*)calloc( part.price_len, sizeof( struct part_price_t ) );
+				if( nullptr == part.price ){
+					y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate memory for price array in new part");
+					free_part_addr_t( &part );
+					show_new_part_window = false;
+				}
+				/* copy data over */
+				for( unsigned int i = 0; i < part.price_len; i++ ){
+					part.price[i].quantity = price_q[i];
+					part.price[i].price = price_cost[i];
+				}
+
+
+				part.dist_len = ndist;
+				part.dist = (struct part_dist_t*)calloc( part.dist_len, sizeof( struct part_dist_t ) );
+				if( nullptr == part.dist ){
+					y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate memory for distributor array in new part");
+					free_part_addr_t( &part );
+					show_new_part_window = false;
+				}
+				/* copy data over */
+				for( unsigned int i = 0; i < part.dist_len; i++ ){
+					part.dist[i].name = (char*)calloc( dist_name[i].size()+1, sizeof( char ) );
+					if( nullptr == part.dist[i].name ){
+						y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate memory for distributor name in new part");
+						free_part_addr_t( &part );
+						show_new_part_window = false;
+					}
+					strncpy(part.dist[i].name, dist_name[i].c_str(), dist_name[i].size() );
+					
+					part.dist[i].pn = (char*)calloc( dist_pn[i].size()+1, sizeof( char ) );
+					if( nullptr == part.dist[i].pn ){
+						y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate memory for distributor part number in new part");
+						free_part_addr_t( &part );
+						show_new_part_window = false;
+					}
+					strncpy(part.dist[i].pn, dist_pn[i].c_str(), dist_pn[i].size() );
+				}
+
+				part.inv_len = ninv; 
+				part.inv = (struct part_inv_t*)calloc( part.inv_len, sizeof( struct part_inv_t ) );
+				if( nullptr == part.inv ){
+					y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate memory for price array in new part");
+					free_part_addr_t( &part );
+					show_new_part_window = false;
+				}
+				/* copy data over */
+				for( unsigned int i = 0; i < part.inv_len; i++ ){
+					part.inv[i].q = inv_amount[i]; 
+					part.inv[i].loc = dbinv_str_to_loc( info, inv_loc[i].c_str(), inv_loc[i].size() ); 
+					if( part.inv[i].loc == -1 ){
+						y_log_message(Y_LOG_LEVEL_ERROR, "Could not find inventory location; defaulting to location '0' ");
+						part.inv[i].loc = 0;
+					}
+				}
+
 				struct dbinfo_ptype_t* ptype = NULL;
 				/* Find existing part type in database info */
 				mutex_spin_lock_dbinfo();
+				y_log_message(Y_LOG_LEVEL_DEBUG, "Current part type: %s", type );
 				for( unsigned int i = 0; i < (*info)->nptype; i++){
-					if( (*info)->ptypes[i].name == type ){
+					y_log_message(Y_LOG_LEVEL_DEBUG, "dbinfo ptype[%u]:%s", i, (*info)->ptypes[i].name );
+					if( !strncmp( (*info)->ptypes[i].name, type, sizeof( type ) ) ){
+						y_log_message( Y_LOG_LEVEL_DEBUG, "Found matching part type" );
 						ptype = &((*info)->ptypes[i]);
 					}
 						
@@ -710,7 +848,7 @@ static void show_new_part_popup( struct dbinfo_t** info ){
 						(*info)->ptypes = tmp;
 
 						/* Initialize dbinfo_ptype_t */
-						(*info)->ptypes[(*info)->nptype - 1].name = (char *)calloc( strnlen( type, sizeof( type )), sizeof( char ) );
+						(*info)->ptypes[(*info)->nptype - 1].name = (char *)calloc( strnlen( type, sizeof( type )) + 1, sizeof( char ) );
 						if( nullptr == (*info)->ptypes[(*info)->nptype - 1].name ){
 							y_log_message(Y_LOG_LEVEL_ERROR, "Could not allocate memory for new database part type");							
 							err_flg = 3;
@@ -736,9 +874,6 @@ static void show_new_part_popup( struct dbinfo_t** info ){
 					}
 
 				}
-				else {
-					err_flg = 1;
-				}
 				if( !err_flg ) {
 					/* Increment part in dbinfo */
 					ptype->npart++;
@@ -758,11 +893,21 @@ static void show_new_part_popup( struct dbinfo_t** info ){
 			show_new_part_window = false;
 			
 			/* Clear all input data */
+#if 0
 			part.q = 0;
 			part.ipn = 0;
 			part.type = NULL;
 			part.mpn = NULL;
 			part.mfg = NULL;
+#endif
+			info_key.clear();
+			info_val.clear();
+			dist_name.clear();
+			dist_pn.clear();
+			price_q.clear();
+			price_cost.clear();
+
+			free_part_addr_t( &part );
 	
 			memset( quantity, 0, 127);
 			memset( type, 0, 255 );
@@ -776,11 +921,21 @@ static void show_new_part_popup( struct dbinfo_t** info ){
 		if ( ImGui::Button("Cancel", ImVec2(0, 0) )){
 			show_new_part_window = false;
 			/* Clear all input data */
+#if 0
 			part.q = 0;
 			part.ipn = 0;
 			part.type = NULL;
 			part.mpn = NULL;
 			part.mfg = NULL;
+#endif
+
+			info_key.clear();
+			info_val.clear();
+			dist_name.clear();
+			dist_pn.clear();
+			price_q.clear();
+			price_cost.clear();
+			free_part_addr_t( &part );
 			memset( quantity, 0, 127);
 			memset( type, 0, 255 );
 			memset( mfg, 0, 511 );
@@ -1641,7 +1796,11 @@ static void part_info_tab( class Partcache* cache ){
 
 				/* Quantity */
 				ImGui::TableSetColumnIndex(2);
-				ImGui::Text("%d", part->q );
+				unsigned int total = 0;
+				for( unsigned int i = 0; i < part->inv_len; i++ ){
+					total += part->inv[i].q;	
+				}
+				ImGui::Text("%d", total );
 
 				/* Type */
 				ImGui::TableSetColumnIndex(3);

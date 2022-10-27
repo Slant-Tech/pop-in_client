@@ -80,7 +80,7 @@ int Partcache::_insert_ipn( unsigned int ipn, unsigned int index ){
 
 int Partcache::_append( struct part_t * p ){
 	cache.push_back(p);
-	y_log_message(Y_LOG_LEVEL_DEBUG, "Appended part:%d in cache", p->ipn );
+	y_log_message(Y_LOG_LEVEL_DEBUG, "Appended part:%s:%d in cache", type.c_str(), p->ipn );
 	return 0;
 }
 
@@ -88,7 +88,7 @@ int Partcache::_append_ipn( unsigned int ipn ){
 	struct part_t* p = nullptr;
 	p = get_part_from_ipn(type.c_str(), ipn);
 	if( nullptr == p ){
-		y_log_message( Y_LOG_LEVEL_ERROR, "Could not add part:%d to cache; database error", ipn);
+		y_log_message( Y_LOG_LEVEL_ERROR, "Could not add part:%s:%d to cache; database error", type.c_str(), ipn);
 		return -1;
 	}
 	else {
@@ -159,7 +159,7 @@ int Partcache::update( struct dbinfo_t** info ){
 	/* At this point, the selected part can be updated to be the correct one
 	 * based off of what was previously selected before */
 
-	unsigned int nprj = 0;
+	unsigned int npart = 0;
 	/* Get updated database information */
 
 	if( mutex_lock_dbinfo() == 0 ){
@@ -170,13 +170,24 @@ int Partcache::update( struct dbinfo_t** info ){
 		}
 		(*info) = redis_read_dbinfo();
 		if( nullptr != (*info) ){
-			nprj = (*info)->nprj;
+			for( unsigned int i = 0; i < (*info)->nptype; i++){
+				if( !strncmp( type.c_str(), (*info)->ptypes[i].name, type.size() ) ){
+					npart = (*info)->ptypes[i].npart;
+					break;
+				}
+			}
+			if( npart == 0 ){
+				mutex_unlock_dbinfo();
+				cmtx.unlock();
+				y_log_message(Y_LOG_LEVEL_WARNING, "No parts found for this (%s) part type", type.c_str());
+				return -1;
+			}
 
 			/* Clear out cache since can't guarantee movement of parts, changing
 			 * ipns, which parts were removed, etc. */
 			_clean();
 			/* Insert new elements to cache; start from index of 1 */
-			for( unsigned int i = 1; i <= nprj; i++ ){
+			for( unsigned int i = 1; i <= npart; i++ ){
 				/* Internal part numbers should be contiguous... but not sure if
 				 * there is a better way. */
 				_append_ipn( i );
@@ -367,6 +378,7 @@ void Partcache::display_parts( bool* clicked ){
 	
 	/* Display parts if node is open */
 	if( open ){
+#if 0
 		for( unsigned int i = 0; i < cache.size(); i++ ){
 			ImGui::TableNextRow();
 			ImGui::TableNextColumn();
@@ -374,6 +386,7 @@ void Partcache::display_parts( bool* clicked ){
 				_DisplayNode( cache[i] );
 			}
 		}
+#endif
 		ImGui::TreePop();
 	}
 

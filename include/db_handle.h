@@ -165,6 +165,10 @@ struct proj_t* get_proj_from_ipn( unsigned int ipn );
 /* Free the part structure */
 void free_part_t( struct part_t* part );
 
+/* Free the part structure, don't touch the part passed as it should be an
+ * address, not an allocated pointer */
+void free_part_addr_t( struct part_t* part );
+
 /* Free the bom structure */
 void free_bom_t( struct bom_t* bom );
 
@@ -212,6 +216,9 @@ void mutex_spin_lock_dbinfo( void );
 
 /* Unlock access to dbinfo */
 void mutex_unlock_dbinfo( void );
+
+/* Get inventory index number from string */
+int dbinv_str_to_loc( struct dbinfo_t** info, const char* s, size_t len );
 
 #ifdef __cplusplus
 }
