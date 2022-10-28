@@ -171,10 +171,10 @@ LIBYDER_A = $(LIB_INSTALL_DIR)/lib/libyder.a
 LIBJSONC_A= $(LIBJSONC_DIR)/build/libjson-c.a
 LIBHIREDIS_A=$(LIB_INSTALL_DIR)/libhiredis.a
 else 
-LIBORCANIA_A = $(LIB_INSTALL_DIR)/lib/liborcania.dll.a
-LIBYDER_A = $(LIB_INSTALL_DIR)/lib/libyder.dll.a
-LIBHIREDIS_A=$(LIB_INSTALL_DIR)/lib/libhiredis.dll.a
-LIBJSONC_A= $(LIB_INSTALL_DIR)/build/libjson-c.dll.a
+LIBORCANIA_A = $(LIB_INSTALL_DIR)/lib/liborcania.a
+LIBYDER_A = $(LIB_INSTALL_DIR)/lib/libyder.a
+LIBHIREDIS_A=$(LIB_INSTALL_DIR)/lib/libhiredis.a
+LIBJSONC_A= $(LIB_INSTALL_DIR)/build/libjson-c.a
 endif
 
 
@@ -191,7 +191,8 @@ INC += `pkg-config --cflags glfw3`
 ifeq ($(OS), Windows)
 INC     += -I/usr/x86_64-w64-mingw/include -I$(LIB_INSTALL_DIR)/include
 LDFLAGS += -L/usr/x86_64-w64-mingw/lib -L$(LIB_INSTALL_DIR)/lib 
-LIBS 	 = /usr/x86_64-w64-mingw32/lib/libglfw3.a 
+LIBS     = /usr/x86_64-w64-mingw32/lib/libws2_32.a
+LIBS 	+= /usr/x86_64-w64-mingw32/lib/libglfw3.a 
 LIBS    += /usr/x86_64-w64-mingw32/lib/libgdi32.a 
 LIBS    += /usr/x86_64-w64-mingw32/lib/libopengl32.a 
 LIBS    += /usr/x86_64-w64-mingw32/lib/libimm32.a
@@ -274,7 +275,8 @@ CXXDEP		 = $(CXXOBJ:.o=.d)
 ifeq ($(OS), Windows)
 release: $(LIBYDER_A) $(LIBORCANIA_A) $(LIBHIREDIS_A) $(PRGNAME) 
 	mkdir -p release
-	cp $^ ./release
+	cp $(PRGNAME) ./release
+	cp /usr/share/fonts/TTF/Hack-Regular.ttf ./release
 endif
 
 ifeq ($(OS), Windows)
@@ -316,7 +318,7 @@ liborcania: $(LIBORCANIA_A)
 $(LIBORCANIA_A): $(LIBORCANIA_DIR)/.git
 	@echo "Building library orcania"
 	@mkdir -p $(LIBORCANIA_DIR)/build
-	@$(CMAKE) -S $(LIBORCANIA_DIR) -B $(LIBORCANIA_DIR)/build -DCMAKE_INSTALL_PREFIX=$(LIB_INSTALL_DIR) -DCMAKE_C_FLAGS=""
+	@$(CMAKE) -S $(LIBORCANIA_DIR) -B $(LIBORCANIA_DIR)/build -DCMAKE_INSTALL_PREFIX=$(LIB_INSTALL_DIR) -DBUILD_STATIC=ON -DCMAKE_C_FLAGS=""
 	@make -C $(LIBORCANIA_DIR)/build install
 
 libyder: $(LIBYDER_A)
@@ -334,7 +336,7 @@ else
 $(LIBYDER_A): $(LIBYDER_DIR)/.git  $(LIBORCANIA_A)
 	@echo "Building library yder"
 	@mkdir -p $(LIBYDER_DIR)/build
-	@$(CMAKE) -S $(LIBYDER_DIR) -B $(LIBYDER_DIR)/build -DCMAKE_INSTALL_PREFIX=$(LIB_INSTALL_DIR) -DWITH_JOURNALD=OFF -DCMAKE_C_FLAGS=""
+	@$(CMAKE) -S $(LIBYDER_DIR) -B $(LIBYDER_DIR)/build -DCMAKE_INSTALL_PREFIX=$(LIB_INSTALL_DIR) -DWITH_JOURNALD=OFF -DBUILD_STATIC=ON -DCMAKE_C_FLAGS=""
 	@make -C $(LIBYDER_DIR)/build install
 endif
 
@@ -342,7 +344,7 @@ else
 $(LIBYDER_A): $(LIBYDER_DIR)/.git  $(LIBORCANIA_A)
 	@echo "Building library yder"
 	@mkdir -p $(LIBYDER_DIR)/build
-	@$(CMAKE) -S $(LIBYDER_DIR) -B $(LIBYDER_DIR)/build -DCMAKE_INSTALL_PREFIX=$(LIB_INSTALL_DIR) -DWITH_JOURNALD=OFF -DCMAKE_C_FLAGS=""
+	@$(CMAKE) -S $(LIBYDER_DIR) -B $(LIBYDER_DIR)/build -DCMAKE_INSTALL_PREFIX=$(LIB_INSTALL_DIR) -DWITH_JOURNALD=OFF -DBUILD_STATIC=ON -DCMAKE_C_FLAGS=""
 	@make -C $(LIBYDER_DIR)/build install
 endif
 
