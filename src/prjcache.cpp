@@ -91,11 +91,11 @@ int Prjcache::_append_ipn( unsigned int ipn ){
 		return -1;
 	}
 	/* Don't add cache for non top level, as it will make things more difficult */
-	else if( p->nsub == 0 ){
-		/* Free allocated project */
-		free_proj_t( p );
-		return 0;
-	}
+//	else if( p->nsub == 0 ){
+//		/* Free allocated project */
+//		free_proj_t( p );
+//		return 0;
+//	}
 	else {
 		return _append(p);
 	}
@@ -174,6 +174,7 @@ int Prjcache::update( struct dbinfo_t** info ){
 		if( nullptr != (*info) ){
 
 			nprj = (*info)->nprj;
+			y_log_message(Y_LOG_LEVEL_INFO, "%u Projects found in database", nprj);
 
 			/* Clear out cache since can't guarantee movement of projects, changing
 			 * ipns, which projects were removed, etc. */
@@ -195,6 +196,7 @@ int Prjcache::update( struct dbinfo_t** info ){
 		else {
 			y_log_message(Y_LOG_LEVEL_DEBUG, "Spin lock was not acquired for dbinfo update");
 		}
+		mutex_unlock_dbinfo();
 	}
 
 	else {
@@ -348,11 +350,13 @@ struct proj_t* Prjcache::get_selected( void ){
 	return p;
 }
 
-void Prjcache::display_projects( void ){
+void Prjcache::display_projects( bool all_prj ){
 	cmtx.lock();
 	for( unsigned int i = 0; i < cache.size(); i++ ){
 //		y_log_message(Y_LOG_LEVEL_DEBUG, "Displaying top project %d", i);
-		_DisplayNode( cache[i] );
+		if( all_prj || cache[i]->nsub > 0 ){
+			_DisplayNode( cache[i]  );
+		}
 	}
 
 	cmtx.unlock();
@@ -360,8 +364,13 @@ void Prjcache::display_projects( void ){
 
 void Prjcache::_DisplayNode( struct proj_t* node ){
 	
-	ImGuiTreeNodeFlags node_flags = ImGuiTreeNodeFlags_OpenOnArrow | \
+	/* Only allowing double clicks to open projects is kinda nice... need to
+	 * see if this should be a setting or not. Leaving commented out for that
+	 * reason */
+//	ImGuiTreeNodeFlags node_flags = ImGuiTreeNodeFlags_OpenOnArrow | \
 									ImGuiTreeNodeFlags_OpenOnDoubleClick | \
+									ImGuiTreeNodeFlags_SpanFullWidth; 
+	ImGuiTreeNodeFlags node_flags = ImGuiTreeNodeFlags_OpenOnDoubleClick | \
 									ImGuiTreeNodeFlags_SpanFullWidth; 
 
 	ImGui::TableNextRow();

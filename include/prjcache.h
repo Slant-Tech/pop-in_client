@@ -52,7 +52,7 @@ class Prjcache {
 		int select( unsigned int index );
 		int select_ptr( struct proj_t * p );
 		struct proj_t* get_selected( void );
-		void display_projects( void );
+		void display_projects( bool all_prj );
 
 };
 

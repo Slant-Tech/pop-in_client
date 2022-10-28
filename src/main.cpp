@@ -50,6 +50,7 @@ static void show_project_select_window( class Prjcache* cache );
 static void show_part_select_window( class Partcache* cache, int* i );
 static void show_new_part_popup( struct dbinfo_t** info );
 static void new_proj_window( struct dbinfo_t** info );
+static void new_bom_window( struct dbinfo_t** info );
 static void show_root_window( class Prjcache* prj_cache, std::vector< Partcache*>* part_cache );
 static void import_parts_window( void );
 static void db_settings_window( struct db_settings_t * set );
@@ -58,6 +59,10 @@ static void db_settings_window( struct db_settings_t * set );
 #define DB_STAT_CONNECTED  1
 
 static int db_stat = DB_STAT_DISCONNECTED;
+
+/* All project view: will show projects that do or do not have a subproject */
+static bool show_all_projects = false;
+
 
 /* Auto refresh once every 15 seconds. 
  * Issue is longer times leads to longer quit times. 
@@ -78,6 +83,7 @@ static enum view_type current_view = project_view;
 
 bool show_new_part_window = false;
 bool show_new_proj_window = false;
+bool show_new_bom_window = false;
 bool show_import_parts_window = false;
 bool show_db_settings_window = false;
 
@@ -214,6 +220,9 @@ static int thread_ui( class Prjcache* prj_cache, std::vector<Partcache *>* part_
 		}
 		if( show_new_proj_window ){
 			new_proj_window( &dbinfo );
+		}
+		if( show_new_bom_window ){
+			new_bom_window( &dbinfo );
 		}
 		if( show_import_parts_window ){
 			import_parts_window();
@@ -438,7 +447,7 @@ static void show_project_select_window( class Prjcache* cache ){
 
 
 		if( DB_STAT_DISCONNECTED != db_stat ){
-			cache->display_projects();
+			cache->display_projects(show_all_projects);
 		}
 		prj_disp_stat = PRJDISP_IDLE;
 		ImGui::EndTable();
@@ -812,20 +821,13 @@ static void show_new_part_popup( struct dbinfo_t** info ){
 						part.inv[i].loc = 0;
 					}
 				}
-
-				struct dbinfo_ptype_t* ptype = NULL;
-				/* Find existing part type in database info */
-				mutex_spin_lock_dbinfo();
-				y_log_message(Y_LOG_LEVEL_DEBUG, "Current part type: %s", type );
-				for( unsigned int i = 0; i < (*info)->nptype; i++){
-					y_log_message(Y_LOG_LEVEL_DEBUG, "dbinfo ptype[%u]:%s", i, (*info)->ptypes[i].name );
-					if( !strncmp( (*info)->ptypes[i].name, type, sizeof( type ) ) ){
-						y_log_message( Y_LOG_LEVEL_DEBUG, "Found matching part type" );
-						ptype = &((*info)->ptypes[i]);
-					}
-						
+				unsigned int ptype_idx = dbinfo_get_ptype_index( info, type );
+				struct dbinfo_ptype_t* ptype = nullptr;
+				if( ptype_idx != (unsigned int)(-1) ){
+					mutex_spin_lock_dbinfo();
+					ptype = &((*info)->ptypes[ptype_idx]);
+					mutex_unlock_dbinfo();
 				}
-				mutex_unlock_dbinfo();
 	
 				if( nullptr == ptype ){
 					/* Type doesn't exist in database, need to add the new type */
@@ -1172,6 +1174,166 @@ static void new_proj_window( struct dbinfo_t** info ){
 
 }
 
+static void new_bom_window( struct dbinfo_t** info ){
+	static struct bom_t * bom = NULL;
+
+	/* Buffers for text input. Can also be used for santizing inputs */
+	static char version[256] = {};
+	static char name[1024] = {};
+	static unsigned int nparts = 0;
+
+	static std::vector<std::string> line_name;
+	static std::vector<unsigned int> line_q;
+
+
+	/* Ensure popup is in the center */
+	ImVec2 center = ImGui::GetMainViewport()->GetCenter();
+	ImGui::SetNextWindowPos(center, ImGuiCond_Appearing, ImVec2( 0.5f, 0.5f));
+
+	ImGuiWindowFlags flags =   ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoCollapse \
+							 | ImGuiWindowFlags_NoSavedSettings;
+	if( ImGui::Begin("New Project Window",&show_new_proj_window, flags ) ){
+		ImGui::Text("Enter part details below");
+		ImGui::Separator();
+
+		/* Text entry fields */
+		ImGui::Text("BOM Name");
+		ImGui::SameLine();
+		ImGui::InputText("##newbom_name", name, (sizeof(name) - 1));
+
+		ImGui::Text("Version");
+		ImGui::SameLine();
+		ImGui::InputText( "##newbom_version", version, sizeof(version) - 1, ImGuiInputTextFlags_CharsNoBlank );
+
+		ImGui::Text("Number of Line Items");
+		ImGui::SameLine();
+		ImGui::InputInt("##newbom_lineitems", (int *)&nparts);
+
+		/* Figure out what size the vectors should be */
+		if( nparts > 0){
+			line_name.resize(nparts);
+			line_q.resize(nparts);
+		}
+
+		/* Subprojects entries */
+		std::vector<std::string>::iterator line_name_itr;
+		std::vector<unsigned int>::iterator line_q_itr;
+		line_name_itr = line_name.begin();
+		line_q_itr = line_q.begin();
+
+		/* Type will be filled out when searching for part */
+		std::string line_pn_ident;
+		std::string line_q_ident;
+
+		for( unsigned int i = 0; i < nparts; i++ ){
+			line_pn_ident = "##line_pn" + std::to_string(i);
+			line_q_ident = "##line_q" + std::to_string(i);
+
+			ImGui::Text("#%d", i+1);
+			ImGui::Text("Manufacturer Part Number");
+			ImGui::SameLine();
+			ImGui::InputText(line_pn_ident.c_str(), &(*line_name_itr), ImGuiInputTextFlags_CharsNoBlank  );
+
+			ImGui::Text("Version");
+			ImGui::SameLine();
+			ImGui::InputInt(line_q_ident.c_str(), (int *)&(*line_q_itr), ImGuiInputTextFlags_CharsNoBlank | ImGuiInputTextFlags_CharsDecimal );
+
+			line_name_itr++;
+			line_q_itr++;
+
+		}
+
+		
+
+
+		/* Save and cancel buttons */
+		if( ImGui::Button("Save", ImVec2(0,0)) ){
+
+			/* Check if valid to copy */
+			bom = (struct bom_t *)calloc(1, sizeof(struct bom_t));
+			if( nullptr == bom ){
+				y_log_message(Y_LOG_LEVEL_ERROR, "Could not allocate memory for saving new bom");
+				show_new_bom_window = false;
+				return;
+			}
+			/* No checks because I'll totally do it later (hopefully) */
+			bom->nitems = nparts;
+
+			bom->name = (char *)calloc( strnlen(name, sizeof(name)) + 1, sizeof(char) );
+			strncpy( bom->name, name, strnlen(name, sizeof(name)) + 1 );
+
+			bom->ver = (char *)calloc( strnlen(version, sizeof(version)) + 1 , sizeof( char ) );
+			strncpy( bom->ver, version, strnlen(version, sizeof(version)) + 1 );
+
+			/* Create new part and line item arrays */
+
+			/* Parts */
+			bom->parts = (struct part_t**)calloc( bom->nitems, sizeof( struct part_t*) );
+			if( nullptr == bom->parts) {
+				y_log_message(Y_LOG_LEVEL_ERROR, "Could not allocate memory for new bom part array");
+				show_new_proj_window = false;
+				return;
+			}
+			for( unsigned int i = 0; i < bom->nitems; i++){
+				bom->parts[i] = get_part_from_pn( line_name[i].c_str() );
+			}
+
+			/* Line items */
+			bom->line = (struct bom_line_t*)calloc( bom->nitems, sizeof( struct bom_line_t) );
+			if( nullptr == bom->line) {
+				y_log_message(Y_LOG_LEVEL_ERROR, "Could not allocate memory for new bom line item array");
+				show_new_proj_window = false;
+				return;
+			}
+			for( unsigned int i = 0; i < bom->nitems; i++){
+				bom->line[i].type = (char *)calloc( strnlen(bom->parts[i]->type, 1024) + 1, sizeof( char ) );
+				strncpy( bom->line[i].type, bom->parts[i]->type, strnlen(bom->parts[i]->type, 1024));
+
+				bom->line[i].q = line_q[i];
+				bom->line[i].ipn = bom->parts[i]->ipn;
+
+			}
+
+			/* Increment database information */
+			mutex_spin_lock_dbinfo();
+			(*info)->nbom++;
+			bom->ipn = (*info)->nbom;
+			/* Perform the write */
+			redis_write_bom( bom );
+			y_log_message(Y_LOG_LEVEL_DEBUG, "New BOM written to database");
+			show_new_bom_window = false;
+
+
+			redis_write_dbinfo( *info );
+
+			/* Make sure to read back the same data incase something went wrong */
+			if( nullptr != (*info) ){
+				/* free existing data */
+				free_dbinfo_t( (*info) );
+				free( *info );
+			}
+			(*info) = redis_read_dbinfo();
+
+			mutex_unlock_dbinfo();
+
+			/* Clear all input data */
+			free_bom_t( bom );
+			bom = NULL;
+
+			y_log_message(Y_LOG_LEVEL_DEBUG, "Cleared out bom, finished writing");
+
+		}
+		ImGui::SetItemDefaultFocus();
+		ImGui::SameLine();
+		if ( ImGui::Button("Cancel", ImVec2(0, 0) )){
+			show_new_bom_window = false;
+		}
+
+		ImGui::End();
+	}
+
+}
+
 
 
 
@@ -1310,6 +1472,11 @@ static void show_menu_bar( class Prjcache* prjcache, std::vector<Partcache*>* pa
 				y_log_message(Y_LOG_LEVEL_DEBUG, "New Project menu clicked");
 				show_new_proj_window = true;			
 			}
+			else if( ImGui::MenuItem("New BOM") ){
+				/* Create part_t, then provide result to redis_write_part */
+				y_log_message(Y_LOG_LEVEL_DEBUG, "New BOM menu clicked");
+				show_new_bom_window = true;
+			}
 			else if( ImGui::MenuItem("New Part") ){
 				/* Create part_t, then provide result to redis_write_part */
 				y_log_message(Y_LOG_LEVEL_DEBUG, "New Part menu clicked");
@@ -1353,6 +1520,12 @@ static void show_menu_bar( class Prjcache* prjcache, std::vector<Partcache*>* pa
 			}
 			else if( ImGui::MenuItem("Inventory View") ){
 				current_view = inventory_view;
+			}
+			else if( !show_all_projects && ImGui::MenuItem("Show All Projects") ){
+				show_all_projects = true;
+			}
+			else if( show_all_projects && ImGui::MenuItem("Hide All Projects") ){
+				show_all_projects = false;
 			}
 			ImGui::EndMenu();
 		}

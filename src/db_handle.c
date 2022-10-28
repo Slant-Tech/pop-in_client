@@ -1440,8 +1440,9 @@ int redis_write_bom( struct bom_t* bom ){
 				json_object_put(bom_root);
 				return -1;
 			}			
-			json_object_object_add( line_itr, "ipn", json_object_new_int64(bom->parts[i]->ipn) );
-			json_object_object_add( line_itr, "q", json_object_new_int64(bom->parts[i]->q) );
+			json_object_object_add( line_itr, "type", json_object_new_string(bom->line[i].type) );
+			json_object_object_add( line_itr, "ipn", json_object_new_int64(bom->line[i].ipn) );
+			json_object_object_add( line_itr, "q", json_object_new_int64(bom->line[i].q) );
 			json_object_array_put_idx( line, i, line_itr );
 		}
 
@@ -2177,6 +2178,24 @@ int dbinv_str_to_loc( struct dbinfo_t** info, const char* s, size_t len ){
 			y_log_message( Y_LOG_LEVEL_DEBUG, "Found matching inventory location" );
 			index = i;
 			break;
+		}
+			
+	}
+	mutex_unlock_dbinfo();
+	return index;
+}
+
+/* Get the index of the requested part type in the database */
+unsigned int dbinfo_get_ptype_index( struct dbinfo_t** info, const char* type ){
+	unsigned int index = (unsigned int)-1;
+	/* Find existing part type in database info */
+	mutex_spin_lock_dbinfo();
+	y_log_message(Y_LOG_LEVEL_DEBUG, "Part type to search: %s", type );
+	for( unsigned int i = 0; i < (*info)->nptype; i++){
+		y_log_message(Y_LOG_LEVEL_DEBUG, "dbinfo ptype[%u]:%s", i, (*info)->ptypes[i].name );
+		if( !strncmp( (*info)->ptypes[i].name, type, sizeof( type ) ) ){
+			y_log_message( Y_LOG_LEVEL_DEBUG, "Found matching part type" );
+			index = i;
 		}
 			
 	}
