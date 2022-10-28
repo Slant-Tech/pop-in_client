@@ -220,6 +220,9 @@ void mutex_unlock_dbinfo( void );
 /* Get inventory index number from string */
 int dbinv_str_to_loc( struct dbinfo_t** info, const char* s, size_t len );
 
+/* Get the index of the requested part type in the database */
+unsigned int dbinfo_get_ptype_index( struct dbinfo_t** info, const char* type );
+
 #ifdef __cplusplus
 }
 #endif
