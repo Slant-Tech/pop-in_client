@@ -663,9 +663,9 @@ static void show_new_part_popup( struct dbinfo_t** info ){
 			price_q_ident = "##price_q" + std::to_string(i);
 			price_cost_ident = "##price_cost" + std::to_string(i);
 
-			ImGui::InputInt(price_q_ident.c_str(), &(*price_q_itr), ImGuiInputTextFlags_CharsNoBlank );
+			ImGui::InputInt(price_q_ident.c_str(), &(*price_q_itr));
 			ImGui::SameLine(NEWPART_SPACING);
-			ImGui::InputDouble(price_cost_ident.c_str(), &(*price_cost_itr), ImGuiInputTextFlags_CharsNoBlank );
+			ImGui::InputDouble(price_cost_ident.c_str(), &(*price_cost_itr));
 
 			price_q_itr++;
 			price_cost_itr++;
@@ -698,7 +698,7 @@ static void show_new_part_popup( struct dbinfo_t** info ){
 
 			ImGui::InputText(inv_loc_ident.c_str(), &(*inv_loc_itr), ImGuiInputTextFlags_CharsNoBlank );
 			ImGui::SameLine(NEWPART_SPACING);
-			ImGui::InputInt(inv_amount_ident.c_str(), (int*)&(*inv_amount_itr), ImGuiInputTextFlags_CharsNoBlank );
+			ImGui::InputInt(inv_amount_ident.c_str(), (int*)&(*inv_amount_itr));
 
 			inv_loc_itr++;
 			inv_amount_itr++;
@@ -1034,7 +1034,7 @@ static void new_proj_window( struct dbinfo_t** info ){
 
 			ImGui::Text("Version");
 			ImGui::SameLine();
-			ImGui::InputText(sub_ver_ident.c_str(), (char *)(*subprj_ver_itr).c_str(), 255 );
+			ImGui::InputText(sub_ver_ident.c_str(), &(*subprj_ver_itr), ImGuiInputTextFlags_CharsNoBlank);
 
 			subprj_ver_itr++;
 			subprj_ipn_itr++;
@@ -1057,11 +1057,11 @@ static void new_proj_window( struct dbinfo_t** info ){
 			ImGui::Text("BOM %d", i+1);
 			ImGui::Text("Internal Part Number");
 			ImGui::SameLine();
-			ImGui::InputInt(bom_ipn_ident.c_str(), (int *)&(*bom_ipn_itr) );
+			ImGui::InputInt(bom_ipn_ident.c_str(), (int *)&(*bom_ipn_itr));
 
 			ImGui::Text("Version");
 			ImGui::SameLine();
-			ImGui::InputText(bom_ver_ident.c_str(), (char *)(*bom_ver_itr).c_str(), 255 );
+			ImGui::InputText(bom_ver_ident.c_str(), &(*bom_ver_itr) );
 
 			bom_ver_itr++;
 			bom_ipn_itr++;
@@ -1192,7 +1192,7 @@ static void new_bom_window( struct dbinfo_t** info ){
 
 	ImGuiWindowFlags flags =   ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoCollapse \
 							 | ImGuiWindowFlags_NoSavedSettings;
-	if( ImGui::Begin("New Project Window",&show_new_proj_window, flags ) ){
+	if( ImGui::Begin("New BOM Window",&show_new_bom_window, flags ) ){
 		ImGui::Text("Enter part details below");
 		ImGui::Separator();
 
@@ -1234,9 +1234,9 @@ static void new_bom_window( struct dbinfo_t** info ){
 			ImGui::SameLine();
 			ImGui::InputText(line_pn_ident.c_str(), &(*line_name_itr), ImGuiInputTextFlags_CharsNoBlank  );
 
-			ImGui::Text("Version");
+			ImGui::Text("Quantity");
 			ImGui::SameLine();
-			ImGui::InputInt(line_q_ident.c_str(), (int *)&(*line_q_itr), ImGuiInputTextFlags_CharsNoBlank | ImGuiInputTextFlags_CharsDecimal );
+			ImGui::InputInt(line_q_ident.c_str(), (int *)&(*line_q_itr));
 
 			line_name_itr++;
 			line_q_itr++;
@@ -1408,7 +1408,7 @@ static void db_settings_window( struct db_settings_t * set ){
 		
 		ImGui::Text("Hostname ");
 		ImGui::SameLine();
-		ImGui::InputText("##database_hostname", hostname, sizeof( hostname ) );
+		ImGui::InputText("##database_hostname", hostname, sizeof( hostname ), ImGuiInputTextFlags_CharsNoBlank );
 
 		ImGui::Text("Port ");
 		ImGui::SameLine();
