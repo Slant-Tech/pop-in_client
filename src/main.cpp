@@ -1659,6 +1659,7 @@ static void part_info_tab( struct dbinfo_t** info, class Partcache* cache ){
 			struct part_t* tmp = nullptr;
 			for( int i = 0; i < cache->items(); i++){
 				ImGui::TableNextRow();
+#if 0
 				if( nullptr != part ){
 					free_part_t( part );
 					part = nullptr;
@@ -1666,7 +1667,8 @@ static void part_info_tab( struct dbinfo_t** info, class Partcache* cache ){
 				tmp = cache->read(i);
 				/* Copy part to temporary storage */
 				part = copy_part_t( tmp );
-
+#endif
+				part = cache->read(i);
 				/* Part number */
 				ImGui::TableSetColumnIndex(0);
 				snprintf(part_mpn_label, 64, "%s", part->mpn);
@@ -1728,10 +1730,10 @@ static void part_info_tab( struct dbinfo_t** info, class Partcache* cache ){
 					selected_item = copy_part_t(part);
 				}
 
-				if( nullptr != part ){
-					free_part_t( part );
-					part = nullptr;
-				}
+//				if( nullptr != part ){
+//					free_part_t( part );
+//					part = nullptr;
+//				}
 
 			}
 			/* Popup window for Part info */
