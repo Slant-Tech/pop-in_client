@@ -140,6 +140,7 @@ unsigned int Prjcache::items(void){
 
 /* Update project cache from database */
 int Prjcache::update( struct dbinfo_t** info ){
+	y_log_message(Y_LOG_LEVEL_DEBUG, "Updating project cache");
 	cmtx.lock();
 	/* Save current selected project index to use later */
 	unsigned int selected_idx = (unsigned int)-1;
@@ -162,49 +163,31 @@ int Prjcache::update( struct dbinfo_t** info ){
 	 * based off of what was previously selected before */
 
 	unsigned int nprj = 0;
-	/* Get updated database information */
-	/* check if data exists first */
-	if( mutex_lock_dbinfo() == 0 ){
-		if( nullptr != (*info) ){
-			/* free existing data */
-			free_dbinfo_t( (*info) );
-			free( *info );
-		}
-		(*info) = redis_read_dbinfo();
-		if( nullptr != (*info) ){
 
-			nprj = (*info)->nprj;
-			y_log_message(Y_LOG_LEVEL_INFO, "%u Projects found in database", nprj);
+	if( nullptr != (*info) ){
 
-			/* Clear out cache since can't guarantee movement of projects, changing
-			 * ipns, which projects were removed, etc. */
-			_clean();
-			/* Insert new elements to cache; start from index of 1 */
-			for( unsigned int i = 1; i <= nprj; i++ ){
-				/* Internal part numbers should be contiguous... but not sure if
-				 * there is a better way. */
-				_append_ipn( i );
-			}
+		nprj = (*info)->nprj;
+		y_log_message(Y_LOG_LEVEL_INFO, "%u Projects found in database", nprj);
 
-			/* Recreate selected project */
-			if( (unsigned int)-1 != selected_idx ){
-				selected = cache[selected_idx];
-				selected->selected = true;
-			}
-			mutex_unlock_dbinfo();
+		/* Clear out cache since can't guarantee movement of projects, changing
+		 * ipns, which projects were removed, etc. */
+		_clean();
+		/* Insert new elements to cache; start from index of 1 */
+		for( unsigned int i = 1; i <= nprj; i++ ){
+			/* Internal part numbers should be contiguous... but not sure if
+			 * there is a better way. */
+			_append_ipn( i );
 		}
-		else {
-			y_log_message(Y_LOG_LEVEL_DEBUG, "Spin lock was not acquired for dbinfo update");
+
+		/* Recreate selected project */
+		if( (unsigned int)-1 != selected_idx ){
+			selected = cache[selected_idx];
+			selected->selected = true;
 		}
-		mutex_unlock_dbinfo();
 	}
-
 	else {
-		y_log_message( Y_LOG_LEVEL_ERROR, "Could not read database info" );
-		selected = nullptr;
-		return -1;
+		y_log_message(Y_LOG_LEVEL_DEBUG, "Problems updating project cache");
 	}
-
 
 	cmtx.unlock();
 	return 0;

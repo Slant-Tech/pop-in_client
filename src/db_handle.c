@@ -1391,6 +1391,77 @@ struct bom_t* copy_bom_t( struct bom_t* src ){
 	return dest;
 }
 
+/* Copy dbinfo structure to new structure */
+struct dbinfo_t* copy_dbinfo_t( struct dbinfo_t* src ){
+	struct dbinfo_t* dest;
+	mutex_spin_lock_dbinfo();
+
+	/* Check if valid source */
+	if( NULL == src ){
+		y_log_message( Y_LOG_LEVEL_ERROR, "Source for dbinfo copy is invalid");
+		return NULL;
+	}
+
+	/* Allocate memory for struct */
+	dest = calloc( 1, sizeof( struct dbinfo_t ) );
+	if( NULL == dest ){
+		y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate memory for destination dbinfo");
+		return NULL;
+	}
+
+	/* Copy data over */
+	dest->flags = src->flags;
+	dest->nprj = src->nprj;
+	dest->nbom = src->nbom;
+	dest->nptype = src->nptype;
+	dest->version.major = src->version.major;
+	dest->version.minor = src->version.minor;
+	dest->version.patch = src->version.patch;
+
+	/* part type copy */
+	dest->ptypes = calloc( dest->nptype, sizeof( struct dbinfo_ptype_t ) );
+	if( NULL == dest->ptypes ){
+		y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate memory for dbinfo ptype array");
+		free_dbinfo_t( dest );
+		dest = NULL;
+		return NULL;
+	}
+	for( unsigned int i = 0; i < dest->nptype; i++ ){
+		dest->ptypes[i].npart = src->ptypes[i].npart;	
+		dest->ptypes[i].name = calloc( strlen( src->ptypes[i].name ) + 1, sizeof( char ) );
+		if( NULL == dest->ptypes[i].name ){
+			y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate memory for dbinfo ptype name");
+			free_dbinfo_t( dest );
+			dest = NULL;
+			return NULL;
+		}
+		strcpy(dest->ptypes[i].name, src->ptypes[i].name );
+	}
+
+
+	/* Inventory lookup copy */
+	dest->invs = calloc( dest->ninv, sizeof( struct inv_lookup_t ) );
+	if( NULL == dest->invs ){
+		y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate memory for dbinfo location array");
+		free_dbinfo_t( dest );
+		dest = NULL;
+		return NULL;
+	}
+	for( unsigned int i = 0; i < dest->ninv; i++ ){
+		dest->invs[i].loc = src->invs[i].loc;	
+		dest->invs[i].name = calloc( strlen( src->invs[i].name ) + 1, sizeof( char ) );
+		if( NULL == dest->invs[i].name ){
+			y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate memory for dbinfo inventory location name");
+			free_dbinfo_t( dest );
+			dest = NULL;
+			return NULL;
+		}
+		strcpy(dest->invs[i].name, src->invs[i].name );
+	}
+
+	mutex_unlock_dbinfo();
+	return dest;
+}
 
 int redis_write_bom( struct bom_t* bom ){
 	/* Database part name */
@@ -2156,10 +2227,10 @@ int redis_write_dbinfo( struct dbinfo_t* db ){
 
 /* Lock access to dbinfo */
 int mutex_lock_dbinfo( void ){
-	lock( &dbinfo_mtx );
+	return lock( &dbinfo_mtx );
 }
 void mutex_spin_lock_dbinfo( void ){
-	while( !lock( &dbinfo_mtx ) );
+	while( lock( &dbinfo_mtx ) );
 }
 
 /* Unlock access to dbinfo */

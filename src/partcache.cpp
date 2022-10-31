@@ -160,55 +160,36 @@ int Partcache::update( struct dbinfo_t** info ){
 	 * based off of what was previously selected before */
 
 	unsigned int npart = 0;
-	/* Get updated database information */
 
-	if( mutex_lock_dbinfo() == 0 ){
-		if( nullptr != (*info) ){
-			/* free existing data */
-			free_dbinfo_t( (*info) );
-			free( *info );
-		}
-		(*info) = redis_read_dbinfo();
-		if( nullptr != (*info) ){
-			for( unsigned int i = 0; i < (*info)->nptype; i++){
-				if( !strncmp( type.c_str(), (*info)->ptypes[i].name, type.size() ) ){
-					npart = (*info)->ptypes[i].npart;
-					y_log_message(Y_LOG_LEVEL_DEBUG, "Number of parts for type %s:%u", type.c_str(), npart);
-					break;
-				}
-			}
-			if( npart == 0 ){
-				mutex_unlock_dbinfo();
-				cmtx.unlock();
-				y_log_message(Y_LOG_LEVEL_WARNING, "No parts found for this (%s) part type", type.c_str());
-				return -1;
-			}
-
-			/* Clear out cache since can't guarantee movement of parts, changing
-			 * ipns, which parts were removed, etc. */
-			_clean();
-			/* Insert new elements to cache; start from index of 1 */
-			for( unsigned int i = 1; i <= npart; i++ ){
-				/* Internal part numbers should be contiguous... but not sure if
-				 * there is a better way. */
-				_append_ipn( i );
-			}
-
-			/* Recreate selected part */
-			if( (unsigned int)-1 != selected_idx ){
-				selected = cache[selected_idx];
+	if( nullptr != (*info) ){
+		for( unsigned int i = 0; i < (*info)->nptype; i++){
+			if( !strncmp( type.c_str(), (*info)->ptypes[i].name, type.size() ) ){
+				npart = (*info)->ptypes[i].npart;
+				y_log_message(Y_LOG_LEVEL_DEBUG, "Number of parts for type %s:%u", type.c_str(), npart);
+				break;
 			}
 		}
-		
-		mutex_unlock_dbinfo();
-	}
+		if( npart == 0 ){
+			cmtx.unlock();
+			y_log_message(Y_LOG_LEVEL_WARNING, "No parts found for this (%s) part type", type.c_str());
+			return -1;
+		}
 
-	else {
-		y_log_message( Y_LOG_LEVEL_ERROR, "Could not read database info" );
-		selected = nullptr;
-		return -1;
-	}
+		/* Clear out cache since can't guarantee movement of parts, changing
+		 * ipns, which parts were removed, etc. */
+		_clean();
+		/* Insert new elements to cache; start from index of 1 */
+		for( unsigned int i = 1; i <= npart; i++ ){
+			/* Internal part numbers should be contiguous... but not sure if
+			 * there is a better way. */
+			_append_ipn( i );
+		}
 
+		/* Recreate selected part */
+		if( (unsigned int)-1 != selected_idx ){
+			selected = cache[selected_idx];
+		}
+	}
 
 	cmtx.unlock();
 	return 0;

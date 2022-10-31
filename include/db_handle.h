@@ -187,6 +187,9 @@ struct part_t* copy_part_t( struct part_t* src );
 /* Copy bom structure to new structure */
 struct bom_t* copy_bom_t( struct bom_t* src );
 
+/* Copy dbinfo structure to new structure */
+struct dbinfo_t* copy_dbinfo_t( struct dbinfo_t* src );
+
 /* Write bom to database */
 int redis_write_bom( struct bom_t* bom );
 

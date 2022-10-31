@@ -48,7 +48,7 @@ static void glfw_error_callback(int error, const char* description){
 
 /* Pass structure of projects and number of projects inside of struct */
 
-static void show_part_select_window( class Partcache* cache, int* i );
+static void show_part_select_window( struct dbinfo_t ** info, std::vector< Partcache*>* cache, int* selected );
 static void show_new_part_popup( struct dbinfo_t** info );
 static void new_proj_window( struct dbinfo_t** info );
 static void new_bom_window( struct dbinfo_t** info );
@@ -103,12 +103,35 @@ static int thread_db_connection( Prjcache* prj_cache, std::vector<Partcache*>* p
 	while( run_flag ){
 		/* Check flags for projects and handle them */
 		if( db_stat == DB_STAT_CONNECTED ){
-			prj_cache->update( &dbinfo );
-				for( unsigned int i = 0; i < dbinfo->nptype; i++ ){
-					if( (*part_cache)[i]->update( &dbinfo ) ){
-						y_log_message( Y_LOG_LEVEL_ERROR,"Could not update part cache: %s", (*part_cache)[i]->type.c_str()); 
+
+			/* update dbinfo */
+			if( mutex_lock_dbinfo() == 0 ){
+				/* acquired lock, update dbinfo */
+				if( nullptr != dbinfo ){
+					free_dbinfo_t( dbinfo );
+					free( dbinfo );
+					dbinfo = nullptr;
+				}
+				dbinfo = redis_read_dbinfo();
+				if( nullptr == dbinfo ){
+					/* this is a really bad situation */
+					y_log_message( Y_LOG_LEVEL_ERROR, "Database information could not be allocated, program may crash");
+					/* Unlock dbinfo */
+					mutex_unlock_dbinfo();
+				}
+				else {
+					/* Unlock dbinfo */
+					mutex_unlock_dbinfo();
+
+					/* Update caches */
+					prj_cache->update( &dbinfo );
+					for( unsigned int i = 0; i < dbinfo->nptype; i++ ){
+						if( (*part_cache)[i]->update( &dbinfo ) ){
+							y_log_message( Y_LOG_LEVEL_ERROR,"Could not update part cache: %s", (*part_cache)[i]->type.c_str()); 
+						}
 					}
 				}
+			}
 		}
 		/* sleep for some period of time until refresh */
 		sleep( DB_REFRESH_SEC );
@@ -261,7 +284,7 @@ static int thread_ui( class Prjcache* prj_cache, std::vector<Partcache *>* part_
 }
 
 int open_db( struct db_settings_t* set, struct dbinfo_t** info, class Prjcache* prjcache, std::vector< Partcache *>* partcaches){
-	
+	int retval = -1;
 	/* Wait for finish with displaying data */
 	while( PRJDISP_DISPLAYING == prj_disp_stat );
 	
@@ -280,28 +303,48 @@ int open_db( struct db_settings_t* set, struct dbinfo_t** info, class Prjcache* 
 	else {
 		y_log_message( Y_LOG_LEVEL_INFO, "Successfully connected to database");
 
-		int retval = prjcache->update( info );
 
-		/* Ensure that the vector is the correct size for the part types */
-		if( (*info)->nptype != partcaches->size() ){
-			/* Fix the size */
-			partcaches->assign((*info)->nptype, nullptr);
+		if( mutex_lock_dbinfo() == 0 ){
+			/* acquired lock, update dbinfo */
+			if( nullptr != dbinfo ){
+				free_dbinfo_t( dbinfo );
+				free( dbinfo );
+				dbinfo = nullptr;
+			}
+			dbinfo = redis_read_dbinfo();
+			if( nullptr == (*info) ){
+				/* this is a really bad situation */
+				y_log_message( Y_LOG_LEVEL_ERROR, "Database information could not be allocated, program may crash");
+			}
+			/* Unlock dbinfo */
+			mutex_unlock_dbinfo();
 		}
 
-		/* For all the part types, update the list of part caches */
-		for( unsigned int i = 0; i < (*info)->nptype; i++ ){
-			/* If cache already exists, then erase it */
-			if( nullptr != (*partcaches)[i] ){
-				delete (*partcaches)[i];
-			}
-			/* Add new type to cache */
-			(*partcaches)[i] = new Partcache((*info)->ptypes[i].npart, (*info)->ptypes[i].name);
-			if( (*partcaches)[i]->update( &dbinfo ) ){
-				y_log_message( Y_LOG_LEVEL_ERROR,"Could not update part cache: %s", (*partcaches)[i]->type.c_str());
-			}
-		}
+		if( nullptr != info ){
 
-		db_stat = DB_STAT_CONNECTED;
+			retval = prjcache->update( info );
+
+			/* Ensure that the vector is the correct size for the part types */
+			if( (*info)->nptype != partcaches->size() ){
+				/* Fix the size */
+				partcaches->assign((*info)->nptype, nullptr);
+			}
+
+			/* For all the part types, update the list of part caches */
+			for( unsigned int i = 0; i < (*info)->nptype; i++ ){
+				/* If cache already exists, then erase it */
+				if( nullptr != (*partcaches)[i] ){
+					delete (*partcaches)[i];
+				}
+				/* Add new type to cache */
+				(*partcaches)[i] = new Partcache((*info)->ptypes[i].npart, (*info)->ptypes[i].name);
+				if( (*partcaches)[i]->update( &dbinfo ) ){
+					y_log_message( Y_LOG_LEVEL_ERROR,"Could not update part cache: %s", (*partcaches)[i]->type.c_str());
+				}
+			}
+
+			db_stat = DB_STAT_CONNECTED;
+		}
 		return retval;
 	}
 }
@@ -338,11 +381,11 @@ int main( int, char** ){
 	/* Disconnect from database */
 	redis_disconnect();
 
-	mutex_lock_dbinfo();
+	mutex_spin_lock_dbinfo();
 	if( nullptr != dbinfo ){
 		free_dbinfo_t( dbinfo );
 	}
-	mutex_lock_dbinfo();
+	mutex_unlock_dbinfo();
 	free( db_set.hostname );
 	delete prjcache;
 	for( unsigned int i = 0; i < partcache.size(); i++ ){
@@ -356,7 +399,7 @@ int main( int, char** ){
 
 }
 
-static void show_part_select_window( std::vector< Partcache*>* cache, int* selected ){
+static void show_part_select_window( struct dbinfo_t ** info, std::vector< Partcache*>* cache, int* selected ){
 	
 	int open_action = -1;
 	ImGui::Text("Parts");
@@ -393,15 +436,17 @@ static void show_part_select_window( std::vector< Partcache*>* cache, int* selec
 		/* Cache header */
 		ImGui::TableNextRow();
 		ImGui::TableNextColumn();
-		mutex_lock_dbinfo();
-		bool node_clicked[dbinfo->nptype] = {false};
-		if( DB_STAT_DISCONNECTED != db_stat ){
-			for( unsigned int i = 0; i < dbinfo->nptype; i++ ){
-				/* Check if item has been clicked */
-				(*cache)[i]->display_parts(&(node_clicked[i]));
-				if( node_clicked[i] ){
-					y_log_message( Y_LOG_LEVEL_DEBUG, "Part type %s is open", (*cache)[i]->type.c_str() );
-					*selected = i;
+		mutex_spin_lock_dbinfo();
+		if( nullptr != info && nullptr != (*info) && (*info)->nptype > 0 ){
+			bool node_clicked[(*info)->nptype] = {false};
+			if( DB_STAT_DISCONNECTED != db_stat ){
+				for( unsigned int i = 0; i < (*info)->nptype; i++ ){
+					/* Check if item has been clicked */
+					(*cache)[i]->display_parts(&(node_clicked[i]));
+					if( node_clicked[i] ){
+						y_log_message( Y_LOG_LEVEL_DEBUG, "Part type %s is open", (*cache)[i]->type.c_str() );
+						*selected = i;
+					}
 				}
 			}
 		}
@@ -1765,7 +1810,7 @@ static void show_part_view( struct dbinfo_t** info,  std::vector< Partcache*>* c
 		/* Show project view */
 		ImGui::BeginChild("Part Type Selector", ImVec2(ImGui::GetContentRegionAvail().x * 0.95f, ImGui::GetContentRegionAvail().y * 0.95f ));
 		if( nullptr != cache && DB_STAT_DISCONNECTED != db_stat ){
-			show_part_select_window(cache, &selected_cache);
+			show_part_select_window(info, cache, &selected_cache);
 		}
 		ImGui::EndChild();
 
