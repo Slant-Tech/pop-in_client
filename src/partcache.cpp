@@ -109,7 +109,7 @@ int Partcache::_remove( unsigned int index ){
 /* Constructor; make sure cache is created for specific size; don't allocate
  * memory, but ensure each item is NULL */
 Partcache::Partcache( unsigned int size, std::string init_type ){
-	cmtx.lock();
+	while( !cmtx.try_lock() );
 	/* save the type */
 	type = init_type;
 
@@ -121,7 +121,7 @@ Partcache::Partcache( unsigned int size, std::string init_type ){
 
 /* Destructor; check for non null pointers, and clear them out */
 Partcache::~Partcache(){
-	cmtx.lock();
+	while( !cmtx.try_lock() );
 	_clean();
 	cmtx.unlock();
 	y_log_message(Y_LOG_LEVEL_DEBUG, "Freed memory for part cache");
@@ -130,7 +130,7 @@ Partcache::~Partcache(){
 /* Return number of items in cache */
 unsigned int Partcache::items(void){
 	unsigned int len = 0;
-	cmtx.lock();
+	while( !cmtx.try_lock() );
 	len = cache.size();	
 	cmtx.unlock();
 	return len;
@@ -138,67 +138,71 @@ unsigned int Partcache::items(void){
 
 /* Update part cache from database */
 int Partcache::update( struct dbinfo_t** info ){
-	cmtx.lock();
-	/* Save current selected part index to use later */
-	unsigned int selected_idx = (unsigned int)-1;
-	/* Look through cache to find where pointer matches in vector */
-	if( nullptr != selected ){
-		for( unsigned int i = 0; i < cache.size(); i++ ){
-			if( selected == cache[i] ){
-				y_log_message( Y_LOG_LEVEL_DEBUG, "Found selected part index in cache at %d", i );
-				selected_idx = i;
-				break;
+	if( cmtx.try_lock() ){
+		/* Save current selected part index to use later */
+		unsigned int selected_idx = (unsigned int)-1;
+		/* Look through cache to find where pointer matches in vector */
+		if( nullptr != selected ){
+			for( unsigned int i = 0; i < cache.size(); i++ ){
+				if( selected == cache[i] ){
+					y_log_message( Y_LOG_LEVEL_DEBUG, "Found selected part index in cache at %d", i );
+					selected_idx = i;
+					break;
+				}
+			}
+			if( selected_idx == (unsigned int)-1){
+				y_log_message( Y_LOG_LEVEL_WARNING, "Could not find selected index from part pointer during update. Could mean that selected part is a subpart." );
+				cmtx.unlock();
+				return -1;
 			}
 		}
-		if( selected_idx == (unsigned int)-1){
-			y_log_message( Y_LOG_LEVEL_WARNING, "Could not find selected index from part pointer during update. Could mean that selected part is a subpart." );
-			cmtx.unlock();
-			return -1;
-		}
-	}
-	/* At this point, the selected part can be updated to be the correct one
-	 * based off of what was previously selected before */
+		/* At this point, the selected part can be updated to be the correct one
+		 * based off of what was previously selected before */
 
-	unsigned int npart = 0;
+		unsigned int npart = 0;
 
-	if( nullptr != (*info) ){
-		for( unsigned int i = 0; i < (*info)->nptype; i++){
-			if( !strncmp( type.c_str(), (*info)->ptypes[i].name, type.size() ) ){
-				npart = (*info)->ptypes[i].npart;
-				y_log_message(Y_LOG_LEVEL_DEBUG, "Number of parts for type %s:%u", type.c_str(), npart);
-				break;
+		if( nullptr != (*info) ){
+			for( unsigned int i = 0; i < (*info)->nptype; i++){
+				if( !strncmp( type.c_str(), (*info)->ptypes[i].name, type.size() ) ){
+					npart = (*info)->ptypes[i].npart;
+					y_log_message(Y_LOG_LEVEL_DEBUG, "Number of parts for type %s:%u", type.c_str(), npart);
+					break;
+				}
+			}
+			if( npart == 0 ){
+				cmtx.unlock();
+				y_log_message(Y_LOG_LEVEL_WARNING, "No parts found for this (%s) part type", type.c_str());
+				return -1;
+			}
+
+			/* Clear out cache since can't guarantee movement of parts, changing
+			 * ipns, which parts were removed, etc. */
+			_clean();
+			/* Insert new elements to cache; start from index of 1 */
+			for( unsigned int i = 1; i <= npart; i++ ){
+				/* Internal part numbers should be contiguous... but not sure if
+				 * there is a better way. */
+				_append_ipn( i );
+			}
+
+			/* Recreate selected part */
+			if( (unsigned int)-1 != selected_idx ){
+				selected = cache[selected_idx];
 			}
 		}
-		if( npart == 0 ){
-			cmtx.unlock();
-			y_log_message(Y_LOG_LEVEL_WARNING, "No parts found for this (%s) part type", type.c_str());
-			return -1;
-		}
 
-		/* Clear out cache since can't guarantee movement of parts, changing
-		 * ipns, which parts were removed, etc. */
-		_clean();
-		/* Insert new elements to cache; start from index of 1 */
-		for( unsigned int i = 1; i <= npart; i++ ){
-			/* Internal part numbers should be contiguous... but not sure if
-			 * there is a better way. */
-			_append_ipn( i );
-		}
-
-		/* Recreate selected part */
-		if( (unsigned int)-1 != selected_idx ){
-			selected = cache[selected_idx];
-		}
+		cmtx.unlock();
 	}
-
-	cmtx.unlock();
+	else {
+		y_log_message(Y_LOG_LEVEL_ERROR, "Could not lock mutex on update");
+	}
 	return 0;
 }
 
 int Partcache::write( struct part_t * p, unsigned int index ){
 	int retval = -1;
 	/* Check if in bounds first */
-	cmtx.lock();
+	while( !cmtx.try_lock() );
 	retval = _write( p, index );
 	cmtx.unlock();
 	return retval;
@@ -208,7 +212,7 @@ int Partcache::write( struct part_t * p, unsigned int index ){
  * sideeffects if data is not copied. Will attempt without copying data first */
 struct part_t* Partcache::read( unsigned int index ){
 	struct part_t * p = nullptr;
-	cmtx.lock();
+	while( !cmtx.try_lock() );
 	p = _read( index );
 	cmtx.unlock();
 	return p;
@@ -217,7 +221,7 @@ struct part_t* Partcache::read( unsigned int index ){
 /* Add new item to cache at specified index */
 int Partcache::insert( struct part_t* p, unsigned int index ){
 	int retval = -1;
-	cmtx.lock();
+	while( !cmtx.try_lock() );
 	retval = _insert( p, index );	
 	cmtx.unlock();
 	return retval;
@@ -227,7 +231,7 @@ int Partcache::insert( struct part_t* p, unsigned int index ){
  * a specific part number */
 int Partcache::insert_ipn( unsigned int ipn, unsigned int index ){
 	int retval = -1;
-	cmtx.lock();
+	while( !cmtx.try_lock() );
 	retval = _insert_ipn( ipn, index );
 	cmtx.unlock();
 	return retval;
@@ -235,7 +239,7 @@ int Partcache::insert_ipn( unsigned int ipn, unsigned int index ){
 
 int Partcache::append( struct part_t* p ){
 	int retval = -1;
-	cmtx.lock();
+	while( !cmtx.try_lock() );
 	retval = _append(p);
 	cmtx.unlock();
 	return retval;
@@ -243,7 +247,7 @@ int Partcache::append( struct part_t* p ){
 
 int Partcache::append_ipn( unsigned int ipn ){
 	int retval = -1;
-	cmtx.lock();
+	while( !cmtx.try_lock() );
 	retval = _append_ipn( ipn );
 	cmtx.unlock();
 	return retval;
@@ -251,7 +255,7 @@ int Partcache::append_ipn( unsigned int ipn ){
 
 int Partcache::remove( unsigned int index ){
 	int retval = -1;
-	cmtx.lock();
+	while( !cmtx.try_lock() );
 	retval = _remove(index);
 	cmtx.unlock();
 	return retval;
@@ -259,7 +263,7 @@ int Partcache::remove( unsigned int index ){
 
 /* Select from index or pointer */
 int Partcache::select( unsigned int index ){
-	cmtx.lock();
+	while( !cmtx.try_lock() );
 
 	/* Clear out selected poitner */
 	if( nullptr != selected ){
@@ -294,7 +298,7 @@ int Partcache::select( unsigned int index ){
 
 int Partcache::select_ptr( struct part_t* p ){
 	unsigned int selected_idx = (unsigned int)-1;
-	cmtx.lock();
+	while( !cmtx.try_lock() );
 	/* Look through cache to find where pointer matches in vector */
 	for( unsigned int i = 0; i < cache.size(); i++ ){
 		if( p == cache[i] ){
@@ -329,7 +333,7 @@ int Partcache::select_ptr( struct part_t* p ){
 
 struct part_t* Partcache::get_selected( void ){
 	struct part_t* p;
-	cmtx.lock();
+	while( !cmtx.try_lock() );
 	p = selected;
 	cmtx.unlock();
 	return p;
@@ -337,11 +341,15 @@ struct part_t* Partcache::get_selected( void ){
 
 void Partcache::display_parts( bool* clicked ){
 
-//	cmtx.lock();
+	while( !cmtx.try_lock() ) ;
 
-	ImGuiTreeNodeFlags node_flags = ImGuiTreeNodeFlags_OpenOnArrow | \
+//	ImGuiTreeNodeFlags node_flags = ImGuiTreeNodeFlags_OpenOnArrow | \
 									ImGuiTreeNodeFlags_OpenOnDoubleClick | \
 									ImGuiTreeNodeFlags_SpanFullWidth; 
+
+	ImGuiTreeNodeFlags node_flags = ImGuiTreeNodeFlags_Leaf | \
+				 ImGuiTreeNodeFlags_NoTreePushOnOpen | \
+				 ImGuiTreeNodeFlags_SpanFullWidth;
 
 	/* Cache header */
 	ImGui::TableNextRow();
@@ -357,10 +365,13 @@ void Partcache::display_parts( bool* clicked ){
 	else {
 		*clicked = false;
 	}
+
+	ImGui::TableNextColumn();
+	ImGui::Text("%d", cache.size() );
 	
+#if 0
 	/* Display parts if node is open */
 	if( open ){
-#if 0
 		for( unsigned int i = 0; i < cache.size(); i++ ){
 			ImGui::TableNextRow();
 			ImGui::TableNextColumn();
@@ -368,11 +379,11 @@ void Partcache::display_parts( bool* clicked ){
 				_DisplayNode( cache[i] );
 			}
 		}
-#endif
 		ImGui::TreePop();
 	}
 
-	//cmtx.unlock();
+#endif
+	cmtx.unlock();
 }
 
 void Partcache::_DisplayNode( struct part_t* node ){

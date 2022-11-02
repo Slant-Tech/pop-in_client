@@ -25,6 +25,73 @@ static void unlock( volatile int *exclusion ){
 	__sync_lock_release( exclusion );
 }
 
+/* Useful for sanitizing search string for redis */
+static char* sanitize_redis_string(  char* s ){
+	int required_escapes = 0;
+	char* out = NULL;
+	for( unsigned int i = 0; i < strnlen( s, 1024 ); i++){
+		/* Check if is in list of characters required for escaping */
+		switch( s[i] ){
+			case '{':
+			case '}':
+			case '[':
+			case ']':
+			case '+':
+			case '-':
+			case '/':
+				/* FALLTHRU */
+				/* Needs to be escaped */
+				required_escapes++;
+				break;
+
+			default:
+				/* Do nothing */
+				break;
+
+		}
+	}
+
+	if( required_escapes > 0 ) {
+		out = calloc( strnlen( s, 1024 ) + 1 + required_escapes, sizeof( char ) );
+		if( NULL == out ){
+			y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate memory for sanitized string");
+			return NULL;
+		}
+
+		/* Copy over data that is needed, with escape characters */
+		unsigned int new_idx = 0;
+		for( unsigned int i = 0; i < strnlen( s, 1024 ); i++){
+			/* Check if is in list of characters required for escaping */
+			switch( s[i] ){
+				case '{':
+				case '}':
+				case '[':
+				case ']':
+				case '+':
+				case '-':
+				case '/':
+					/* FALLTHRU */
+					/* Needs to be escaped; add escaped character */
+					out[new_idx] = '\\';
+					new_idx++;
+					break;
+	
+				default:
+					/* Do nothing */
+					break;
+	
+			}
+			out[new_idx] = s[i];
+			new_idx++;
+		}
+	}
+	else{
+		out = s;
+	}
+
+	y_log_message( Y_LOG_LEVEL_DEBUG, "Sanitized string: %s", out ); 
+	return out;
+}
 
 /* Parse part json object to part_t */
 static int parse_json_part( struct part_t * part, struct json_object* restrict jpart ){
@@ -1800,28 +1867,41 @@ struct part_t* get_part_from_pn( const char* pn ){
 	/* Query database for part number */
 	struct json_object* jpart;
 	redisReply* reply = NULL;
-	/* Sanitize input? */
-
-	redis_json_index_search( rc, &reply, "partid", "mpn", pn );
+	/* Sanitize input */
+	char* pn_sanitized = sanitize_redis_string( pn );
+	y_log_message( Y_LOG_LEVEL_DEBUG, "Sanitized part number: %s", pn_sanitized ); 
+	redis_json_index_search( rc, &reply, "partid", "mpn", pn_sanitized );
+	if( pn_sanitized != pn ){
+		/* New string was created, free the memory */
+		free( pn_sanitized );
+	}
 
 	/* Returns back a few elements; need to grab the second one to get the
 	 * right object */
 	if( NULL == reply || reply->type != REDIS_REPLY_ARRAY || reply->elements != 3 ){
-		y_log_message( Y_LOG_LEVEL_ERROR, "Database search did not reply correctly for part pn %d", pn );
+		y_log_message( Y_LOG_LEVEL_ERROR, "Database search did not reply correctly for part pn %s", pn );
 		free( part ); /* don't need to free other parts of array as they have not been allocated yet */
-		/* Free redis reply */
-		freeReplyObject(reply);
-		return NULL;
+		part = NULL;
+	}
+	else {
+
+		/* Should be correct response, get second element parsed into jbom */
+		jpart = json_tokener_parse( reply->element[2]->element[1]->str );	
+	 	if( NULL != jpart ){
+			/* Parse the json */
+			parse_json_part( part, jpart );
+
+			/* Free data */
+			json_object_put( jpart );
+		}
+		else {
+			free( part );
+			part = NULL;
+		}
 	}
 
-	/* Should be correct response, get second element parsed into jbom */
-	jpart = json_tokener_parse( reply->element[2]->element[1]->str );	
-
-	/* Parse the json */
-	parse_json_part( part, jpart );
-
-	/* Free data */
-	json_object_put( jpart );
+	/* Free redis reply */
+	freeReplyObject(reply);
 
 	return part;
 

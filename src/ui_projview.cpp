@@ -240,8 +240,9 @@ static void proj_bom_tab( struct dbinfo_t** info, struct bom_t* bom ){
 #endif
 					selected_item = bom->parts[i];
 				}
-				partinfo_window( info, selected_item);
 			}
+
+			partinfo_window( info, selected_item);
 			
 		}
 		else{
@@ -348,9 +349,5 @@ void partinfo_window( struct dbinfo_t** info, struct part_t* selected_item){
 		
 		ImGui::EndPopup();
 	}
-
-
-
-
 
 }

@@ -125,9 +125,42 @@ static int thread_db_connection( Prjcache* prj_cache, std::vector<Partcache*>* p
 
 					/* Update caches */
 					prj_cache->update( &dbinfo );
-					for( unsigned int i = 0; i < dbinfo->nptype; i++ ){
-						if( (*part_cache)[i]->update( &dbinfo ) ){
-							y_log_message( Y_LOG_LEVEL_ERROR,"Could not update part cache: %s", (*part_cache)[i]->type.c_str()); 
+
+					/* Ensure that the vector is the correct size for the part types */
+					if( dbinfo->nptype > part_cache->size() ){
+						/* Data is out of date, critical to update */
+						mutex_spin_lock_dbinfo();
+						/* Fix the size */
+						unsigned int old_size = part_cache->size();
+
+						part_cache->assign(dbinfo->nptype, nullptr);
+						for( unsigned int i = old_size; i < part_cache->size(); i++){
+							(*part_cache)[i] = new Partcache(dbinfo->ptypes[i].npart, dbinfo->ptypes[i].name);
+							if( (*part_cache)[i]->update( &dbinfo ) ){
+								y_log_message( Y_LOG_LEVEL_ERROR,"Could not update part cache: %s", (*part_cache)[i]->type.c_str()); 
+							}
+						}
+						/* Unlock dbinfo */
+						mutex_unlock_dbinfo();
+						y_log_message( Y_LOG_LEVEL_DEBUG, "Resized partcache to %d", dbinfo->nptype);
+					}
+					else if( dbinfo->nptype < part_cache->size() ){
+						/* Data is out of date, critical to update */
+						mutex_spin_lock_dbinfo();
+						unsigned int old_size = part_cache->size();
+						/* Delete extra caches */
+						for( unsigned int i = dbinfo->nptype; i < old_size ; i++ ){
+							delete ((*part_cache)[i]);
+						}
+						part_cache->resize(dbinfo->nptype);
+						/* Unlock dbinfo */
+						mutex_unlock_dbinfo();
+					}
+					for( unsigned int i = 0; i < part_cache->size() ; i++ ){
+						if( nullptr != (*part_cache)[i] ){
+							if( (*part_cache)[i]->update( &dbinfo ) ){
+								y_log_message( Y_LOG_LEVEL_ERROR,"Could not update part cache: %s", (*part_cache)[i]->type.c_str()); 
+							}
 						}
 					}
 				}
@@ -328,6 +361,7 @@ int open_db( struct db_settings_t* set, struct dbinfo_t** info, class Prjcache* 
 			if( (*info)->nptype != partcaches->size() ){
 				/* Fix the size */
 				partcaches->assign((*info)->nptype, nullptr);
+				y_log_message( Y_LOG_LEVEL_DEBUG, "Resized partcache to %d", (*info)->nptype);
 			}
 
 			/* For all the part types, update the list of part caches */
@@ -421,11 +455,11 @@ static void show_part_select_window( struct dbinfo_t ** info, std::vector< Partc
 								   ImGuiTreeNodeFlags_SpanFullWidth;
 
 	/* Set colums, items in table */
-	if( ImGui::BeginTable("parts", 3, flags)){
+	if( ImGui::BeginTable("parts", 2, flags)){
 		/* First column will use default _WidthStretch when ScrollX is
 		 * off and _WidthFixed when ScrollX is on */
 		ImGui::TableSetupColumn("Type/Part Number",   	ImGuiTableColumnFlags_NoHide);
-		ImGui::TableSetupColumn("Status",				ImGuiTableColumnFlags_WidthFixed, TEXT_BASE_WIDTH * 12.0f);
+//		ImGui::TableSetupColumn("Status",				ImGuiTableColumnFlags_WidthFixed, TEXT_BASE_WIDTH * 12.0f);
 		ImGui::TableSetupColumn("Quantity",				ImGuiTableColumnFlags_WidthFixed, TEXT_BASE_WIDTH * 18.0f);
 		ImGui::TableHeadersRow();
 
@@ -436,11 +470,12 @@ static void show_part_select_window( struct dbinfo_t ** info, std::vector< Partc
 		/* Cache header */
 		ImGui::TableNextRow();
 		ImGui::TableNextColumn();
-		mutex_spin_lock_dbinfo();
-		if( nullptr != info && nullptr != (*info) && (*info)->nptype > 0 ){
-			bool node_clicked[(*info)->nptype] = {false};
+//		mutex_spin_lock_dbinfo();
+		//if( nullptr != info && nullptr != (*info) && cache->size() > 0 ){
+		if( cache->size() > 0 ){
+			bool node_clicked[cache->size()] = {false};
 			if( DB_STAT_DISCONNECTED != db_stat ){
-				for( unsigned int i = 0; i < (*info)->nptype; i++ ){
+				for( unsigned int i = 0; i < cache->size(); i++ ){
 					/* Check if item has been clicked */
 					(*cache)[i]->display_parts(&(node_clicked[i]));
 					if( node_clicked[i] ){
@@ -450,7 +485,7 @@ static void show_part_select_window( struct dbinfo_t ** info, std::vector< Partc
 				}
 			}
 		}
-		mutex_unlock_dbinfo();
+//		mutex_unlock_dbinfo();
 		prj_disp_stat = PRJDISP_IDLE;
 		ImGui::EndTable();
 	}
@@ -1279,6 +1314,7 @@ static void new_bom_window( struct dbinfo_t** info ){
 				return;
 			}
 			for( unsigned int i = 0; i < bom->nitems; i++){
+				y_log_message(Y_LOG_LEVEL_DEBUG, "Get part number: %s", line_name[i].c_str());
 				bom->parts[i] = get_part_from_pn( line_name[i].c_str() );
 			}
 
