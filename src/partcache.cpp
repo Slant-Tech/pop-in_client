@@ -341,7 +341,7 @@ struct part_t* Partcache::get_selected( void ){
 
 void Partcache::display_parts( bool* clicked ){
 
-	while( !cmtx.try_lock() ) ;
+	cmtx.lock();
 
 //	ImGuiTreeNodeFlags node_flags = ImGuiTreeNodeFlags_OpenOnArrow | \
 									ImGuiTreeNodeFlags_OpenOnDoubleClick | \

@@ -25,6 +25,52 @@ static void unlock( volatile int *exclusion ){
 	__sync_lock_release( exclusion );
 }
 
+/* Remove escape characters for display */
+static char* remove_escape_char( char* s, size_t len ){
+	char* out = calloc( len + 1, sizeof(char) );
+	if( NULL == out ){
+		y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate memory for escape character fix string" );
+		return NULL;
+	}
+	char* itr = out;
+	for( size_t i = 0; i < len; i++){
+		if( (s[i] == '\\') && ((i+1) < len) ){
+			switch( s[i] ){
+				case '{':
+				case '}':
+				case '[':
+				case ']':
+				case '+':
+				case '-':
+				case '/':
+				case '\\':
+					/* FALLTHRU */
+					/* Correct output to ignore copying this part of data */
+					break;
+
+				default:
+					/* Copy data over */	
+					*itr = s[i];
+					itr++;
+					break;
+			}
+		}
+		else {
+			*itr = s[i];
+			itr++;
+		}
+	}
+	int newlen = strnlen( out, len );	
+	if( strnlen( out, len ) < len ){
+		/* Unallocate some memory, don't need it */
+		out = realloc( out, newlen + 1 );
+	}
+
+	y_log_message( Y_LOG_LEVEL_DEBUG, "String with removed escape characters: %s", out);
+	return out;
+
+}
+
 /* Useful for sanitizing search string for redis */
 static char* sanitize_redis_string(  char* s ){
 	int required_escapes = 0;
@@ -147,14 +193,13 @@ static int parse_json_part( struct part_t * part, struct json_object* restrict j
 
 	/* Manufacturer part number */
 	jstrlen = json_object_get_string_len( jmpn );
-	part->mpn = calloc( jstrlen + 1, sizeof( char ) );
+	part->mpn = remove_escape_char( json_object_get_string( jmpn ), jstrlen );
 	if( NULL == part->mpn ){
 		y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate memory for manufacturer part number");
 		free_part_t( part );
 		part = NULL;
 		return -1;
 	}
-	strncpy( part->mpn, json_object_get_string( jmpn ), jstrlen );
 
 	/* Part status */
 	part->status = (enum part_status_t)json_object_get_int64( jstatus );
@@ -1108,16 +1153,26 @@ int redis_write_part( struct part_t* part ){
 	json_object_object_add( part_root, "status", json_object_new_int64(part->status) );
 	json_object_object_add( part_root, "type", json_object_new_string( part->type ) );
 	json_object_object_add( part_root, "mfg", json_object_new_string( part->mfg ) );
-	json_object_object_add( part_root, "mpn", json_object_new_string( part->mpn ) );
 
 	if( NULL == part_root ){
 		y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate new root json object" );
 		return -1;
 	}
 
+	/* Sanitize string for mpn search */
+	char* mpn_sanitized = sanitize_redis_string( part->mpn );
+	if( NULL == mpn_sanitized ){
+		y_log_message( Y_LOG_LEVEL_ERROR, "Could not sanitize string for %s", part->mpn );	
+		json_object_put( part_root );
+		return -1;
+	}
+
+	json_object_object_add( part_root, "mpn", json_object_new_string( part->mpn ) );
+
 	if( NULL == info ){
 		y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate new part info json object" );
 		json_object_put(part_root);
+//		free( mpn_sanitized );
 		return -1;	
 	}
 
@@ -1125,6 +1180,7 @@ int redis_write_part( struct part_t* part ){
 		y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate new part distributor info json object" );
 		json_object_put(info);
 		json_object_put(part_root);
+//		free( mpn_sanitized );
 		return -1;	
 	}
 
@@ -1133,6 +1189,7 @@ int redis_write_part( struct part_t* part ){
 		json_object_put(info);
 		json_object_put(dist);
 		json_object_put(part_root);
+//		free( mpn_sanitized );
 		return -1;	
 	}
 
@@ -1142,6 +1199,7 @@ int redis_write_part( struct part_t* part ){
 		json_object_put(dist);
 		json_object_put(price);
 		json_object_put(part_root);
+//		free( mpn_sanitized );
 		return -1;	
 	}
 
@@ -1168,6 +1226,7 @@ int redis_write_part( struct part_t* part ){
 				json_object_put(dist);
 				json_object_put(price);
 				json_object_put( part_root );
+//		free( mpn_sanitized );
 				return -1;
 			}
 			json_object_object_add( dist_itr, "name", json_object_new_string(part->dist[i].name) );
@@ -1211,6 +1270,7 @@ int redis_write_part( struct part_t* part ){
 //				json_object_put(price);
 				json_object_put(inv);
 				json_object_put( part_root );
+//		free( mpn_sanitized );
 				return -1;
 			}			
 			json_object_object_add( inv_itr, "loc", json_object_new_int64(part->inv[i].loc) );
@@ -1246,6 +1306,7 @@ int redis_write_part( struct part_t* part ){
 	/* Cleanup json object */
 	free( dbpart_name );
 	json_object_put( part_root );
+//		free( mpn_sanitized );
 
 	return retval;
 

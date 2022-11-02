@@ -393,6 +393,7 @@ clean:
 	-@rm -f $(PRGNAME).exe
 	-@rm -f $(SRC_DIR)/*.gcda
 	-@rm -f $(SRC_DIR)/*.gcno
+	-@rm -f ./**/*.d
 	-@rm -f *.gcov
 	-@rm -rf ./release
 
