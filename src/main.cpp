@@ -16,8 +16,10 @@
 #include <prjcache.h>
 #include <partcache.h>
 //#include <invcache.h>
+#include <ui_projview.h>
 #include <proj_funct.h>
 #include <ctype.h>
+#include <dbstat_def.h>
 
 #ifdef _WIN32
 #include <windows.h>
@@ -26,7 +28,6 @@
 #include <unistd.h>
 #endif
 
-#define PARTINFO_SPACING	200
 #define NEWPART_SPACING		250
 /* Project display state machine */
 #define PRJDISP_IDLE  		0
@@ -46,18 +47,21 @@ static void glfw_error_callback(int error, const char* description){
 }
 
 /* Pass structure of projects and number of projects inside of struct */
-static void show_project_select_window( class Prjcache* cache );
-static void show_part_select_window( class Partcache* cache, int* i );
+
+static void show_part_select_window( struct dbinfo_t ** info, std::vector< Partcache*>* cache, int* selected );
 static void show_new_part_popup( struct dbinfo_t** info );
 static void new_proj_window( struct dbinfo_t** info );
-static void show_root_window( class Prjcache* prj_cache, std::vector< Partcache*>* part_cache );
+static void new_bom_window( struct dbinfo_t** info );
+static void show_root_window( struct dbinfo_t** info, class Prjcache* prj_cache, std::vector< Partcache*>* part_cache );
 static void import_parts_window( void );
 static void db_settings_window( struct db_settings_t * set );
 
-#define DB_STAT_DISCONNECTED  0
-#define DB_STAT_CONNECTED  1
 
 static int db_stat = DB_STAT_DISCONNECTED;
+
+/* All project view: will show projects that do or do not have a subproject */
+static bool show_all_projects = false;
+
 
 /* Auto refresh once every 15 seconds. 
  * Issue is longer times leads to longer quit times. 
@@ -78,6 +82,7 @@ static enum view_type current_view = project_view;
 
 bool show_new_part_window = false;
 bool show_new_proj_window = false;
+bool show_new_bom_window = false;
 bool show_import_parts_window = false;
 bool show_db_settings_window = false;
 
@@ -89,18 +94,78 @@ static bool run_flag = true;
 
 static int thread_db_connection( Prjcache* prj_cache, std::vector<Partcache*>* part_cache ) {
 	
+	/* Just need some buffer before beginning */
+	sleep( DB_REFRESH_SEC );
+
 	y_log_message( Y_LOG_LEVEL_INFO, "Started thread_db_connection" );
 	
 	/* Constantly run, until told to stop */
 	while( run_flag ){
 		/* Check flags for projects and handle them */
 		if( db_stat == DB_STAT_CONNECTED ){
-			prj_cache->update( &dbinfo );
-			for( unsigned int i = 0; i < dbinfo->nptype; i++ ){
-				(*part_cache)[i]->update( &dbinfo );
+
+			/* update dbinfo */
+			if( mutex_lock_dbinfo() == 0 ){
+				/* acquired lock, update dbinfo */
+				if( nullptr != dbinfo ){
+					free_dbinfo_t( dbinfo );
+					free( dbinfo );
+					dbinfo = nullptr;
+				}
+				dbinfo = redis_read_dbinfo();
+				if( nullptr == dbinfo ){
+					/* this is a really bad situation */
+					y_log_message( Y_LOG_LEVEL_ERROR, "Database information could not be allocated, program may crash");
+					/* Unlock dbinfo */
+					mutex_unlock_dbinfo();
+				}
+				else {
+					/* Unlock dbinfo */
+					mutex_unlock_dbinfo();
+
+					/* Update caches */
+					prj_cache->update( &dbinfo );
+
+					/* Ensure that the vector is the correct size for the part types */
+					if( dbinfo->nptype > part_cache->size() ){
+						/* Data is out of date, critical to update */
+						mutex_spin_lock_dbinfo();
+						/* Fix the size */
+						unsigned int old_size = part_cache->size();
+
+						part_cache->assign(dbinfo->nptype, nullptr);
+						for( unsigned int i = old_size; i < part_cache->size(); i++){
+							(*part_cache)[i] = new Partcache(dbinfo->ptypes[i].npart, dbinfo->ptypes[i].name);
+							if( (*part_cache)[i]->update( &dbinfo ) ){
+								y_log_message( Y_LOG_LEVEL_ERROR,"Could not update part cache: %s", (*part_cache)[i]->type.c_str()); 
+							}
+						}
+						/* Unlock dbinfo */
+						mutex_unlock_dbinfo();
+						y_log_message( Y_LOG_LEVEL_DEBUG, "Resized partcache to %d", dbinfo->nptype);
+					}
+					else if( dbinfo->nptype < part_cache->size() ){
+						/* Data is out of date, critical to update */
+						mutex_spin_lock_dbinfo();
+						unsigned int old_size = part_cache->size();
+						/* Delete extra caches */
+						for( unsigned int i = dbinfo->nptype; i < old_size ; i++ ){
+							delete ((*part_cache)[i]);
+						}
+						part_cache->resize(dbinfo->nptype);
+						/* Unlock dbinfo */
+						mutex_unlock_dbinfo();
+					}
+					for( unsigned int i = 0; i < part_cache->size() ; i++ ){
+						if( nullptr != (*part_cache)[i] ){
+							if( (*part_cache)[i]->update( &dbinfo ) ){
+								y_log_message( Y_LOG_LEVEL_ERROR,"Could not update part cache: %s", (*part_cache)[i]->type.c_str()); 
+							}
+						}
+					}
+				}
 			}
 		}
-
 		/* sleep for some period of time until refresh */
 		sleep( DB_REFRESH_SEC );
 		y_log_message( Y_LOG_LEVEL_DEBUG, "Finished sleeping for %d seconds in thread_db", DB_REFRESH_SEC );
@@ -211,13 +276,16 @@ static int thread_ui( class Prjcache* prj_cache, std::vector<Partcache *>* part_
 		if( show_new_proj_window ){
 			new_proj_window( &dbinfo );
 		}
+		if( show_new_bom_window ){
+			new_bom_window( &dbinfo );
+		}
 		if( show_import_parts_window ){
 			import_parts_window();
 		}
 		if( show_db_settings_window ){
 			db_settings_window(&db_set );
 		}
-		show_root_window(prj_cache, part_cache);
+		show_root_window( &dbinfo, prj_cache, part_cache);
 		ImGui::End();
 
 		/* End Projects view creation */
@@ -249,7 +317,7 @@ static int thread_ui( class Prjcache* prj_cache, std::vector<Partcache *>* part_
 }
 
 int open_db( struct db_settings_t* set, struct dbinfo_t** info, class Prjcache* prjcache, std::vector< Partcache *>* partcaches){
-	
+	int retval = -1;
 	/* Wait for finish with displaying data */
 	while( PRJDISP_DISPLAYING == prj_disp_stat );
 	
@@ -268,26 +336,49 @@ int open_db( struct db_settings_t* set, struct dbinfo_t** info, class Prjcache* 
 	else {
 		y_log_message( Y_LOG_LEVEL_INFO, "Successfully connected to database");
 
-		int retval = prjcache->update( info );
 
-		/* Ensure that the vector is the correct size for the part types */
-		if( (*info)->nptype != partcaches->size() ){
-			/* Fix the size */
-			partcaches->assign((*info)->nptype, nullptr);
-		}
-
-		/* For all the part types, update the list of part caches */
-		for( unsigned int i = 0; i < (*info)->nptype; i++ ){
-			/* If cache already exists, then erase it */
-			if( nullptr != (*partcaches)[i] ){
-				delete (*partcaches)[i];
+		if( mutex_lock_dbinfo() == 0 ){
+			/* acquired lock, update dbinfo */
+			if( nullptr != dbinfo ){
+				free_dbinfo_t( dbinfo );
+				free( dbinfo );
+				dbinfo = nullptr;
 			}
-			/* Add new type to cache */
-			(*partcaches)[i] = new Partcache((*info)->ptypes[i].npart, (*info)->ptypes[i].name);
-			(*partcaches)[i]->update( &dbinfo );
+			dbinfo = redis_read_dbinfo();
+			if( nullptr == (*info) ){
+				/* this is a really bad situation */
+				y_log_message( Y_LOG_LEVEL_ERROR, "Database information could not be allocated, program may crash");
+			}
+			/* Unlock dbinfo */
+			mutex_unlock_dbinfo();
 		}
 
-		db_stat = DB_STAT_CONNECTED;
+		if( nullptr != info ){
+
+			retval = prjcache->update( info );
+
+			/* Ensure that the vector is the correct size for the part types */
+			if( (*info)->nptype != partcaches->size() ){
+				/* Fix the size */
+				partcaches->assign((*info)->nptype, nullptr);
+				y_log_message( Y_LOG_LEVEL_DEBUG, "Resized partcache to %d", (*info)->nptype);
+			}
+
+			/* For all the part types, update the list of part caches */
+			for( unsigned int i = 0; i < (*info)->nptype; i++ ){
+				/* If cache already exists, then erase it */
+				if( nullptr != (*partcaches)[i] ){
+					delete (*partcaches)[i];
+				}
+				/* Add new type to cache */
+				(*partcaches)[i] = new Partcache((*info)->ptypes[i].npart, (*info)->ptypes[i].name);
+				if( (*partcaches)[i]->update( &dbinfo ) ){
+					y_log_message( Y_LOG_LEVEL_ERROR,"Could not update part cache: %s", (*partcaches)[i]->type.c_str());
+				}
+			}
+
+			db_stat = DB_STAT_CONNECTED;
+		}
 		return retval;
 	}
 }
@@ -304,11 +395,11 @@ int main( int, char** ){
 		y_log_message( Y_LOG_LEVEL_WARNING, "Database connection failed on startup");
 	}
 
-	/* Start UI thread */
-	std::thread ui( thread_ui, prjcache, &partcache );
-
 	/* Start database connection thread */
 	std::thread db( thread_db_connection, prjcache, &partcache );
+
+	/* Start UI thread */
+	std::thread ui( thread_ui, prjcache, &partcache );
 
 	/* Join threads */
 	ui.join();
@@ -324,9 +415,11 @@ int main( int, char** ){
 	/* Disconnect from database */
 	redis_disconnect();
 
-	mutex_lock_dbinfo();
-	free_dbinfo_t( dbinfo );
-	mutex_lock_dbinfo();
+	mutex_spin_lock_dbinfo();
+	if( nullptr != dbinfo ){
+		free_dbinfo_t( dbinfo );
+	}
+	mutex_unlock_dbinfo();
 	free( db_set.hostname );
 	delete prjcache;
 	for( unsigned int i = 0; i < partcache.size(); i++ ){
@@ -340,7 +433,7 @@ int main( int, char** ){
 
 }
 
-static void show_part_select_window( std::vector< Partcache*>* cache, int* selected ){
+static void show_part_select_window( struct dbinfo_t ** info, std::vector< Partcache*>* cache, int* selected ){
 	
 	int open_action = -1;
 	ImGui::Text("Parts");
@@ -362,11 +455,11 @@ static void show_part_select_window( std::vector< Partcache*>* cache, int* selec
 								   ImGuiTreeNodeFlags_SpanFullWidth;
 
 	/* Set colums, items in table */
-	if( ImGui::BeginTable("parts", 3, flags)){
+	if( ImGui::BeginTable("parts", 2, flags)){
 		/* First column will use default _WidthStretch when ScrollX is
 		 * off and _WidthFixed when ScrollX is on */
 		ImGui::TableSetupColumn("Type/Part Number",   	ImGuiTableColumnFlags_NoHide);
-		ImGui::TableSetupColumn("Status",				ImGuiTableColumnFlags_WidthFixed, TEXT_BASE_WIDTH * 12.0f);
+//		ImGui::TableSetupColumn("Status",				ImGuiTableColumnFlags_WidthFixed, TEXT_BASE_WIDTH * 12.0f);
 		ImGui::TableSetupColumn("Quantity",				ImGuiTableColumnFlags_WidthFixed, TEXT_BASE_WIDTH * 18.0f);
 		ImGui::TableHeadersRow();
 
@@ -377,19 +470,22 @@ static void show_part_select_window( std::vector< Partcache*>* cache, int* selec
 		/* Cache header */
 		ImGui::TableNextRow();
 		ImGui::TableNextColumn();
-		mutex_lock_dbinfo();
-		bool node_clicked[dbinfo->nptype] = {false};
-		if( DB_STAT_DISCONNECTED != db_stat ){
-			for( unsigned int i = 0; i < dbinfo->nptype; i++ ){
-				/* Check if item has been clicked */
-				(*cache)[i]->display_parts(&(node_clicked[i]));
-				if( node_clicked[i] ){
-					y_log_message( Y_LOG_LEVEL_DEBUG, "Part type %s is open", (*cache)[i]->type.c_str() );
-					*selected = i;
+//		mutex_spin_lock_dbinfo();
+		//if( nullptr != info && nullptr != (*info) && cache->size() > 0 ){
+		if( cache->size() > 0 ){
+			bool node_clicked[cache->size()] = {false};
+			if( DB_STAT_DISCONNECTED != db_stat ){
+				for( unsigned int i = 0; i < cache->size(); i++ ){
+					/* Check if item has been clicked */
+					(*cache)[i]->display_parts(&(node_clicked[i]));
+					if( node_clicked[i] ){
+						y_log_message( Y_LOG_LEVEL_DEBUG, "Part type %s is open", (*cache)[i]->type.c_str() );
+						*selected = i;
+					}
 				}
 			}
 		}
-		mutex_unlock_dbinfo();
+//		mutex_unlock_dbinfo();
 		prj_disp_stat = PRJDISP_IDLE;
 		ImGui::EndTable();
 	}
@@ -397,46 +493,6 @@ static void show_part_select_window( std::vector< Partcache*>* cache, int* selec
 }
 
 
-static void show_project_select_window( class Prjcache* cache ){
-	
-	int open_action = -1;
-	ImGui::Text("Projects");
-
-	const float TEXT_BASE_WIDTH = ImGui::CalcTextSize("A").x;
-
-	if( open_action != -1 ){
-		ImGui::SetNextItemOpen(open_action != 0);
-	}
-
-	/* Flags for Table */
-	static ImGuiTableFlags flags = ImGuiTableFlags_BordersV | \
-								   ImGuiTableFlags_BordersOuterH | \
-								   ImGuiTableFlags_Resizable | \
-								   ImGuiTableFlags_RowBg | \
-								   ImGuiTableFlags_NoBordersInBody | \
-								   ImGuiTreeNodeFlags_OpenOnArrow | \
-								   ImGuiTreeNodeFlags_OpenOnDoubleClick | \
-								   ImGuiTreeNodeFlags_SpanFullWidth;
-
-	/* Set colums, items in table */
-	if( ImGui::BeginTable("projects", 4, flags)){
-		/* First column will use default _WidthStretch when ScrollX is
-		 * off and _WidthFixed when ScrollX is on */
-		ImGui::TableSetupColumn("Name",   	ImGuiTableColumnFlags_NoHide);
-		ImGui::TableSetupColumn("Date",   	ImGuiTableColumnFlags_WidthFixed, TEXT_BASE_WIDTH * 12.0f);
-		ImGui::TableSetupColumn("Version",	ImGuiTableColumnFlags_WidthFixed, TEXT_BASE_WIDTH * 12.0f);
-		ImGui::TableSetupColumn("Author", 	ImGuiTableColumnFlags_WidthFixed, TEXT_BASE_WIDTH * 18.0f);
-		ImGui::TableHeadersRow();
-
-
-		if( DB_STAT_DISCONNECTED != db_stat ){
-			cache->display_projects();
-		}
-		prj_disp_stat = PRJDISP_IDLE;
-		ImGui::EndTable();
-	}
-
-}
 
 static void show_new_part_popup( struct dbinfo_t** info ){
 	static struct part_t part;
@@ -445,6 +501,7 @@ static void show_new_part_popup( struct dbinfo_t** info ){
 	static unsigned int ninfo = 0;
 	static unsigned int nprice = 0;
 	static unsigned int ndist = 0;
+	static unsigned int ninv = 0;
 
 	/* Info fields */
 	static std::vector<std::string> info_key;
@@ -457,6 +514,11 @@ static void show_new_part_popup( struct dbinfo_t** info ){
 	/* Pricing info */
 	static std::vector<int> price_q;
 	static std::vector<double> price_cost;
+
+	/* Inventory info */
+	static std::vector<std::string> inv_loc;
+	static std::vector<unsigned int> inv_amount;
+
 
 	/* Buffers for text input. Can also be used for santizing inputs */
 	static char quantity[128] = {};
@@ -519,9 +581,9 @@ static void show_new_part_popup( struct dbinfo_t** info ){
 			ImGui::EndCombo();
 		}
 
-		ImGui::Text("Local Stock");
-		ImGui::SameLine(NEWPART_SPACING);
-		ImGui::InputText("##newpart_stock", quantity, 127, ImGuiInputTextFlags_CharsNoBlank | ImGuiInputTextFlags_CharsDecimal );
+//		ImGui::Text("Local Stock");
+//		ImGui::SameLine(NEWPART_SPACING);
+//		ImGui::InputText("##newpart_stock", quantity, 127, ImGuiInputTextFlags_CharsNoBlank | ImGuiInputTextFlags_CharsDecimal );
 
 		ImGui::Spacing();
 
@@ -537,6 +599,10 @@ static void show_new_part_popup( struct dbinfo_t** info ){
 		ImGui::Text("Number of price breaks");
 		ImGui::SameLine(NEWPART_SPACING);
 		ImGui::InputInt("##newpart_nprice", (int*)&nprice);
+
+		ImGui::Text("Number of inventory locations");
+		ImGui::SameLine(NEWPART_SPACING);
+		ImGui::InputInt("##newpart_ninv", (int*)&ninv);
 
 		/* Resize vectors as needed */
 
@@ -636,13 +702,48 @@ static void show_new_part_popup( struct dbinfo_t** info ){
 			price_q_ident = "##price_q" + std::to_string(i);
 			price_cost_ident = "##price_cost" + std::to_string(i);
 
-			ImGui::InputInt(price_q_ident.c_str(), &(*price_q_itr), ImGuiInputTextFlags_CharsNoBlank );
+			ImGui::InputInt(price_q_ident.c_str(), &(*price_q_itr));
 			ImGui::SameLine(NEWPART_SPACING);
-			ImGui::InputDouble(price_cost_ident.c_str(), &(*price_cost_itr), ImGuiInputTextFlags_CharsNoBlank );
+			ImGui::InputDouble(price_cost_ident.c_str(), &(*price_cost_itr));
 
 			price_q_itr++;
 			price_cost_itr++;
 		}
+
+
+		/* Inventory locations */
+		if( ninv > 0 ){
+			if( inv_loc.size() != ninv){
+				inv_loc.resize( ninv );
+			}
+			if( inv_amount.size() != ninv ){
+				inv_amount.resize( ninv );
+			}
+			ImGui::Text("Inventory Locations");
+			ImGui::Text("Location"); ImGui::SameLine(NEWPART_SPACING); ImGui::Text("Quantitiy");
+		}
+		/* Inventory entries */
+		std::vector<std::string>::iterator inv_loc_itr;
+		inv_loc_itr = inv_loc.begin();
+		std::vector<unsigned int>::iterator inv_amount_itr;
+		inv_amount_itr = inv_amount.begin();
+
+		std::string inv_loc_ident;
+		std::string inv_amount_ident;
+
+		for( unsigned int i = 0; i < ninv; i++ ){
+			inv_loc_ident = "##inv_loc" + std::to_string(i);
+			inv_amount_ident = "##inv_amount" + std::to_string(i);
+
+			ImGui::InputText(inv_loc_ident.c_str(), &(*inv_loc_itr), ImGuiInputTextFlags_CharsNoBlank );
+			ImGui::SameLine(NEWPART_SPACING);
+			ImGui::InputInt(inv_amount_ident.c_str(), (int*)&(*inv_amount_itr));
+
+			inv_loc_itr++;
+			inv_amount_itr++;
+		}
+
+
 
 		/* Save and cancel buttons */
 		if( ImGui::Button("Save", ImVec2(0,0)) ){
@@ -673,16 +774,99 @@ static void show_new_part_popup( struct dbinfo_t** info ){
             	else {
             		part.status = pstat_unknown;
             	}
-				struct dbinfo_ptype_t* ptype = NULL;
-				/* Find existing part type in database info */
-				mutex_spin_lock_dbinfo();
-				for( unsigned int i = 0; i < (*info)->nptype; i++){
-					if( (*info)->ptypes[i].name == type ){
-						ptype = &((*info)->ptypes[i]);
-					}
-						
+
+
+				/* Store variable data information */
+				part.info_len = ninfo;
+				part.info = (struct part_info_t *)calloc( part.info_len, sizeof( struct part_info_t ) );
+				if( nullptr == part.info ){
+					y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate memory for info array in new part");
+					free_part_addr_t( &part );
+					show_new_part_window = false;
 				}
-				mutex_unlock_dbinfo();
+				/* copy data over */
+				for( unsigned int i = 0; i < part.info_len; i++ ){
+					part.info[i].key = (char*)calloc( info_key[i].size()+1, sizeof( char ) );
+					if( nullptr == part.info[i].key ){
+						y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate memory for info key in new part");
+						free_part_addr_t( &part );
+						show_new_part_window = false;
+					}
+					strncpy(part.info[i].key, info_key[i].c_str(), info_key[i].size() );
+					
+					part.info[i].val = (char*)calloc( info_val[i].size()+1, sizeof( char ) );
+					if( nullptr == part.info[i].val ){
+						y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate memory for info val in new part");
+						free_part_addr_t( &part );
+						show_new_part_window = false;
+					}
+					strncpy(part.info[i].val, info_val[i].c_str(), info_val[i].size() );
+				}
+
+				part.price_len = nprice;
+
+				part.price= (struct part_price_t*)calloc( part.price_len, sizeof( struct part_price_t ) );
+				if( nullptr == part.price ){
+					y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate memory for price array in new part");
+					free_part_addr_t( &part );
+					show_new_part_window = false;
+				}
+				/* copy data over */
+				for( unsigned int i = 0; i < part.price_len; i++ ){
+					part.price[i].quantity = price_q[i];
+					part.price[i].price = price_cost[i];
+				}
+
+
+				part.dist_len = ndist;
+				part.dist = (struct part_dist_t*)calloc( part.dist_len, sizeof( struct part_dist_t ) );
+				if( nullptr == part.dist ){
+					y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate memory for distributor array in new part");
+					free_part_addr_t( &part );
+					show_new_part_window = false;
+				}
+				/* copy data over */
+				for( unsigned int i = 0; i < part.dist_len; i++ ){
+					part.dist[i].name = (char*)calloc( dist_name[i].size()+1, sizeof( char ) );
+					if( nullptr == part.dist[i].name ){
+						y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate memory for distributor name in new part");
+						free_part_addr_t( &part );
+						show_new_part_window = false;
+					}
+					strncpy(part.dist[i].name, dist_name[i].c_str(), dist_name[i].size() );
+					
+					part.dist[i].pn = (char*)calloc( dist_pn[i].size()+1, sizeof( char ) );
+					if( nullptr == part.dist[i].pn ){
+						y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate memory for distributor part number in new part");
+						free_part_addr_t( &part );
+						show_new_part_window = false;
+					}
+					strncpy(part.dist[i].pn, dist_pn[i].c_str(), dist_pn[i].size() );
+				}
+
+				part.inv_len = ninv; 
+				part.inv = (struct part_inv_t*)calloc( part.inv_len, sizeof( struct part_inv_t ) );
+				if( nullptr == part.inv ){
+					y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate memory for price array in new part");
+					free_part_addr_t( &part );
+					show_new_part_window = false;
+				}
+				/* copy data over */
+				for( unsigned int i = 0; i < part.inv_len; i++ ){
+					part.inv[i].q = inv_amount[i]; 
+					part.inv[i].loc = dbinv_str_to_loc( info, inv_loc[i].c_str(), inv_loc[i].size() ); 
+					if( part.inv[i].loc == -1 ){
+						y_log_message(Y_LOG_LEVEL_ERROR, "Could not find inventory location; defaulting to location '0' ");
+						part.inv[i].loc = 0;
+					}
+				}
+				unsigned int ptype_idx = dbinfo_get_ptype_index( info, type );
+				struct dbinfo_ptype_t* ptype = nullptr;
+				if( ptype_idx != (unsigned int)(-1) ){
+					mutex_spin_lock_dbinfo();
+					ptype = &((*info)->ptypes[ptype_idx]);
+					mutex_unlock_dbinfo();
+				}
 	
 				if( nullptr == ptype ){
 					/* Type doesn't exist in database, need to add the new type */
@@ -707,7 +891,7 @@ static void show_new_part_popup( struct dbinfo_t** info ){
 						(*info)->ptypes = tmp;
 
 						/* Initialize dbinfo_ptype_t */
-						(*info)->ptypes[(*info)->nptype - 1].name = (char *)calloc( strnlen( type, sizeof( type )), sizeof( char ) );
+						(*info)->ptypes[(*info)->nptype - 1].name = (char *)calloc( strnlen( type, sizeof( type )) + 1, sizeof( char ) );
 						if( nullptr == (*info)->ptypes[(*info)->nptype - 1].name ){
 							y_log_message(Y_LOG_LEVEL_ERROR, "Could not allocate memory for new database part type");							
 							err_flg = 3;
@@ -733,9 +917,6 @@ static void show_new_part_popup( struct dbinfo_t** info ){
 					}
 
 				}
-				else {
-					err_flg = 1;
-				}
 				if( !err_flg ) {
 					/* Increment part in dbinfo */
 					ptype->npart++;
@@ -755,11 +936,21 @@ static void show_new_part_popup( struct dbinfo_t** info ){
 			show_new_part_window = false;
 			
 			/* Clear all input data */
+#if 0
 			part.q = 0;
 			part.ipn = 0;
 			part.type = NULL;
 			part.mpn = NULL;
 			part.mfg = NULL;
+#endif
+			info_key.clear();
+			info_val.clear();
+			dist_name.clear();
+			dist_pn.clear();
+			price_q.clear();
+			price_cost.clear();
+
+			free_part_addr_t( &part );
 	
 			memset( quantity, 0, 127);
 			memset( type, 0, 255 );
@@ -773,11 +964,21 @@ static void show_new_part_popup( struct dbinfo_t** info ){
 		if ( ImGui::Button("Cancel", ImVec2(0, 0) )){
 			show_new_part_window = false;
 			/* Clear all input data */
+#if 0
 			part.q = 0;
 			part.ipn = 0;
 			part.type = NULL;
 			part.mpn = NULL;
 			part.mfg = NULL;
+#endif
+
+			info_key.clear();
+			info_val.clear();
+			dist_name.clear();
+			dist_pn.clear();
+			price_q.clear();
+			price_cost.clear();
+			free_part_addr_t( &part );
 			memset( quantity, 0, 127);
 			memset( type, 0, 255 );
 			memset( mfg, 0, 511 );
@@ -872,7 +1073,7 @@ static void new_proj_window( struct dbinfo_t** info ){
 
 			ImGui::Text("Version");
 			ImGui::SameLine();
-			ImGui::InputText(sub_ver_ident.c_str(), (char *)(*subprj_ver_itr).c_str(), 255 );
+			ImGui::InputText(sub_ver_ident.c_str(), &(*subprj_ver_itr), ImGuiInputTextFlags_CharsNoBlank);
 
 			subprj_ver_itr++;
 			subprj_ipn_itr++;
@@ -895,11 +1096,11 @@ static void new_proj_window( struct dbinfo_t** info ){
 			ImGui::Text("BOM %d", i+1);
 			ImGui::Text("Internal Part Number");
 			ImGui::SameLine();
-			ImGui::InputInt(bom_ipn_ident.c_str(), (int *)&(*bom_ipn_itr) );
+			ImGui::InputInt(bom_ipn_ident.c_str(), (int *)&(*bom_ipn_itr));
 
 			ImGui::Text("Version");
 			ImGui::SameLine();
-			ImGui::InputText(bom_ver_ident.c_str(), (char *)(*bom_ver_itr).c_str(), 255 );
+			ImGui::InputText(bom_ver_ident.c_str(), &(*bom_ver_itr) );
 
 			bom_ver_itr++;
 			bom_ipn_itr++;
@@ -1012,6 +1213,167 @@ static void new_proj_window( struct dbinfo_t** info ){
 
 }
 
+static void new_bom_window( struct dbinfo_t** info ){
+	static struct bom_t * bom = NULL;
+
+	/* Buffers for text input. Can also be used for santizing inputs */
+	static char version[256] = {};
+	static char name[1024] = {};
+	static unsigned int nparts = 0;
+
+	static std::vector<std::string> line_name;
+	static std::vector<unsigned int> line_q;
+
+
+	/* Ensure popup is in the center */
+	ImVec2 center = ImGui::GetMainViewport()->GetCenter();
+	ImGui::SetNextWindowPos(center, ImGuiCond_Appearing, ImVec2( 0.5f, 0.5f));
+
+	ImGuiWindowFlags flags =   ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoCollapse \
+							 | ImGuiWindowFlags_NoSavedSettings;
+	if( ImGui::Begin("New BOM Window",&show_new_bom_window, flags ) ){
+		ImGui::Text("Enter part details below");
+		ImGui::Separator();
+
+		/* Text entry fields */
+		ImGui::Text("BOM Name");
+		ImGui::SameLine();
+		ImGui::InputText("##newbom_name", name, (sizeof(name) - 1));
+
+		ImGui::Text("Version");
+		ImGui::SameLine();
+		ImGui::InputText( "##newbom_version", version, sizeof(version) - 1, ImGuiInputTextFlags_CharsNoBlank );
+
+		ImGui::Text("Number of Line Items");
+		ImGui::SameLine();
+		ImGui::InputInt("##newbom_lineitems", (int *)&nparts);
+
+		/* Figure out what size the vectors should be */
+		if( nparts > 0){
+			line_name.resize(nparts);
+			line_q.resize(nparts);
+		}
+
+		/* Subprojects entries */
+		std::vector<std::string>::iterator line_name_itr;
+		std::vector<unsigned int>::iterator line_q_itr;
+		line_name_itr = line_name.begin();
+		line_q_itr = line_q.begin();
+
+		/* Type will be filled out when searching for part */
+		std::string line_pn_ident;
+		std::string line_q_ident;
+
+		for( unsigned int i = 0; i < nparts; i++ ){
+			line_pn_ident = "##line_pn" + std::to_string(i);
+			line_q_ident = "##line_q" + std::to_string(i);
+
+			ImGui::Text("#%d", i+1);
+			ImGui::Text("Manufacturer Part Number");
+			ImGui::SameLine();
+			ImGui::InputText(line_pn_ident.c_str(), &(*line_name_itr), ImGuiInputTextFlags_CharsNoBlank  );
+
+			ImGui::Text("Quantity");
+			ImGui::SameLine();
+			ImGui::InputInt(line_q_ident.c_str(), (int *)&(*line_q_itr));
+
+			line_name_itr++;
+			line_q_itr++;
+
+		}
+
+		
+
+
+		/* Save and cancel buttons */
+		if( ImGui::Button("Save", ImVec2(0,0)) ){
+
+			/* Check if valid to copy */
+			bom = (struct bom_t *)calloc(1, sizeof(struct bom_t));
+			if( nullptr == bom ){
+				y_log_message(Y_LOG_LEVEL_ERROR, "Could not allocate memory for saving new bom");
+				show_new_bom_window = false;
+				return;
+			}
+			/* No checks because I'll totally do it later (hopefully) */
+			bom->nitems = nparts;
+
+			bom->name = (char *)calloc( strnlen(name, sizeof(name)) + 1, sizeof(char) );
+			strncpy( bom->name, name, strnlen(name, sizeof(name)) + 1 );
+
+			bom->ver = (char *)calloc( strnlen(version, sizeof(version)) + 1 , sizeof( char ) );
+			strncpy( bom->ver, version, strnlen(version, sizeof(version)) + 1 );
+
+			/* Create new part and line item arrays */
+
+			/* Parts */
+			bom->parts = (struct part_t**)calloc( bom->nitems, sizeof( struct part_t*) );
+			if( nullptr == bom->parts) {
+				y_log_message(Y_LOG_LEVEL_ERROR, "Could not allocate memory for new bom part array");
+				show_new_proj_window = false;
+				return;
+			}
+			for( unsigned int i = 0; i < bom->nitems; i++){
+				y_log_message(Y_LOG_LEVEL_DEBUG, "Get part number: %s", line_name[i].c_str());
+				bom->parts[i] = get_part_from_pn( line_name[i].c_str() );
+			}
+
+			/* Line items */
+			bom->line = (struct bom_line_t*)calloc( bom->nitems, sizeof( struct bom_line_t) );
+			if( nullptr == bom->line) {
+				y_log_message(Y_LOG_LEVEL_ERROR, "Could not allocate memory for new bom line item array");
+				show_new_proj_window = false;
+				return;
+			}
+			for( unsigned int i = 0; i < bom->nitems; i++){
+				bom->line[i].type = (char *)calloc( strnlen(bom->parts[i]->type, 1024) + 1, sizeof( char ) );
+				strncpy( bom->line[i].type, bom->parts[i]->type, strnlen(bom->parts[i]->type, 1024));
+
+				bom->line[i].q = line_q[i];
+				bom->line[i].ipn = bom->parts[i]->ipn;
+
+			}
+
+			/* Increment database information */
+			mutex_spin_lock_dbinfo();
+			(*info)->nbom++;
+			bom->ipn = (*info)->nbom;
+			/* Perform the write */
+			redis_write_bom( bom );
+			y_log_message(Y_LOG_LEVEL_DEBUG, "New BOM written to database");
+			show_new_bom_window = false;
+
+
+			redis_write_dbinfo( *info );
+
+			/* Make sure to read back the same data incase something went wrong */
+			if( nullptr != (*info) ){
+				/* free existing data */
+				free_dbinfo_t( (*info) );
+				free( *info );
+			}
+			(*info) = redis_read_dbinfo();
+
+			mutex_unlock_dbinfo();
+
+			/* Clear all input data */
+			free_bom_t( bom );
+			bom = NULL;
+
+			y_log_message(Y_LOG_LEVEL_DEBUG, "Cleared out bom, finished writing");
+
+		}
+		ImGui::SetItemDefaultFocus();
+		ImGui::SameLine();
+		if ( ImGui::Button("Cancel", ImVec2(0, 0) )){
+			show_new_bom_window = false;
+		}
+
+		ImGui::End();
+	}
+
+}
+
 
 
 
@@ -1086,7 +1448,7 @@ static void db_settings_window( struct db_settings_t * set ){
 		
 		ImGui::Text("Hostname ");
 		ImGui::SameLine();
-		ImGui::InputText("##database_hostname", hostname, sizeof( hostname ) );
+		ImGui::InputText("##database_hostname", hostname, sizeof( hostname ), ImGuiInputTextFlags_CharsNoBlank );
 
 		ImGui::Text("Port ");
 		ImGui::SameLine();
@@ -1150,6 +1512,11 @@ static void show_menu_bar( class Prjcache* prjcache, std::vector<Partcache*>* pa
 				y_log_message(Y_LOG_LEVEL_DEBUG, "New Project menu clicked");
 				show_new_proj_window = true;			
 			}
+			else if( ImGui::MenuItem("New BOM") ){
+				/* Create part_t, then provide result to redis_write_part */
+				y_log_message(Y_LOG_LEVEL_DEBUG, "New BOM menu clicked");
+				show_new_bom_window = true;
+			}
 			else if( ImGui::MenuItem("New Part") ){
 				/* Create part_t, then provide result to redis_write_part */
 				y_log_message(Y_LOG_LEVEL_DEBUG, "New Part menu clicked");
@@ -1193,6 +1560,12 @@ static void show_menu_bar( class Prjcache* prjcache, std::vector<Partcache*>* pa
 			}
 			else if( ImGui::MenuItem("Inventory View") ){
 				current_view = inventory_view;
+			}
+			else if( !show_all_projects && ImGui::MenuItem("Show All Projects") ){
+				show_all_projects = true;
+			}
+			else if( show_all_projects && ImGui::MenuItem("Hide All Projects") ){
+				show_all_projects = false;
 			}
 			ImGui::EndMenu();
 		}
@@ -1270,305 +1643,8 @@ static void show_menu_bar( class Prjcache* prjcache, std::vector<Partcache*>* pa
 
 }
 
-static void proj_bom_tab( struct bom_t* bom  ){
 
-	static part_t *selected_item = NULL;	
-
-
-	ImGui::Text("Project BOM Tab");
-
-	/* BOM Specific table view */
-
-	static ImGuiTableFlags table_flags = ImGuiTableFlags_SizingStretchProp | \
-										 ImGuiTableFlags_Resizable | \
-										 ImGuiTableFlags_NoSavedSettings | \
-										 ImGuiTableFlags_BordersOuter | \
-										 ImGuiTableFlags_Sortable | \
-										 ImGuiTableFlags_SortMulti | \
-										 ImGuiTableFlags_ScrollY | \
-										 ImGuiTableFlags_BordersV | \
-										 ImGuiTableFlags_Reorderable | \
-										 ImGuiTableFlags_ContextMenuInBody;
-
-	if( ImGui::BeginTable("BOM", 5, table_flags ) ){
-		ImGui::TableSetupColumn("#", ImGuiTableColumnFlags_DefaultSort);
-		ImGui::TableSetupColumn("P/N", ImGuiTableColumnFlags_PreferSortAscending);
-		ImGui::TableSetupColumn("Manufacturer", ImGuiTableColumnFlags_PreferSortAscending);
-		ImGui::TableSetupColumn("Quantitiy", ImGuiTableColumnFlags_PreferSortAscending);
-		ImGui::TableSetupColumn("Type", ImGuiTableColumnFlags_PreferSortAscending);
-
-		ImGui::TableHeadersRow();
-
-#if 0 
-		/* Sort the bom items list based off of what is currently
-		 * selected for sorting */
-		if(ImGuiTableSortSpecs* bom_sort_specs = ImGui::TableGetSortSpecs()){
-			/* Criteria changed; need to resort */
-			if( bom_sort_specs->SpecsDirty ){
-				if( bom.item.size() > 1 ){
-					//qsort( &bom.item[0], (size_t)bom.item.size(), sizeof( bom.item[0] ) );	
-				}
-				bom_sort_specs->SpecsDirty = false;
-			}
-		}
-#endif
-			
-		if( nullptr != bom ){
-			/* Used for selecting specific item in BOM */
-			bool item_sel[ bom->nitems ] = {};
-			char line_item_label[64]; /* May need to change size at some point */
-
-			for( int i = 0; i < bom->nitems; i++){
-				ImGui::TableNextRow();
-
-				/* BOM Line item */
-				ImGui::TableSetColumnIndex(0);
-				/* Selectable line item number */
-				snprintf(line_item_label, 64, "%d", i);
-				ImGui::Selectable(line_item_label, &item_sel[i], ImGuiSelectableFlags_SpanAllColumns);
-
-				/* Part number */
-				ImGui::TableSetColumnIndex(1);
-				ImGui::Text("%s", bom->parts[i]->mpn );
-
-				/* Manufacturer */
-				ImGui::TableSetColumnIndex(2);
-				ImGui::Text("%s", bom->parts[i]->mfg );
-
-				/* Quantity */
-				ImGui::TableSetColumnIndex(3);
-				ImGui::Text("%d", bom->line[i].q );
-
-				/* Type */
-				ImGui::TableSetColumnIndex(4);
-				ImGui::Text("%s", bom->parts[i]->type);
-
-				if( item_sel[i] ){
-					/* Open popup for part info */
-					ImGui::OpenPopup("PartInfo");
-					y_log_message(Y_LOG_LEVEL_DEBUG, "%s was selected", bom->parts[i]->mpn);
-#if 0
-					if( nullptr != selected_item ){
-						free_part_t( selected_item );
-						selected_item = nullptr;
-					}
-					selected_item = copy_part_t(bom->parts[i]);
-#endif
-					selected_item = bom->parts[i];
-				}
-
-			}
-			/* Popup window for Part info */
-			ImVec2 center = ImGui::GetMainViewport()->GetCenter();
-			ImGui::SetNextWindowPos(center, ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
-			if( ImGui::BeginPopupModal("PartInfo", NULL, ImGuiWindowFlags_AlwaysAutoResize) ){
-				ImGui::Text("Part Info");
-				ImGui::Separator();
-				
-				if( NULL != selected_item ){
-					ImGui::Text("Part Number:"); 
-					ImGui::SameLine(PARTINFO_SPACING); 
-					ImGui::Text("%s", selected_item->mpn);
-
-					ImGui::Text("Part Status:");
-					ImGui::SameLine(PARTINFO_SPACING); 
-					switch( selected_item->status ){
-						case pstat_prod:
-							ImGui::Text("In Production");
-							break;
-						case pstat_low_stock:
-							ImGui::Text("Low Stock Available");
-							break;
-						case pstat_unavailable:
-							ImGui::Text("Unavailable");
-							break;
-						case pstat_nrnd:
-							ImGui::Text("Not Recommended for New Designs");
-							break;
-						case pstat_obsolete:
-							ImGui::Text("Obsolete");
-							break;
-						case pstat_unknown:
-						default:
-							/* FALLTHRU */
-							ImGui::Text("Unknown");
-							break;
-					}
-					ImGui::Text("Part Fields:");
-					ImGui::Indent();
-					for( unsigned int i = 0 ; i < selected_item->info_len; i++ ){
-						ImGui::Text("%s", selected_item->info[i].key );
-						ImGui::SameLine(PARTINFO_SPACING); 
-						ImGui::Text("%s", selected_item->info[i].val);
-					}
-					ImGui::Unindent();
-					ImGui::Spacing();
-
-					ImGui::Text("Inventory");
-					ImGui::Indent();
-					for( unsigned int i = 0; i <  selected_item->inv_len; i++ ){
-						mutex_lock_dbinfo();
-						ImGui::Text("%s", dbinfo->invs[selected_item->inv[i].loc].name);	
-						mutex_unlock_dbinfo();
-						ImGui::SameLine(PARTINFO_SPACING); 
-						ImGui::Text("%ld", selected_item->inv[i].q  );
-					}
-					ImGui::Unindent();
-					ImGui::Spacing();
-
-					ImGui::Text("Distributor P/Ns:");
-					ImGui::Indent();
-					for( unsigned int i = 0; i <  selected_item->dist_len; i++ ){
-						ImGui::Text("%s", selected_item->dist[i].name);	
-						ImGui::SameLine(PARTINFO_SPACING); 
-						ImGui::Text("%s", selected_item->dist[i].pn  );
-					}
-					ImGui::Unindent();
-					ImGui::Spacing();
-
-					ImGui::Text("Price Breaks:");
-					ImGui::Indent();
-					for( unsigned int i = 0; i <  selected_item->price_len; i++ ){
-						ImGui::Text("%ld:", selected_item->price[i].quantity);	
-						ImGui::SameLine(PARTINFO_SPACING); 
-						ImGui::Text("$%0.6lf", selected_item->price[i].price  );
-					}
-					ImGui::Unindent();
-					ImGui::Spacing();
-				}
-				else{
-					ImGui::Text("Part Number not found");
-				}
-
-				ImGui::Separator();
-	
-				if( ImGui::Button("OK", ImVec2(120,0))){
-					if( nullptr != selected_item ){
-						selected_item = nullptr;
-					}
-					
-					ImGui::CloseCurrentPopup();
-				}
-				ImGui::SetItemDefaultFocus();
-				
-				ImGui::EndPopup();
-			}
-		}
-		else{
-			y_log_message(Y_LOG_LEVEL_ERROR, "Issue getting bom for project bom tab");
-		}
-		ImGui::EndTable();
-	}
-
-}
-
-static void proj_info_tab( struct proj_t* prj, int* bom_index ){
-
-	static unsigned int nitems = 0;
-	static unsigned int last_prjipn = 0;
-
-	/* Check if already retrieved data from this project */
-	if( last_prjipn != prj->ipn ){
-		nitems = get_num_all_proj_items( prj );
-		last_prjipn = prj->ipn;
-	}
-
-	/* Show information about project with selections for versions etc */
-	ImGui::Text("Project Information Tab");
-	ImGui::Separator();
-	
-	ImGui::Text("Project Part Number: %s", prj->pn);
-
-	/* Project Version */
-	ImGui::Text("Project Version: %s", prj->ver);
-	
-	ImGui::Spacing();
-	ImGui::Text("Project Bill of Materials ");
-	/* BOM Selection */
-	const char* default_bom_ver = prj->boms[*bom_index].ver;
-	if( ImGui::BeginCombo("##selprj_bom", default_bom_ver ) ){
-		for( unsigned int i = 0; i < prj->nboms; i++ ){
-			const bool is_selected = (*bom_index == i);
-			if( ImGui::Selectable( prj->boms[i].ver, is_selected ) ){
-				*bom_index = i;
-			}
-			if( is_selected ){
-				ImGui::SetItemDefaultFocus();
-			}
-		}	
-
-		ImGui::EndCombo();
-	}
-
-	ImGui::Spacing();
-
-	ImGui::Text("Number of parts in BOM: %d", nitems);
-
-}
-
-static void proj_data_window( class Prjcache* cache ){
-	static int bom_index = 0;
-	static bom_t* bom = nullptr;
-	/* Show BOM/Information View */
-	ImGuiTabBarFlags tabbar_flags = ImGuiTabBarFlags_None;
-	if( ImGui::BeginTabBar("Project Info", tabbar_flags ) ){
-		if( ImGui::BeginTabItem("Info") ){
-			proj_info_tab( cache->get_selected(), &bom_index );
-			ImGui::EndTabItem();
-		}
-		if( ImGui::BeginTabItem("BOM") ){
-			/* Copy BOM since it could be corrupted otherwise */
-			if( nullptr != bom  && bom->ipn != cache->get_selected()->boms[bom_index].bom->ipn ){
-				/* Only free the bom copy if a new selection has been made */
-				free_bom_t( bom );
-				bom = nullptr;
-			}
-			if( nullptr == bom ){
-				/* Simpler handling since regardless if different selection or
-				 * never initialized, can now copy data */
-				bom = copy_bom_t(cache->get_selected()->boms[bom_index].bom);
-			}
-			proj_bom_tab( bom );
-			ImGui::EndTabItem();
-		}
-		
-		ImGui::EndTabBar();
-	}
-
-}
-
-static void show_project_view( class Prjcache* cache, ImGuiTableFlags table_flags ){
-	if( ImGui::BeginTable("view_split", 2, table_flags) ){
-		ImGui::TableNextRow();
-
-		/* Project view on the left */
-		ImGui::TableSetColumnIndex(0);
-		/* Show project view */
-		ImGui::BeginChild("Project Selector", ImVec2(ImGui::GetContentRegionAvail().x * 0.95f, ImGui::GetContentRegionAvail().y * 0.95f ));
-		if( nullptr != cache && DB_STAT_DISCONNECTED != db_stat ){
-			show_project_select_window(cache);
-		}
-		ImGui::EndChild();
-
-		/* Info view on the right */
-		ImGui::TableSetColumnIndex(1);
-		ImGui::BeginChild("Project Information", ImVec2(ImGui::GetContentRegionAvail().x * 0.95f, ImGui::GetContentRegionAvail().y*0.95f));
-
-		/* Get selected project */
-		if( nullptr != cache->get_selected() ){
-			proj_data_window( cache );
-		} 
-
-		ImGui::EndChild();
-		ImGui::EndTable();	
-	}
-
-}
-
-
-
-
-static void part_info_tab( class Partcache* cache ){
+static void part_info_tab( struct dbinfo_t** info, class Partcache* cache ){
 
 	static part_t *selected_item = NULL;	
 
@@ -1619,6 +1695,7 @@ static void part_info_tab( class Partcache* cache ){
 			struct part_t* tmp = nullptr;
 			for( int i = 0; i < cache->items(); i++){
 				ImGui::TableNextRow();
+#if 0
 				if( nullptr != part ){
 					free_part_t( part );
 					part = nullptr;
@@ -1626,7 +1703,8 @@ static void part_info_tab( class Partcache* cache ){
 				tmp = cache->read(i);
 				/* Copy part to temporary storage */
 				part = copy_part_t( tmp );
-
+#endif
+				part = cache->read(i);
 				/* Part number */
 				ImGui::TableSetColumnIndex(0);
 				snprintf(part_mpn_label, 64, "%s", part->mpn);
@@ -1638,7 +1716,11 @@ static void part_info_tab( class Partcache* cache ){
 
 				/* Quantity */
 				ImGui::TableSetColumnIndex(2);
-				ImGui::Text("%d", part->q );
+				unsigned int total = 0;
+				for( unsigned int i = 0; i < part->inv_len; i++ ){
+					total += part->inv[i].q;	
+				}
+				ImGui::Text("%d", total );
 
 				/* Type */
 				ImGui::TableSetColumnIndex(3);
@@ -1684,107 +1766,14 @@ static void part_info_tab( class Partcache* cache ){
 					selected_item = copy_part_t(part);
 				}
 
-				if( nullptr != part ){
-					free_part_t( part );
-					part = nullptr;
-				}
+//				if( nullptr != part ){
+//					free_part_t( part );
+//					part = nullptr;
+//				}
 
 			}
 			/* Popup window for Part info */
-			ImVec2 center = ImGui::GetMainViewport()->GetCenter();
-			ImGui::SetNextWindowPos(center, ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
-			if( ImGui::BeginPopupModal("PartInfo", NULL, ImGuiWindowFlags_AlwaysAutoResize) ){
-				ImGui::Text("Part Info");
-				ImGui::Separator();
-				
-				if( NULL != selected_item ){
-					ImGui::Text("Part Number:"); 
-					ImGui::SameLine(PARTINFO_SPACING); 
-					ImGui::Text("%s", selected_item->mpn);
-
-					ImGui::Text("Part Status:");
-					ImGui::SameLine(PARTINFO_SPACING); 
-					switch( selected_item->status ){
-						case pstat_prod:
-							ImGui::Text("In Production");
-							break;
-						case pstat_low_stock:
-							ImGui::Text("Low Stock Available");
-							break;
-						case pstat_unavailable:
-							ImGui::Text("Unavailable");
-							break;
-						case pstat_nrnd:
-							ImGui::Text("Not Recommended for New Designs");
-							break;
-						case pstat_obsolete:
-							ImGui::Text("Obsolete");
-							break;
-						case pstat_unknown:
-						default:
-							/* FALLTHRU */
-							ImGui::Text("Unknown");
-							break;
-					}
-					ImGui::Text("Part Fields:");
-					ImGui::Indent();
-					for( unsigned int i = 0 ; i < selected_item->info_len; i++ ){
-						ImGui::Text("%s", selected_item->info[i].key );
-						ImGui::SameLine(PARTINFO_SPACING); 
-						ImGui::Text("%s", selected_item->info[i].val);
-					}
-					ImGui::Unindent();
-					ImGui::Spacing();
-
-					ImGui::Text("Inventory");
-					ImGui::Indent();
-					for( unsigned int i = 0; i <  selected_item->inv_len; i++ ){
-						mutex_lock_dbinfo();
-						ImGui::Text("%s", dbinfo->invs[selected_item->inv[i].loc].name);	
-						mutex_unlock_dbinfo();
-						ImGui::SameLine(PARTINFO_SPACING); 
-						ImGui::Text("%ld", selected_item->inv[i].q  );
-					}
-					ImGui::Unindent();
-					ImGui::Spacing();
-
-					ImGui::Text("Distributor P/Ns:");
-					ImGui::Indent();
-					for( unsigned int i = 0; i <  selected_item->dist_len; i++ ){
-						ImGui::Text("%s", selected_item->dist[i].name);	
-						ImGui::SameLine(PARTINFO_SPACING); 
-						ImGui::Text("%s", selected_item->dist[i].pn  );
-					}
-					ImGui::Unindent();
-					ImGui::Spacing();
-
-					ImGui::Text("Price Breaks:");
-					ImGui::Indent();
-					for( unsigned int i = 0; i <  selected_item->price_len; i++ ){
-						ImGui::Text("%ld:", selected_item->price[i].quantity);	
-						ImGui::SameLine(PARTINFO_SPACING); 
-						ImGui::Text("$%0.6lf", selected_item->price[i].price  );
-					}
-					ImGui::Unindent();
-					ImGui::Spacing();
-				}
-				else{
-					ImGui::Text("Part Number not found");
-				}
-
-				ImGui::Separator();
-	
-				if( ImGui::Button("OK", ImVec2(120,0))){
-					if( nullptr != selected_item ){
-						selected_item = nullptr;
-					}
-					
-					ImGui::CloseCurrentPopup();
-				}
-				ImGui::SetItemDefaultFocus();
-				
-				ImGui::EndPopup();
-			}
+			partinfo_window( info, selected_item );
 		}
 		else{
 			y_log_message(Y_LOG_LEVEL_ERROR, "Issue getting selected item for part type info tab");
@@ -1823,7 +1812,7 @@ static void part_analytic_tab( class Partcache* cache ){
 
 }
 
-static void part_data_window( std::vector< Partcache*>* cache, int index ){
+static void part_data_window( struct dbinfo_t** info,  std::vector< Partcache*>* cache, int index ){
 	static part_t* p = nullptr;
 	static class Partcache* selected = (*cache)[index];
 	/* Show BOM/Information View */
@@ -1840,7 +1829,7 @@ static void part_data_window( std::vector< Partcache*>* cache, int index ){
 			ImGui::EndTabItem();
 		}
 		if( ImGui::BeginTabItem("Info") ){
-			part_info_tab( selected );
+			part_info_tab( info, selected );
 			ImGui::EndTabItem();
 		}
 		
@@ -1849,7 +1838,7 @@ static void part_data_window( std::vector< Partcache*>* cache, int index ){
 
 }
 
-static void show_part_view( std::vector< Partcache*>* cache, ImGuiTableFlags table_flags ){
+static void show_part_view( struct dbinfo_t** info,  std::vector< Partcache*>* cache, ImGuiTableFlags table_flags ){
 	static int selected_cache = 0;
 
 	if( ImGui::BeginTable("view_split", 2, table_flags) ){
@@ -1859,7 +1848,7 @@ static void show_part_view( std::vector< Partcache*>* cache, ImGuiTableFlags tab
 		/* Show project view */
 		ImGui::BeginChild("Part Type Selector", ImVec2(ImGui::GetContentRegionAvail().x * 0.95f, ImGui::GetContentRegionAvail().y * 0.95f ));
 		if( nullptr != cache && DB_STAT_DISCONNECTED != db_stat ){
-			show_part_select_window(cache, &selected_cache);
+			show_part_select_window(info, cache, &selected_cache);
 		}
 		ImGui::EndChild();
 
@@ -1869,7 +1858,7 @@ static void show_part_view( std::vector< Partcache*>* cache, ImGuiTableFlags tab
 
 		/* Get selected part type cache info */
 		if( nullptr != cache ){
-			part_data_window( cache, selected_cache );
+			part_data_window( info, cache, selected_cache );
 		} 
 
 		ImGui::EndChild();
@@ -1910,7 +1899,7 @@ static show_inventory_view( class InvCache* cache, static ImGuiTableFlags table_
 #endif
 
 /* Setup root window, child windows */
-static void show_root_window( class Prjcache* prj_cache, std::vector< Partcache*>* part_cache ){
+static void show_root_window( struct dbinfo_t** info, class Prjcache* prj_cache, std::vector< Partcache*>* part_cache ){
 
 	/* Create menu items */
 	show_menu_bar( prj_cache, part_cache );
@@ -1925,13 +1914,13 @@ static void show_root_window( class Prjcache* prj_cache, std::vector< Partcache*
 	switch( current_view ){
 
 		case part_view:
-			show_part_view( part_cache, table_flags );
+			show_part_view( info, part_cache, table_flags );
 			break;
 		case inventory_view:
 			break;
 		case project_view:
 		default:
-			show_project_view( prj_cache, table_flags );
+			show_project_view( &db_stat, info, show_all_projects, prj_cache, table_flags );
 			break;
 	}
 

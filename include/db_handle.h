@@ -165,6 +165,10 @@ struct proj_t* get_proj_from_ipn( unsigned int ipn );
 /* Free the part structure */
 void free_part_t( struct part_t* part );
 
+/* Free the part structure, don't touch the part passed as it should be an
+ * address, not an allocated pointer */
+void free_part_addr_t( struct part_t* part );
+
 /* Free the bom structure */
 void free_bom_t( struct bom_t* bom );
 
@@ -182,6 +186,9 @@ struct part_t* copy_part_t( struct part_t* src );
 
 /* Copy bom structure to new structure */
 struct bom_t* copy_bom_t( struct bom_t* src );
+
+/* Copy dbinfo structure to new structure */
+struct dbinfo_t* copy_dbinfo_t( struct dbinfo_t* src );
 
 /* Write bom to database */
 int redis_write_bom( struct bom_t* bom );
@@ -212,6 +219,12 @@ void mutex_spin_lock_dbinfo( void );
 
 /* Unlock access to dbinfo */
 void mutex_unlock_dbinfo( void );
+
+/* Get inventory index number from string */
+int dbinv_str_to_loc( struct dbinfo_t** info, const char* s, size_t len );
+
+/* Get the index of the requested part type in the database */
+unsigned int dbinfo_get_ptype_index( struct dbinfo_t** info, const char* type );
 
 #ifdef __cplusplus
 }

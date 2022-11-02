@@ -64,22 +64,6 @@ build-windows:       # This job runs in the build stage, which runs first.
     paths:
       - release/
 
-
-
-  script:
-    - pacman -S --noconfirm flawfinder
-    - flawfinder --sarif ./src > gl-sast-report.json
-    #- flawfinder --sarif ./ > all-sast-report.json
-  rules:
-    - if: $SAST_DISABLED
-      when: never
-    - if: $SAST_EXCLUDED_ANALYZERS =~ /flawfinder/
-      when: never
-    - if: $CI_COMMIT_BRANCH
-      exists:
-        - '**/*.c'
-        - '**/*.cpp'
-
 lint-test-job:   # This job also runs in the test stage.
   stage: test    # It can run at the same time as unit-test-job (in parallel).
   script:
