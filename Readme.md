@@ -1,6 +1,14 @@
 # Pop:In
 Inventory Management, Project Manufacturing, and Smart Storage
 
+Screenshots:
+
+![Project Info View](docs/Project_View_Info.png "Project Info View")
+![Project BOM View](docs/Project_View_BOM.png "Project BOM View")
+![Part Inventory View](docs/Part_View_Inventory.png "Part Inventory View")
+
+
+
 ## What is Pop:In?
 Pop:In is an inventory management software that will keep track of your projects, bill of materials, and parts in a convienent way. There are a number of inventory management solutions in existence, but none have gone as far as this project will.
 The cornerstone of this project is the integration between a smart storage device and the database; this allows for automatic inventory keeping*, information about useage and when to order parts, and also just knowing where the hell you put that damn reel of parts
