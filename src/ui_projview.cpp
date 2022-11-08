@@ -1,5 +1,6 @@
 #include <ui_projview.h>
 #include <dbstat_def.h>
+#include <implot.h>
 
 #define PARTINFO_SPACING	200
 
@@ -10,6 +11,8 @@ static void proj_bom_tab( struct dbinfo_t** info, struct bom_t* bom );
 
 void show_project_view( int * db_stat, struct dbinfo_t** info, bool show_all_projects, class Prjcache* cache, ImGuiTableFlags table_flags ){
 	if( ImGui::BeginTable("view_split", 2, table_flags) ){
+		/* get lock for project cache */
+		cache->getmutex(true);
 		ImGui::TableNextRow();
 
 		/* Project view on the left */
@@ -32,8 +35,8 @@ void show_project_view( int * db_stat, struct dbinfo_t** info, bool show_all_pro
 
 		ImGui::EndChild();
 		ImGui::EndTable();	
+		cache->releasemutex();
 	}
-
 }
 
 
@@ -88,7 +91,7 @@ static void proj_data_window( struct dbinfo_t** info, class Prjcache* cache ){
 			proj_info_tab( info, cache->get_selected(), &bom_index );
 			ImGui::EndTabItem();
 		}
-		if( ImGui::BeginTabItem("BOM") ){
+		if(( cache->get_selected()->nboms > 0) && ImGui::BeginTabItem("BOM") ){
 			/* Copy BOM since it could be corrupted otherwise */
 			if( nullptr != bom  && bom->ipn != cache->get_selected()->boms[bom_index].bom->ipn ){
 				/* Only free the bom copy if a new selection has been made */
@@ -113,12 +116,68 @@ static void proj_data_window( struct dbinfo_t** info, class Prjcache* cache ){
 static void proj_info_tab( struct dbinfo_t** info, struct proj_t* prj, int* bom_index ){
 
 	static unsigned int nitems = 0;
+	static unsigned int nunique = 0;
+	static unsigned int nunits = 1;
+	static unsigned int last_nunits = 0;
+	static double cost = 0.0;
+	static double optimal_cost = 0.0;
+	static double optimal_cost_per = 0.0;
+	static double savings = 0.0;
+	static double savings_per = 0.0;
 	static unsigned int last_prjipn = 0;
+	static part_t** limiting_parts = nullptr;
+	static int part_status_count[pstat_total] = {0};
+	static const double part_status_positions[pstat_total] = {
+														pstat_unknown,
+														pstat_prod,
+														pstat_low_stock,
+														pstat_unavailable,
+														pstat_nrnd,
+														pstat_lasttimebuy,
+														pstat_obsolete
+													};
+	static const char* part_status_str[pstat_total] = { "Unknown",
+														"Production",
+														"Low Stock",
+														"Unavailable",
+														"NRND",
+														"Last Time Buy",
+														"Obsolete"
+													};
 
 	/* Check if already retrieved data from this project */
 	if( last_prjipn != prj->ipn ){
+//		printf("Different project than last time; update values\n");
+		y_log_message( Y_LOG_LEVEL_DEBUG, "Different project than last time, update values" );
 		nitems = get_num_all_proj_items( prj );
+		nunique = get_num_all_uniq_proj_items( prj );
+		/* Force update of price calculation */
+		last_nunits = 0;
+		nunits = 1;
+#if 0
+		if( limiting_parts != nullptr ){
+			free( limiting_parts );
+			limiting_parts = nullptr;
+		}
+		limiting_parts = get_proj_prod_lim_factor( prj );
+#endif
 		last_prjipn = prj->ipn;
+	}
+	if( nunits != last_nunits ){
+		y_log_message( Y_LOG_LEVEL_DEBUG, "Updating cost" );
+//		printf("Updating cost\n");
+		optimal_cost = get_optimal_project_cost( prj, nunits );
+		cost = get_exact_project_cost( prj, nunits );
+		savings = cost - optimal_cost;
+		optimal_cost_per = optimal_cost / (double)nunits;
+		savings_per = (cost / (double)(nunits) ) - optimal_cost_per;
+
+		for( unsigned int i = 0; i < (unsigned int)pstat_total; i++ ){
+			part_status_count[i] = get_num_proj_partstatus( prj, (enum part_status_t)i  );
+			printf("Part status count for %s: %u\n", part_status_str[i], part_status_count[i] );
+		}
+
+		last_nunits = nunits;
 	}
 
 	/* Show information about project with selections for versions etc */
@@ -129,29 +188,60 @@ static void proj_info_tab( struct dbinfo_t** info, struct proj_t* prj, int* bom_
 
 	/* Project Version */
 	ImGui::Text("Project Version: %s", prj->ver);
+
+	/* Number of units to get */
+	ImGui::Text("Number of units");
+	ImGui::SameLine();
+	ImGui::InputInt("##project_units", (int *)&nunits );
 	
 	ImGui::Spacing();
 	ImGui::Text("Project Bill of Materials ");
 	/* BOM Selection */
-	const char* default_bom_ver = prj->boms[*bom_index].ver;
-	if( ImGui::BeginCombo("##selprj_bom", default_bom_ver ) ){
-		for( unsigned int i = 0; i < prj->nboms; i++ ){
-			const bool is_selected = (*bom_index == i);
-			if( ImGui::Selectable( prj->boms[i].ver, is_selected ) ){
-				*bom_index = i;
-			}
-			if( is_selected ){
-				ImGui::SetItemDefaultFocus();
-			}
-		}	
+	if( prj->nboms > 0 ){
+		const char* default_bom_name = prj->boms[*bom_index].bom->name;
+		if( ImGui::BeginCombo("##selprj_bom", default_bom_name ) ){
+			for( unsigned int i = 0; i < prj->nboms; i++ ){
+				const bool is_selected = (*bom_index == i);
+				if( ImGui::Selectable( prj->boms[i].bom->name, is_selected ) ){
+					*bom_index = i;
+				}
+				if( is_selected ){
+					ImGui::SetItemDefaultFocus();
+				}
+			}	
 
-		ImGui::EndCombo();
+			ImGui::EndCombo();
+		}
+	}
+    static ImPlotPieChartFlags pie_flags = 0;
+	ImGui::Spacing();
+	ImGui::Text("Part Status Distribution");
+	if( ImPlot::BeginPlot("##part_status_piechart", ImVec2(300, 150),ImPlotFlags_NoMouseText)){
+//		ImPlot::SetupLegend(ImPlotLocation_West, ImPlotLegendFlags_Outside);
+//		ImPlot::SetupAxes( NULL, NULL, ImPlotAxisFlags_NoDecorations, ImPlotAxisFlags_NoDecorations);
+//		ImPlot::SetupAxesLimits(0, 1, 0, 1);
+//		ImPlot::PlotPieChart( part_status_str, part_status_count, pstat_total, 0.5, 0.5, 0.4, "%.0f", 90, pie_flags);
+		ImPlot::SetupAxes("#","Status",ImPlotAxisFlags_AutoFit,ImPlotAxisFlags_AutoFit);
+		ImPlot::SetupAxisTicks(ImAxis_Y1, part_status_positions, (int)pstat_total, part_status_str);
+		ImPlot::PlotBars("##part_status_plot", part_status_count, (int)pstat_total, 0.4, 0, ImPlotBarsFlags_Horizontal );
+		ImPlot::EndPlot();
 	}
 
-	ImGui::Spacing();
 
-	ImGui::Text("Number of parts in BOM: %d", nitems);
 
+	ImGui::Text("Number of unique parts in Project: %d", nunique);
+	ImGui::Text("Number of total parts in Project: %d", nitems);
+	ImGui::Text("Total Optimal Cost for %d units: %.2lf", nunits, optimal_cost);
+	ImGui::Text("Total Cost Optimization Savings: %.2lf", savings);
+
+	ImGui::Text("Optimal Cost Per Unit: %.4lf", optimal_cost_per );
+	ImGui::Text("Cost Optimization Savings Per Unit: %.4lf", savings_per );
+
+#if 0
+	if( nullptr != limiting_parts ){
+		ImGui::Text("Number of parts with insufficient inventory: %d", sizeof( limiting_parts ) / sizeof( struct part_t * ) );
+	}
+#endif
 }
 
 static void proj_bom_tab( struct dbinfo_t** info, struct bom_t* bom ){

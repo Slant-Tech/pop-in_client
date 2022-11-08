@@ -79,7 +79,8 @@ enum part_status_t {
 	pstat_unavailable,
 	pstat_nrnd,
 	pstat_lasttimebuy,
-	pstat_obsolete
+	pstat_obsolete,
+	pstat_total
 };
 
 /* Structure for parts */

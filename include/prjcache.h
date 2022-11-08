@@ -14,7 +14,7 @@ class Prjcache {
 		std::vector<struct proj_t*> cache;
 
 		/* Cache mutex */
-		std::mutex cmtx;
+		std::recursive_mutex cmtx;
 
 		/* Cleaning mutex */
 		std::mutex clean_mtx;
@@ -53,6 +53,10 @@ class Prjcache {
 		int select_ptr( struct proj_t * p );
 		struct proj_t* get_selected( void );
 		void display_projects( bool all_prj );
+
+		/* Acess cache mutex */
+		bool getmutex( bool blocking );
+		void releasemutex( void );
 
 };
 

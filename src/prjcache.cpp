@@ -427,3 +427,16 @@ void Prjcache::_DisplayNode( struct proj_t* node ){
 
 }
 
+bool Prjcache::getmutex( bool blocking ) {
+	if( !blocking ){
+		return cmtx.try_lock();
+	}
+	else {
+		cmtx.lock();
+	}
+	return true;
+}
+
+void Prjcache::releasemutex( void ){
+	cmtx.unlock();
+}
