@@ -2,8 +2,6 @@ UNAME_S := $(shell uname -s)
 # For checking if using systemd
 INITSYSTEM := $(shell ps --no-headers -o comm 1)
 
-OS ?= Linux
-
 # Build for website (WASM)
 ifeq ($(OS), web)
 CMAKE=cmake
@@ -124,8 +122,12 @@ CXXFLAGS.RELEASE= -O2
 #OPTIONS += -fipa-sra -fmerge-all-constants -fthread-jumps -fauto-inc-dec
 #OPTIONS += -fif-conversion -fif-conversion2 -free -fexpensive-optimizations
 #OPTIONS += -fshrink-wrap -fhoist-adjacent-loads
-OPTIONS  += -fstack-protector -D_FORTIFY_SOURCES=2 -D_GNU_SOURCE
+OPTIONS  += -fstack-protector -fstack-clash-protection -D_FORTIFY_SOURCES=2 -D_GNU_SOURCE 
+ifneq ($(OS), Windows)
+OPTIONS  += -fsanitize=undefined
 #OPTIONS  += -fsanitize=address 
+#OPTIONS  += -fsanitize=thread 
+endif
 
 COPTIONS += $(OPTIONS)
 
@@ -184,6 +186,7 @@ INC	+= -I./include
 INC += -I./imgui
 INC += -I./imgui/backends
 INC += -I./imgui-filedialog/L2DFileDialog/src
+INC += -I./implot
 INC += -I./redis
 INC += `pkg-config --cflags glfw3`
 
@@ -258,6 +261,11 @@ CXXSRC		+= $(IMGUI)/imgui_demo.cpp
 CXXSRC		+= $(IMGUI)/backends/imgui_impl_glfw.cpp
 CXXSRC		+= $(IMGUI)/backends/imgui_impl_opengl3.cpp
 CXXSRC		+= $(IMGUI)/misc/cpp/imgui_stdlib.cpp
+
+# Implot files
+IMPLOT = ./implot
+CXXSRC		+= $(IMPLOT)/implot.cpp
+CXXSRC		+= $(IMPLOT)/implot_items.cpp
 
 SRC_DIR	 	 = ./src
 CSRC		 = $(wildcard $(SRC_DIR)/*.c)
