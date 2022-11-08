@@ -1,4 +1,5 @@
 #include <imgui.h>
+#include <implot.h>
 #include <misc/cpp/imgui_stdlib.h>
 #include <imgui_impl_glfw.h>
 #include <imgui_impl_opengl3.h>
@@ -6,6 +7,7 @@
 #include <time.h>
 #include <vector>
 #include <iterator>
+#include <atomic>
 #include <GLFW/glfw3.h>
 #include <mutex>
 #include <thread>
@@ -90,7 +92,7 @@ bool show_db_settings_window = false;
 #define DEFAULT_ROOT_H	720
 
 /* Variable to continue running */
-static bool run_flag = true;
+static std::atomic<bool> run_flag = true;
 
 static int thread_db_connection( Prjcache* prj_cache, std::vector<Partcache*>* part_cache ) {
 	
@@ -207,6 +209,7 @@ static int thread_ui( class Prjcache* prj_cache, std::vector<Partcache *>* part_
 	/* Setup ImGui Context */
 	IMGUI_CHECKVERSION();
 	ImGui::CreateContext();
+	ImPlot::CreateContext();
 	ImGuiIO& io = ImGui::GetIO(); (void)io;
 //	io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
 
@@ -387,7 +390,7 @@ int main( int, char** ){
 	Prjcache* prjcache = new Prjcache(1);
 	std::vector< Partcache*> partcache;
 	/* Initialize logging */
-	y_init_logs("Pop:In", Y_LOG_MODE_CONSOLE, Y_LOG_LEVEL_DEBUG, NULL, "Pop:In Inventory Management");
+	y_init_logs("Pop:In", Y_LOG_MODE_FILE, Y_LOG_LEVEL_DEBUG, "./popin.log", "Pop:In Inventory Management");
 
 	
 	if( open_db( &db_set, &dbinfo, prjcache, &partcache ) ){ /* Use defaults of localhost and default port */
@@ -1178,7 +1181,7 @@ static void new_proj_window( struct dbinfo_t** info ){
 			(*info)->nprj++;
 			prj->ipn = (*info)->nprj;
 			/* Perform the write */
-			redis_write_proj( prj );
+			redis_write_proj( prj ); /* NOTE: Segfault due to data race occurred; need to investigate */
 			y_log_message(Y_LOG_LEVEL_DEBUG, "Data written to database");
 			show_new_proj_window = false;
 
