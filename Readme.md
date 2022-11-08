@@ -7,11 +7,10 @@ Screenshots:
 ![Project BOM View](docs/Project_View_BOM.png "Project BOM View")
 ![Part Inventory View](docs/Part_View_Inventory.png "Part Inventory View")
 
-
-
 ## What is Pop:In?
 Pop:In is an inventory management software that will keep track of your projects, bill of materials, and parts in a convienent way. There are a number of inventory management solutions in existence, but none have gone as far as this project will.
-The cornerstone of this project is the integration between a smart storage device and the database; this allows for automatic inventory keeping*, information about useage and when to order parts, and also just knowing where the hell you put that damn reel of parts
+The cornerstone of this project is the integration between a smart storage device and the database; this allows for automatic inventory keeping*, information about useage and when to order parts, and also just knowing where the hell you put that damn reel of parts.
+Though this is not just for electronics, any kind of part can be used as the part fields are infinitely expandable. A lot of work has gone into the system to 
 
 
 Given this is still very early in development (and I'm just trying to put some information here), the available features are quite minimal but you can enter projects, parts, bill of materials, and get some very basic analytical information about your projects.
@@ -115,3 +114,15 @@ While new parts, projects, and BOMs can be created with the client, they cannot 
 
 ### New Part Type Creation
 I'm not 100% sure this bug has been fixed or not, but if you create a new part with a part type that is not currently in the database, the client software will crash. If you restart the client, the new part type will be available and you can proceed as normal. It is inconvienient, but at least doesn't destroy data.
+
+
+## Keep up to date!
+
+If you want to keep up to date, I'll be putting out posts on [slant.tech](http://slant.tech) and on the emailing list which you can sign up by clicking [here](http://listmonk.slant.tech/subscription/form)
+
+## Get invovled!
+I'll post more information about what development help can be done, but by far the biggest help for furthering this project along will be in the testing/feature request/documentation departments.
+
+I have a list of features that will be rolling out as time goes on, but feel free to discuss new features in the Discussions tab instead of creating an issue ticket (I'll make a template for the issue tickets soon).
+
+Any amount helps! Thank you!
