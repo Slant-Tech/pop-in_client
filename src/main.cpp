@@ -491,11 +491,13 @@ static void show_part_select_window( struct dbinfo_t ** info, std::vector< Partc
 		ImGui::TableNextColumn();
 //		mutex_spin_lock_dbinfo();
 		//if( nullptr != info && nullptr != (*info) && cache->size() > 0 ){
+		bool is_selected = false;
 		if( cache->size() > 0 ){
 			bool node_clicked[cache->size()] = {false};
 			if( DB_STAT_DISCONNECTED != db_stat ){
 				for( unsigned int i = 0; i < cache->size(); i++ ){
 					/* Check if item has been clicked */
+					node_clicked[i] = (*selected == i);
 					(*cache)[i]->display_parts(&(node_clicked[i]));
 					if( node_clicked[i] ){
 						y_log_message( Y_LOG_LEVEL_DEBUG, "Part type %s is open", (*cache)[i]->type.c_str() );
