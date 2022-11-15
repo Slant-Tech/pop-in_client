@@ -2120,13 +2120,6 @@ char** search_bom_name( const char* name, unsigned int* num ){
 		return NULL;
 	}
 
-	/* Allocate space for bom array */
-	boms = calloc( *num, sizeof( char* ) );
-	if( NULL == boms ){
-		y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate memory for return search array for query: %s", name);
-		return NULL;
-	}
-
 	/* Memory has been allocated, begin actually doing stuff */
 
 	/* Query database for bom name */
@@ -2147,18 +2140,30 @@ char** search_bom_name( const char* name, unsigned int* num ){
 		boms = NULL;
 	}
 	else {
+		printf("Redis reply type: %d\n", reply->type);
+		printf("Redis reply Elements: %d\n", reply->elements);
 
 		/* Get number of items from redis reply */
-		n = reply->element[1]->integer;
+		n = reply->element[0]->integer;
+		y_log_message( Y_LOG_LEVEL_DEBUG, "Got %u elements in search", n );
+
+		/* Allocate space for bom array */
+		boms = calloc( n, sizeof( char* ) );
+		if( NULL == boms ){
+			y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate memory for return search array for query: %s", name);
+			*num = 0;
+			return NULL;
+		}
+
 
 		/* Get strings from replies */
 		for( unsigned int i = 0; i < n; i++){
-			/* Replies will be on even numbers, starting with 2 */
+			/* Replies will be on odd numbers, starting with 2 */
 			
 			/* Check if reply is indeed a string */
-			if( reply->element[ 2 + (i<<1) ]->type == REDIS_REPLY_STRING ){
+			if( reply->element[ 1 + (i<<1) ]->type == REDIS_REPLY_STRING ){
 				/* copy string data over */
-				boms[i] = calloc( reply->element[ 2 + (i<<1) ]->len + 1, sizeof( char ) );
+				boms[i] = calloc( reply->element[ 1 + (i<<1) ]->len + 1, sizeof( char ) );
 				if( NULL == boms[i] ){
 					y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate memory for bom db name in array" );
 					for( unsigned int j = 0; j < i; j++){
@@ -2170,7 +2175,7 @@ char** search_bom_name( const char* name, unsigned int* num ){
 				}
 				else {
 					/* Copy string */
-					strncpy( boms[i], reply->element[ 2 + (i<<1) ]->len, reply->element[ 2 + (i<<1) ]->len);
+					strncpy( boms[i], reply->element[ 1 + (i<<1) ]->str, reply->element[ 1 + (i<<1) ]->len);
 				}
 			}
 			else {
