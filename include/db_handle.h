@@ -163,8 +163,14 @@ struct bom_t* get_bom_from_ipn( unsigned int ipn, char* version );
 /* Get list of BOM database names from name string */
 char** search_bom_name( const char* name, unsigned int* num );
 
+/* Get list of Project database names from name string */
+char** search_proj_name( const char* name, unsigned int* num );
+
 /* Create project struct from parsed item in database, from internal part number */
-struct proj_t* get_proj_from_ipn( unsigned int ipn );
+struct proj_t* get_proj_from_ipn( unsigned int ipn, char* version );
+
+/* Create project struct from parsed item in database, from internal part number with latest project version */
+struct proj_t* get_latest_proj_from_ipn( unsigned int ipn );
 
 /* Free the part structure */
 void free_part_t( struct part_t* part );

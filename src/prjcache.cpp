@@ -67,7 +67,7 @@ int Prjcache::_insert( struct proj_t * p, unsigned int index ){
 
 int Prjcache::_insert_ipn( unsigned int ipn, unsigned int index ){
 	struct proj_t* p = nullptr;
-	p = get_proj_from_ipn(ipn);
+	p = get_latest_proj_from_ipn(ipn);
 	if( nullptr == p ){
 		y_log_message( Y_LOG_LEVEL_ERROR, "Could not add project:%d to cache; database error", ipn);
 		return -1;
@@ -85,7 +85,7 @@ int Prjcache::_append( struct proj_t * p ){
 
 int Prjcache::_append_ipn( unsigned int ipn ){
 	struct proj_t* p = nullptr;
-	p = get_proj_from_ipn(ipn);
+	p = get_latest_proj_from_ipn(ipn);
 	if( nullptr == p ){
 		y_log_message( Y_LOG_LEVEL_ERROR, "Could not add project:%d to cache; database error", ipn);
 		return -1;
@@ -338,7 +338,9 @@ void Prjcache::display_projects( bool all_prj ){
 	for( unsigned int i = 0; i < cache.size(); i++ ){
 //		y_log_message(Y_LOG_LEVEL_DEBUG, "Displaying top project %d", i);
 		if( all_prj || cache[i]->nsub > 0 ){
-			_DisplayNode( cache[i]  );
+			if(nullptr != cache[i] ){
+				_DisplayNode( cache[i]  );
+			}
 		}
 	}
 
