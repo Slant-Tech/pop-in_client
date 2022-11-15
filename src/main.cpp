@@ -724,6 +724,7 @@ static void new_proj_window( struct dbinfo_t** info ){
 					free( boms[i] );
 					boms[i] = nullptr;
 				}
+				free( boms );
 				nbom_strs = 0;
 				boms = nullptr;
 			}
@@ -742,6 +743,7 @@ static void new_proj_window( struct dbinfo_t** info ){
 					free( boms[i] );
 					boms[i] = nullptr;
 				}
+				free( boms );
 				nbom_strs = 0;
 				boms = nullptr;
 			}
@@ -852,6 +854,7 @@ static void new_proj_window( struct dbinfo_t** info ){
 					free( boms[i] );
 					boms[i] = nullptr;
 				}
+				free( boms );
 				nbom_strs = 0;
 				boms = nullptr;
 			}
