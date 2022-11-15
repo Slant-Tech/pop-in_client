@@ -2101,6 +2101,102 @@ struct bom_t* get_bom_from_ipn( unsigned int ipn, char* version ){
 	return bom;
 }
 
+/* Get list of BOM database names from name string */
+char** search_bom_name( const char* name, unsigned int* num ){
+	char** boms = NULL; /* return array for db bom names */
+	unsigned int n = 0; /* Temporary value for num */
+	if( NULL == rc ){
+		y_log_message( Y_LOG_LEVEL_ERROR, "Database is not connected. Could not search bom name: %s", name);
+		return NULL;
+	}
+
+	if( NULL == name ){
+		y_log_message( Y_LOG_LEVEL_ERROR, "Was not passed valid string for bom search");
+		return NULL;
+	}
+
+	if( NULL == num ){
+		y_log_message( Y_LOG_LEVEL_ERROR, "Was not passed valid pointer for bom return array size");
+		return NULL;
+	}
+
+	/* Allocate space for bom array */
+	boms = calloc( *num, sizeof( char* ) );
+	if( NULL == boms ){
+		y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate memory for return search array for query: %s", name);
+		return NULL;
+	}
+
+	/* Memory has been allocated, begin actually doing stuff */
+
+	/* Query database for bom name */
+	redisReply* reply = NULL;
+	/* Sanitize input */
+	char* name_sanitized = sanitize_redis_string( name );
+	y_log_message( Y_LOG_LEVEL_DEBUG, "Sanitized bom name string: %s", name_sanitized ); 
+	redis_json_index_search( rc, &reply, "bomid", "name", name_sanitized );
+	if( name_sanitized != name ){
+		/* New string was created, free the memory */
+		free( name_sanitized );
+	}
+
+	/* Returns back a few elements; need to grab the second one to get the
+	 * right object */
+	if( NULL == reply || reply->type != REDIS_REPLY_ARRAY || reply->elements < 3 ){
+		y_log_message( Y_LOG_LEVEL_ERROR, "Database search did not reply correctly for bom name search %s", name );
+		boms = NULL;
+	}
+	else {
+
+		/* Get number of items from redis reply */
+		n = reply->element[1]->integer;
+
+		/* Get strings from replies */
+		for( unsigned int i = 0; i < n; i++){
+			/* Replies will be on even numbers, starting with 2 */
+			
+			/* Check if reply is indeed a string */
+			if( reply->element[ 2 + (i<<1) ]->type == REDIS_REPLY_STRING ){
+				/* copy string data over */
+				boms[i] = calloc( reply->element[ 2 + (i<<1) ]->len + 1, sizeof( char ) );
+				if( NULL == boms[i] ){
+					y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate memory for bom db name in array" );
+					for( unsigned int j = 0; j < i; j++){
+						free(boms[j]);
+						boms[j] = NULL;
+						*num = 0;
+						return NULL;
+					}
+				}
+				else {
+					/* Copy string */
+					strncpy( boms[i], reply->element[ 2 + (i<<1) ]->len, reply->element[ 2 + (i<<1) ]->len);
+				}
+			}
+			else {
+				y_log_message( Y_LOG_LEVEL_ERROR, "Reply wasn't string, exiting");
+				for( unsigned int j = 0; j < i; j++){
+					free(boms[j]);
+					boms[j] = NULL;
+					*num = 0;
+					return NULL;
+				}
+			}
+		}
+		/* Succeeded, copy over now */
+		*num = n;
+	}
+
+	/* Free redis reply */
+	freeReplyObject(reply);
+
+	return boms;
+
+}
+
+
+
+
 /* Create project struct from parsed item in database, from internal part number */
 struct proj_t* get_proj_from_ipn( unsigned int ipn ){
 	struct proj_t * prj = NULL;	
