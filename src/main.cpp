@@ -8,6 +8,7 @@
 #include <vector>
 #include <iterator>
 #include <atomic>
+#include <sstream>
 #include <GLFW/glfw3.h>
 #include <mutex>
 #include <thread>
@@ -560,83 +561,243 @@ static void new_proj_window( struct dbinfo_t** info ){
 		ImGui::SameLine();
 		ImGui::InputText("##newprj_version", version, sizeof( version) - 1, ImGuiInputTextFlags_CharsNoBlank);
 
-		ImGui::Text("Number of BOMs");
+		/* Display added BOMs */
+		ImGui::Text("Project BOMs");
+		if( nboms == 0 ){
+			ImGui::Text("No BOMs assigned to project");
+		}
+		else {
+			for( unsigned int i = 0; i < nboms; i++ ){
+				ImGui::Text("IPN: %u | Version %s", bom_ipns[i], bom_versions[i].c_str());
+			}
+		}
+
+		/* Display added Subprojects */
+		ImGui::Text("Subprojects");
+		if( nsubprj == 0 ){
+			ImGui::Text("No Subprojects assigned to project");
+		}
+		else {
+			for( unsigned int i = 0; i < nsubprj; i++ ){
+				ImGui::Text("IPN: %u | Version %s", subprj_ipns[i], subprj_versions[i].c_str());
+			}
+		}
+
+		/* Add new Subproject*/
+		static std::string subprj_name = ""; /* Search string for bom name */
+		static std::string old_subprj_name = ""; /* Used for checking if need to update */
+		static std::string subprj_selection; /* Selection string for dropdown */
+		static unsigned int subprj_selection_idx = 0; /* Selection index */
+		static unsigned int nsubprj_strs = 0; /* Number of subprojects used */
+		static char** subprjs = nullptr;	/* strings for subproject names */
+		ImGui::Text("Subproject Name");
 		ImGui::SameLine();
-		ImGui::InputInt("##newprj_nboms", (int *)&nboms);
+		ImGui::InputText("##newprj_subprj_name_search", &subprj_name);
+		/* If text is available, and different than old, then search for items */
+		if( subprj_name != old_subprj_name ){
 
-		ImGui::Text("Number of subprojects");
+			/* Free strings if already allocated */
+			if( nullptr != subprjs ){
+				for( unsigned int i = 0; i < nsubprj_strs; i++ ){
+					free( subprjs[i] );
+					subprjs[i] = nullptr;
+				}
+				nsubprj_strs = 0;
+				subprjs = nullptr;
+			}
+
+			/* Get info from database */
+			subprjs = search_proj_name( subprj_name.c_str(), &nsubprj_strs );
+			printf("Number of items returned: %d\n", nsubprj_strs);
+
+			if( nullptr == subprjs ){
+				y_log_message( Y_LOG_LEVEL_INFO, "Could not find related subproject names in database" );
+			}
+			/* Overwrite old name */
+			old_subprj_name = subprj_name;
+		}
+
+		/* Display dropdown selection for subproject to use */
+		if( ImGui::BeginCombo("##newprj_subprj_select", subprj_selection.c_str() ) ){
+			for( unsigned int i = 0; i < nsubprj_strs; i++ ){
+				const bool is_selected = ( subprj_selection_idx == i );
+				if( ImGui::Selectable( subprjs[i], is_selected ) ){
+					subprj_selection_idx = i;	
+				}
+				if( is_selected ){
+					ImGui::SetItemDefaultFocus();
+				}
+			}
+			ImGui::EndCombo();
+		}
+
+		if( nullptr != subprjs ){
+			subprj_selection = subprjs[subprj_selection_idx];
+		}
+		else {
+			subprj_selection = "No Results";
+		}
+
+
+		/* Button to add new BOM */
+		if( ImGui::Button("Add Subproject", ImVec2(0,0)) ){
+			if( nullptr != subprjs ) {
+				/* Split strings */	
+				char * subprj_ptr = nullptr;
+				subprj_ptr = strtok( (char*)subprj_selection.c_str(), ":" );
+				printf("Strtok 1: %s\n", subprj_ptr);
+
+				/* Add BOM to vectors */
+				subprj_ptr = strtok( NULL, ":");
+				printf("Strtok 2: %s\n", subprj_ptr);
+				subprj_ipns.push_back( atoi(subprj_ptr) );
+
+				subprj_ptr = strtok( NULL, ":" );
+				printf("Strtok 3: %s\n", subprj_ptr);
+				std::string version_tmp;
+				version_tmp.assign(subprj_ptr);
+				printf("Copied string: %s\n", version_tmp.c_str());
+				subprj_versions.push_back(version_tmp);
+
+				nsubprj++;
+				printf("nboms in project: %u\n", nsubprj);
+				printf("Subproject ipn appended at %d: bom:%u:%s\n", nsubprj,  subprj_ipns.back(), subprj_versions.back().c_str());
+
+			}
+			/* Free strings if already allocated */
+			if( nullptr != subprjs ){
+				for( unsigned int i = 0; i < nsubprj_strs; i++ ){
+					free( subprjs[i] );
+					subprjs[i] = nullptr;
+				}
+				free( subprjs );
+				nsubprj_strs = 0;
+				subprjs = nullptr;
+			}
+			old_subprj_name = "";
+		}
+
+
+
+		/* Add new BOM */
+		static std::string bom_name = ""; /* Search string for bom name */
+		static std::string old_bom_name = ""; /* Used for checking if need to update */
+		static std::string bom_selection; /* Selection string for dropdown */
+		static unsigned int bom_selection_idx = 0; /* Selection index */
+		static unsigned int nbom_strs = 0; /* Number of boms used */
+		static char** boms = nullptr;	/* strings for bom names */
+		ImGui::Text("BOM Name");
 		ImGui::SameLine();
-		ImGui::InputInt("##newprj_nsubprj", (int *)&nsubprj);
+		ImGui::InputText("##newprj_bom_name_search", &bom_name);
+		/* If text is available, and different than old, then search for items */
+		if( bom_name != old_bom_name ){
 
+			/* Free strings if already allocated */
+			if( nullptr != boms ){
+				for( unsigned int i = 0; i < nbom_strs; i++ ){
+					free( boms[i] );
+					boms[i] = nullptr;
+				}
+				nbom_strs = 0;
+				boms = nullptr;
+			}
 
-		/* Figure out what size the vectors should be */
-		if( nsubprj > 0){
-			subprj_ipns.resize(nsubprj);
-			subprj_versions.resize(nsubprj);
-		}
-		if( nboms > 0){
-			bom_ipns.resize(nboms);
-			bom_versions.resize(nboms);
-		}
+			/* Get info from database */
+			boms = search_bom_name( bom_name.c_str(), &nbom_strs );
+			printf("Number of items returned: %d\n", nbom_strs);
 
-		/* Subprojects entries */
-		std::vector<std::string>::iterator subprj_ver_itr;
-		subprj_ver_itr = subprj_versions.begin();
-		std::vector<unsigned int>::iterator subprj_ipn_itr;
-		subprj_ipn_itr = subprj_ipns.begin();
-
-		std::string sub_ipn_ident;
-		std::string sub_ver_ident;
-
-		for( unsigned int i = 0; i < nsubprj; i++ ){
-			sub_ipn_ident = "##sub_ipn" + std::to_string(i);
-			sub_ver_ident = "##sub_ver" + std::to_string(i);
-
-			ImGui::Text("Subproject %d", i+1);
-			ImGui::Text("Internal Part Number");
-			ImGui::SameLine();
-			ImGui::InputInt(sub_ipn_ident.c_str(), (int *)&(*subprj_ipn_itr) );
-
-			ImGui::Text("Version");
-			ImGui::SameLine();
-			ImGui::InputText(sub_ver_ident.c_str(), &(*subprj_ver_itr), ImGuiInputTextFlags_CharsNoBlank);
-
-			subprj_ver_itr++;
-			subprj_ipn_itr++;
-
+			if( nullptr == boms ){
+				y_log_message( Y_LOG_LEVEL_INFO, "Could not find related bom names in database" );
+			}
+			/* Overwrite old name */
+			old_bom_name = bom_name;
 		}
 
-		/* For BOM entries */
-		std::vector<std::string>::iterator bom_ver_itr;
-		bom_ver_itr = bom_versions.begin();
-		std::vector<unsigned int>::iterator bom_ipn_itr;
-		bom_ipn_itr = bom_ipns.begin();
+		/* Display dropdown selection for BOM to use */
+		if( ImGui::BeginCombo("##newprj_bom_select", bom_selection.c_str() ) ){
+			for( unsigned int i = 0; i < nbom_strs; i++ ){
+				const bool is_selected = ( bom_selection_idx == i );
+				if( ImGui::Selectable( boms[i], is_selected ) ){
+					bom_selection_idx = i;	
+				}
+				if( is_selected ){
+					ImGui::SetItemDefaultFocus();
+				}
+			}
+			ImGui::EndCombo();
+		}
 
-		std::string bom_ipn_ident;
-		std::string bom_ver_ident;
+		if( nullptr != boms ){
+			bom_selection = boms[bom_selection_idx];
+		}
+		else {
+			bom_selection = "No Results";
+		}
 
-		for( unsigned int i = 0; i < nboms; i++ ){
-			bom_ipn_ident = "##bom_ipn" + std::to_string(i);
-			bom_ver_ident = "##bom_ver" + std::to_string(i);
 
-			ImGui::Text("BOM %d", i+1);
-			ImGui::Text("Internal Part Number");
-			ImGui::SameLine();
-			ImGui::InputInt(bom_ipn_ident.c_str(), (int *)&(*bom_ipn_itr));
+		/* Button to add new BOM */
+		if( ImGui::Button("Add BOM", ImVec2(0,0)) ){
+			if( nullptr != boms ) {
+				/* Split strings */	
+				char * bom_ptr = nullptr;
+				bom_ptr = strtok( (char*)bom_selection.c_str(), ":" );
+				printf("Strtok 1: %s\n", bom_ptr);
 
-			ImGui::Text("Version");
-			ImGui::SameLine();
-			ImGui::InputText(bom_ver_ident.c_str(), &(*bom_ver_itr) );
+				/* Add BOM to vectors */
+				bom_ptr = strtok( NULL, ":");
+				printf("Strtok 2: %s\n", bom_ptr);
+				bom_ipns.push_back( atoi(bom_ptr) );
 
-			bom_ver_itr++;
-			bom_ipn_itr++;
+				bom_ptr = strtok( NULL, ":" );
+				printf("Strtok 3: %s\n", bom_ptr);
+				std::string version_tmp;
+				version_tmp.assign(bom_ptr);
+				printf("Copied string: %s\n", version_tmp.c_str());
+				bom_versions.push_back(version_tmp);
 
+				nboms++;
+				printf("nboms in project: %u\n", nboms);
+				printf("BOM ipn appended at %d: bom:%u:%s\n", nboms,  bom_ipns.back(), bom_versions.back().c_str());
+
+			}
+			/* Free strings if already allocated */
+			if( nullptr != boms ){
+				for( unsigned int i = 0; i < nbom_strs; i++ ){
+					free( boms[i] );
+					boms[i] = nullptr;
+				}
+				free( boms );
+				nbom_strs = 0;
+				boms = nullptr;
+			}
+			old_bom_name = "";
 		}
 
 
 
 		/* Save and cancel buttons */
 		if( ImGui::Button("Save", ImVec2(0,0)) ){
+
+			/* Clean up some memory */
+			if( nullptr != boms ){
+				y_log_message(Y_LOG_LEVEL_DEBUG, "Cleanup for bom strings");
+				for( unsigned int i = 0; i < nbom_strs; i++ ){
+					free( boms[i] );
+					boms[i] = nullptr;
+				}
+				free( boms );
+				nbom_strs = 0;
+				boms = nullptr;
+			}
+			if( nullptr != subprjs ){
+				for( unsigned int i = 0; i < nsubprj_strs; i++ ){
+					free( subprjs[i] );
+					subprjs[i] = nullptr;
+				}
+				free( subprjs );
+				nsubprj_strs = 0;
+				subprjs = nullptr;
+			}
 
 			/* Check if valid to copy */
 			prj = (struct proj_t *)calloc(1, sizeof(struct proj_t));
@@ -725,13 +886,45 @@ static void new_proj_window( struct dbinfo_t** info ){
 			free_proj_t( prj );
 			prj = NULL;
 
+			/* Clear vectors */
+			bom_versions.clear();
+			bom_ipns.clear();
+			subprj_versions.clear();
+			subprj_ipns.clear();
+			nboms = 0;
+
 			y_log_message(Y_LOG_LEVEL_DEBUG, "Cleared out project, finished writing");
 
 		}
 		ImGui::SetItemDefaultFocus();
 		ImGui::SameLine();
 		if ( ImGui::Button("Cancel", ImVec2(0, 0) )){
+			if( nullptr != boms ){
+				y_log_message(Y_LOG_LEVEL_DEBUG, "Cleanup for bom strings");
+				for( unsigned int i = 0; i < nbom_strs; i++ ){
+					free( boms[i] );
+					boms[i] = nullptr;
+				}
+				free( boms );
+				nbom_strs = 0;
+				boms = nullptr;
+			}
+			if( nullptr != subprjs ){
+				for( unsigned int i = 0; i < nsubprj_strs; i++ ){
+					free( subprjs[i] );
+					subprjs[i] = nullptr;
+				}
+				free( subprjs );
+				nsubprj_strs = 0;
+				subprjs = nullptr;
+			}
 			show_new_proj_window = false;
+			/* Clear vectors */
+			bom_versions.clear();
+			bom_ipns.clear();
+			subprj_versions.clear();
+			subprj_ipns.clear();
+			nboms = 0;
 		}
 
 		ImGui::End();
