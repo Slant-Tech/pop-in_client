@@ -2537,10 +2537,23 @@ struct dbinfo_t* redis_read_dbinfo( void ){
 	}
 
 	if( redis_json_get( rc, "popdb", "$", &jdb ) ){
-		y_log_message(Y_LOG_LEVEL_ERROR, "Could not get database information");
-		free_dbinfo_t( tmp );
-		/* If failed, make sure to unlock */
-		tmp = NULL;
+		y_log_message(Y_LOG_LEVEL_WARNING, "Could not get database information; initializing database");
+		if( database_init() ){
+			y_log_message(Y_LOG_LEVEL_ERROR, "Could not initialize database");		
+			free_dbinfo_t( tmp );
+			tmp = NULL;
+			return NULL;
+		}
+		else {
+			/* Try reading again */
+			if( redis_json_get( rc, "popdb", "$", &jdb ) ){
+				y_log_message(Y_LOG_LEVEL_WARNING, "Could not get database information after initializing; check permissions/connection?");
+				free_dbinfo_t( tmp );
+				tmp = NULL;
+				return NULL;
+			}
+		}
+		
 	}
 
 	/* Parse data */
@@ -2742,4 +2755,43 @@ unsigned int dbinfo_get_ptype_index( struct dbinfo_t** info, const char* type ){
 	}
 	mutex_unlock_dbinfo();
 	return index;
+}
+
+/* Initialize database with dbinfo, index searches */
+int database_init( void ){
+	
+	struct dbinfo_t db_default = {
+		.flags = 0,
+		.nprj = 0,
+		.ninv = 0,
+		.nptype = 0,
+		.version = {
+			.major = 0,
+			.minor = 1,
+			.patch = 0
+
+		},
+		.ptypes = NULL,
+		.invs = NULL
+	};
+
+	/* Write default database info */
+	if( redis_write_dbinfo( &db_default ) ){
+		y_log_message( Y_LOG_LEVEL_ERROR, "Issues with initializing database with default info " );
+		return -1;
+	}
+
+	/* Space to add in other initialization things */
+
+	/* Write init flag to database */
+	db_default.flags = DBINFO_FLAG_INIT;
+
+	/* Write init flag */
+	if( redis_write_dbinfo( &db_default ) ){
+		y_log_message( Y_LOG_LEVEL_ERROR, "Could not set database init flag" );
+		return -1;
+	}
+
+
+	return 0;
 }
