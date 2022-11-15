@@ -160,8 +160,17 @@ struct part_t* get_part_from_ipn( const char* type, unsigned int ipn );
 /* Create bom struct from parsed item in database, from internal part number */
 struct bom_t* get_bom_from_ipn( unsigned int ipn, char* version );
 
+/* Get list of BOM database names from name string */
+char** search_bom_name( const char* name, unsigned int* num );
+
+/* Get list of Project database names from name string */
+char** search_proj_name( const char* name, unsigned int* num );
+
 /* Create project struct from parsed item in database, from internal part number */
-struct proj_t* get_proj_from_ipn( unsigned int ipn );
+struct proj_t* get_proj_from_ipn( unsigned int ipn, char* version );
+
+/* Create project struct from parsed item in database, from internal part number with latest project version */
+struct proj_t* get_latest_proj_from_ipn( unsigned int ipn );
 
 /* Free the part structure */
 void free_part_t( struct part_t* part );
@@ -226,6 +235,9 @@ int dbinv_str_to_loc( struct dbinfo_t** info, const char* s, size_t len );
 
 /* Get the index of the requested part type in the database */
 unsigned int dbinfo_get_ptype_index( struct dbinfo_t** info, const char* type );
+
+/* Initialize database with dbinfo, index searches */
+int database_init( void );
 
 #ifdef __cplusplus
 }

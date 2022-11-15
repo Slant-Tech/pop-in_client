@@ -371,6 +371,9 @@ void partinfo_window( struct dbinfo_t** info, struct part_t* selected_item){
 				case pstat_nrnd:
 					ImGui::Text("Not Recommended for New Designs");
 					break;
+				case pstat_lasttimebuy:
+					ImGui::Text("Last Time Buy");
+					break;
 				case pstat_obsolete:
 					ImGui::Text("Obsolete");
 					break;

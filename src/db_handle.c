@@ -633,7 +633,7 @@ static int parse_json_proj( struct proj_t * prj, struct json_object* restrict jp
 					/* Use ipn of subproject to get subproject info */
 					if( NULL != jkey ){
 						unsigned int ipn = json_object_get_int64(jkey);
-						prj->sub[i].prj = get_proj_from_ipn( ipn );
+						prj->sub[i].prj = get_proj_from_ipn( ipn, prj->sub[i].ver );
 					}
 					else {
 						y_log_message( Y_LOG_LEVEL_ERROR, "Could not find subproject ipn" );
@@ -1771,7 +1771,7 @@ int redis_write_proj( struct proj_t* prj ){
 
 //	dbprj_name = calloc( strlen("prj:") + 2 + 16, sizeof( char ) ); /* IPN has to be less than 16 characters right now */
 	/* create name */
-	asprintf( &dbprj_name, "prj:%d", prj->ipn);
+	asprintf( &dbprj_name, "prj:%u:%s", prj->ipn, prj->ver);
 	int retval = -1;
 	if( NULL == dbprj_name ){
 		y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate memory for dbprj_name");
@@ -2029,7 +2029,7 @@ struct bom_t* get_bom_from_ipn( unsigned int ipn, char* version ){
 	/* Allocate size for database name
 	 * should be in format of bom:ipn:version */
 //	dbbom_name = calloc( strlen(ipn) + strlen("bom:") + strnlen(version, 32) + 2, sizeof( char ) );
-	asprintf( &dbbom_name, "bom:%d:%s", ipn, version);
+	asprintf( &dbbom_name, "bom:%u:%s", ipn, version);
 
 	if( NULL == dbbom_name ){
 		y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate memory for dbbom_name");
@@ -2101,16 +2101,341 @@ struct bom_t* get_bom_from_ipn( unsigned int ipn, char* version ){
 	return bom;
 }
 
+/* Get list of BOM database names from name string */
+char** search_bom_name( const char* name, unsigned int* num ){
+	char** boms = NULL; /* return array for db bom names */
+	unsigned int n = 0; /* Temporary value for num */
+	if( NULL == rc ){
+		y_log_message( Y_LOG_LEVEL_ERROR, "Database is not connected. Could not search bom name: %s", name);
+		return NULL;
+	}
+
+	if( NULL == name ){
+		y_log_message( Y_LOG_LEVEL_ERROR, "Was not passed valid string for bom search");
+		return NULL;
+	}
+
+	if( NULL == num ){
+		y_log_message( Y_LOG_LEVEL_ERROR, "Was not passed valid pointer for bom return array size");
+		return NULL;
+	}
+
+	/* Memory has been allocated, begin actually doing stuff */
+
+	/* Query database for bom name */
+	redisReply* reply = NULL;
+	/* Sanitize input */
+	char* name_sanitized = sanitize_redis_string( name );
+	y_log_message( Y_LOG_LEVEL_DEBUG, "Sanitized bom name string: %s", name_sanitized ); 
+	redis_json_index_search( rc, &reply, "bomid", "name", name_sanitized );
+	if( name_sanitized != name ){
+		/* New string was created, free the memory */
+		free( name_sanitized );
+	}
+
+	/* Returns back a few elements; need to grab the second one to get the
+	 * right object */
+	if( NULL == reply || reply->type != REDIS_REPLY_ARRAY || reply->elements < 3 ){
+		y_log_message( Y_LOG_LEVEL_ERROR, "Database search did not reply correctly for bom name search %s", name );
+		boms = NULL;
+	}
+	else {
+		printf("Redis reply type: %d\n", reply->type);
+		printf("Redis reply Elements: %d\n", reply->elements);
+
+		/* Get number of items from redis reply */
+		n = reply->element[0]->integer;
+		y_log_message( Y_LOG_LEVEL_DEBUG, "Got %u elements in search", n );
+
+		/* Allocate space for bom array */
+		boms = calloc( n, sizeof( char* ) );
+		if( NULL == boms ){
+			y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate memory for return search array for query: %s", name);
+			*num = 0;
+			return NULL;
+		}
+
+
+		/* Get strings from replies */
+		for( unsigned int i = 0; i < n; i++){
+			/* Replies will be on odd numbers, starting with 2 */
+			
+			/* Check if reply is indeed a string */
+			if( reply->element[ 1 + (i<<1) ]->type == REDIS_REPLY_STRING ){
+				/* copy string data over */
+				boms[i] = calloc( reply->element[ 1 + (i<<1) ]->len + 1, sizeof( char ) );
+				if( NULL == boms[i] ){
+					y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate memory for bom db name in array" );
+					for( unsigned int j = 0; j < i; j++){
+						free(boms[j]);
+						boms[j] = NULL;
+						*num = 0;
+						return NULL;
+					}
+				}
+				else {
+					/* Copy string */
+					strncpy( boms[i], reply->element[ 1 + (i<<1) ]->str, reply->element[ 1 + (i<<1) ]->len);
+				}
+			}
+			else {
+				y_log_message( Y_LOG_LEVEL_ERROR, "Reply wasn't string, exiting");
+				for( unsigned int j = 0; j < i; j++){
+					free(boms[j]);
+					boms[j] = NULL;
+					*num = 0;
+					return NULL;
+				}
+			}
+		}
+		/* Succeeded, copy over now */
+		*num = n;
+	}
+
+	/* Free redis reply */
+	freeReplyObject(reply);
+
+	return boms;
+
+}
+
+/* Get list of Project database names from name string */
+char** search_proj_name( const char* name, unsigned int* num ){
+	char** prjs = NULL; /* return array for db bom names */
+	unsigned int n = 0; /* Temporary value for num */
+	if( NULL == rc ){
+		y_log_message( Y_LOG_LEVEL_ERROR, "Database is not connected. Could not search project name: %s", name);
+		return NULL;
+	}
+
+	if( NULL == name ){
+		y_log_message( Y_LOG_LEVEL_ERROR, "Was not passed valid string for project search");
+		return NULL;
+	}
+
+	if( NULL == num ){
+		y_log_message( Y_LOG_LEVEL_ERROR, "Was not passed valid pointer for project return array size");
+		return NULL;
+	}
+
+	/* Memory has been allocated, begin actually doing stuff */
+
+	/* Query database for bom name */
+	redisReply* reply = NULL;
+	/* Sanitize input */
+	char* name_sanitized = sanitize_redis_string( name );
+	y_log_message( Y_LOG_LEVEL_DEBUG, "Sanitized bom name string: %s", name_sanitized ); 
+	redis_json_index_search( rc, &reply, "prjid", "name", name_sanitized );
+	if( name_sanitized != name ){
+		/* New string was created, free the memory */
+		free( name_sanitized );
+	}
+
+	/* Returns back a few elements; need to grab the second one to get the
+	 * right object */
+	if( NULL == reply || reply->type != REDIS_REPLY_ARRAY || reply->elements < 3 ){
+		y_log_message( Y_LOG_LEVEL_ERROR, "Database search did not reply correctly for bom name search %s", name );
+		prjs = NULL;
+	}
+	else {
+		printf("Redis reply type: %d\n", reply->type);
+		printf("Redis reply Elements: %d\n", reply->elements);
+
+		/* Get number of items from redis reply */
+		n = reply->element[0]->integer;
+		y_log_message( Y_LOG_LEVEL_DEBUG, "Got %u elements in search", n );
+
+		/* Allocate space for project array */
+		prjs = calloc( n, sizeof( char* ) );
+		if( NULL == prjs ){
+			y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate memory for return search array for query: %s", name);
+			*num = 0;
+			return NULL;
+		}
+
+
+		/* Get strings from replies */
+		for( unsigned int i = 0; i < n; i++){
+			/* Replies will be on odd numbers, starting with 2 */
+			
+			/* Check if reply is indeed a string */
+			if( reply->element[ 1 + (i<<1) ]->type == REDIS_REPLY_STRING ){
+				/* copy string data over */
+				prjs[i] = calloc( reply->element[ 1 + (i<<1) ]->len + 1, sizeof( char ) );
+				if( NULL == prjs[i] ){
+					y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate memory for bom db name in array" );
+					for( unsigned int j = 0; j < i; j++){
+						free(prjs[j]);
+						prjs[j] = NULL;
+						*num = 0;
+						return NULL;
+					}
+				}
+				else {
+					/* Copy string */
+					strncpy( prjs[i], reply->element[ 1 + (i<<1) ]->str, reply->element[ 1 + (i<<1) ]->len);
+				}
+			}
+			else {
+				y_log_message( Y_LOG_LEVEL_ERROR, "Reply wasn't string, exiting");
+				for( unsigned int j = 0; j < i; j++){
+					free(prjs[j]);
+					prjs[j] = NULL;
+					*num = 0;
+					return NULL;
+				}
+			}
+		}
+		/* Succeeded, copy over now */
+		*num = n;
+	}
+
+	/* Free redis reply */
+	freeReplyObject(reply);
+
+	return prjs;
+
+}
+
+
+
+
 /* Create project struct from parsed item in database, from internal part number */
-struct proj_t* get_proj_from_ipn( unsigned int ipn ){
+struct proj_t* get_proj_from_ipn( unsigned int ipn, char* version ){
 	struct proj_t * prj = NULL;	
-	char ipn_s[32] = {0};
+	char* dbprj_name = NULL;
 	if( NULL == rc ){
 		y_log_message( Y_LOG_LEVEL_ERROR, "Database is not connected. Could not get info of project: %ld", ipn);
 		return NULL;
 	}
 
-	/* Allocate space for bom */
+	/* Allocate and create database name */
+	asprintf( &dbprj_name, "prj:%u:%s", ipn, version);
+	if( NULL == dbprj_name ){
+		y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate memory for dbprj_name");
+		return NULL;
+	}
+
+	/* Allocate space for project */
+	prj = calloc( 1, sizeof( struct proj_t ) );
+	if( NULL == prj ){
+		y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate memory for project: %ld", ipn);
+		return NULL;
+	}
+
+	/* Memory has been allocated, begin actually doing stuff */
+
+	/* Query database for project */
+	struct json_object* jprj = NULL;
+	
+	/* Sanitize input? */
+
+	/* get project, store in json object */
+	if( !redis_json_get( rc, dbprj_name, "$", &jprj ) ){
+		/* Parse the json */
+		parse_json_proj( prj, jprj );
+	}
+	else {
+		y_log_message(Y_LOG_LEVEL_ERROR, "Could not get project %s", dbprj_name);
+		free_proj_t( prj );
+		prj = NULL;
+	}
+
+#if 0
+	/* Search part number by IPN */
+	redisReply* reply;
+
+	redis_json_index_search( rc, &reply, "prjid", "ipn", ipn_s );
+
+	/* Returns back a few elements; need to grab the second one to get the
+	 * right object */
+	if( NULL == reply || reply->type != REDIS_REPLY_ARRAY ){
+		y_log_message( Y_LOG_LEVEL_ERROR, "Database search for project ipn %d did not reply correctly", ipn );
+		free( prj ); /* don't need to free other parts of array as they have not been allocated yet */
+		/* Free redis reply */
+		freeReplyObject(reply);
+		return NULL;
+	}
+	/* Check if correct number of elements in array */
+	else if( reply->elements < 3 ) {
+		y_log_message( Y_LOG_LEVEL_WARNING, "Expected more elements in database reply for project:%d. Received %d", ipn, reply->elements );
+		free( prj );
+		freeReplyObject(reply);
+		return NULL;
+		
+	}
+
+	else if( NULL == reply->element[2] ){
+		y_log_message(Y_LOG_LEVEL_ERROR, "Unexpected null element in database reply for project:%d", ipn);
+		free( prj );
+		freeReplyObject(reply);
+		return NULL;
+	}
+	else if( reply->element[2]->elements < 2 ){
+		y_log_message( Y_LOG_LEVEL_WARNING, "Expected more subelements in database reply for project:%d. Received %d", ipn, reply->element[2]->elements );
+		free( prj );
+		freeReplyObject(reply);
+		return NULL;
+	}
+	else if( NULL == reply->element[2]->element[1] ){
+		y_log_message(Y_LOG_LEVEL_ERROR, "Unexpected null subelement in database reply for project:%d", ipn);
+		free( prj );
+		freeReplyObject(reply);
+		return NULL;
+	}
+	else if ( NULL == reply->element[2]->element[1]->str ) {
+		y_log_message(Y_LOG_LEVEL_WARNING, "Unexpected missing data for project%d. Does the project exist?", ipn);
+		free( prj );
+		freeReplyObject(reply);
+		return NULL;
+	}
+
+	enum json_tokener_error parse_err;
+	
+	/* Should be correct response, get second element parsed into jbom */
+	y_log_message( Y_LOG_LEVEL_DEBUG, "Database response: \n%s", reply->element[2]->element[1]->str );
+	jprj = json_tokener_parse_verbose( reply->element[2]->element[1]->str, &parse_err );	
+
+	/* Free redis reply */
+	freeReplyObject(reply);
+
+	if( parse_err != json_tokener_success ){
+		y_log_message( Y_LOG_LEVEL_ERROR, "Issue while parsing database response for project. Error number: %d", parse_err );
+
+		return NULL;
+	}
+
+	/* Parse the json */
+	parse_json_proj( prj, jprj );
+#endif
+
+
+	/* Free json */
+	json_object_put( jprj );
+
+	/* Free database name */
+	free( dbprj_name );
+	return prj;
+}
+
+
+/* Create project struct from parsed item in database, from internal part number */
+struct proj_t* get_latest_proj_from_ipn( unsigned int ipn ){
+	struct proj_t * prj = NULL;	
+	char* ipn_s = NULL;
+	if( NULL == rc ){
+		y_log_message( Y_LOG_LEVEL_ERROR, "Database is not connected. Could not get info of project: %ld", ipn);
+		return NULL;
+	}
+
+	/* Allocate and create database name */
+	asprintf( &ipn_s, "[%u %u]", ipn, ipn);
+	if( NULL == ipn_s ){
+		y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate memory for dbprj_name");
+		return NULL;
+	}
+
+	/* Allocate space for project */
 	prj = calloc( 1, sizeof( struct proj_t ) );
 	if( NULL == prj ){
 		y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate memory for project: %ld", ipn);
@@ -2126,7 +2451,7 @@ struct proj_t* get_proj_from_ipn( unsigned int ipn ){
 
 	/* Search part number by IPN */
 	redisReply* reply;
-	snprintf( ipn_s, sizeof( ipn_s ), "[ %ld %ld ]", ipn, ipn);
+
 	redis_json_index_search( rc, &reply, "prjid", "ipn", ipn_s );
 
 	/* Returns back a few elements; need to grab the second one to get the
@@ -2192,6 +2517,10 @@ struct proj_t* get_proj_from_ipn( unsigned int ipn ){
 
 	/* Free json */
 	json_object_put( jprj );
+	
+	/* Free ipn_s */
+	free( ipn_s );
+
 	return prj;
 }
 
@@ -2208,10 +2537,23 @@ struct dbinfo_t* redis_read_dbinfo( void ){
 	}
 
 	if( redis_json_get( rc, "popdb", "$", &jdb ) ){
-		y_log_message(Y_LOG_LEVEL_ERROR, "Could not get database information");
-		free_dbinfo_t( tmp );
-		/* If failed, make sure to unlock */
-		tmp = NULL;
+		y_log_message(Y_LOG_LEVEL_WARNING, "Could not get database information; initializing database");
+		if( database_init() ){
+			y_log_message(Y_LOG_LEVEL_ERROR, "Could not initialize database");		
+			free_dbinfo_t( tmp );
+			tmp = NULL;
+			return NULL;
+		}
+		else {
+			/* Try reading again */
+			if( redis_json_get( rc, "popdb", "$", &jdb ) ){
+				y_log_message(Y_LOG_LEVEL_WARNING, "Could not get database information after initializing; check permissions/connection?");
+				free_dbinfo_t( tmp );
+				tmp = NULL;
+				return NULL;
+			}
+		}
+		
 	}
 
 	/* Parse data */
@@ -2413,4 +2755,43 @@ unsigned int dbinfo_get_ptype_index( struct dbinfo_t** info, const char* type ){
 	}
 	mutex_unlock_dbinfo();
 	return index;
+}
+
+/* Initialize database with dbinfo, index searches */
+int database_init( void ){
+	
+	struct dbinfo_t db_default = {
+		.flags = 0,
+		.nprj = 0,
+		.ninv = 0,
+		.nptype = 0,
+		.version = {
+			.major = 0,
+			.minor = 1,
+			.patch = 0
+
+		},
+		.ptypes = NULL,
+		.invs = NULL
+	};
+
+	/* Write default database info */
+	if( redis_write_dbinfo( &db_default ) ){
+		y_log_message( Y_LOG_LEVEL_ERROR, "Issues with initializing database with default info " );
+		return -1;
+	}
+
+	/* Space to add in other initialization things */
+
+	/* Write init flag to database */
+	db_default.flags = DBINFO_FLAG_INIT;
+
+	/* Write init flag */
+	if( redis_write_dbinfo( &db_default ) ){
+		y_log_message( Y_LOG_LEVEL_ERROR, "Could not set database init flag" );
+		return -1;
+	}
+
+
+	return 0;
 }

@@ -105,8 +105,8 @@ While new parts, projects, and BOMs can be created with the client, they cannot 
 
 ### Checklist
 
-- [ ] Database Initilization
-- [ ] Part Editing
+- [x] Database Initilization
+- [x] Part Editing
 - [ ] Project Editing
 - [ ] BOM Editing
 
