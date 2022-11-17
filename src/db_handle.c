@@ -2759,11 +2759,19 @@ unsigned int dbinfo_get_ptype_index( struct dbinfo_t** info, const char* type ){
 
 /* Initialize database with dbinfo, index searches */
 int database_init( void ){
-	
+	/* This charade with dynamic names is a bit annoying, but required as the
+	 * dbinfo_t struct will be free'd and then create a segfault when trying to
+	 * free the static name */
+	char* locname = NULL;
+	asprintf( &locname,  "%s", "Default");
+	struct inv_lookup_t default_location = {
+		.loc = 0,
+		.name = locname
+	};
 	struct dbinfo_t db_default = {
 		.flags = 0,
 		.nprj = 0,
-		.ninv = 0,
+		.ninv = 1,
 		.nptype = 0,
 		.version = {
 			.major = 0,
@@ -2772,8 +2780,9 @@ int database_init( void ){
 
 		},
 		.ptypes = NULL,
-		.invs = NULL
+		.invs = &default_location
 	};
+
 
 	/* Write default database info */
 	if( redis_write_dbinfo( &db_default ) ){
@@ -2781,7 +2790,13 @@ int database_init( void ){
 		return -1;
 	}
 
-	/* Space to add in other initialization things */
+	/* Add indexes for parts, boms, and projects */
+	redis_json_index_new( rc, "partid", "part:", 0, "$.ipn AS ipn NUMERIC SORTABLE $.mpn as mpn TEXT SORTABLE");
+	redis_json_index_new( rc, "bomid",  "bom:", 0, "$.ipn AS ipn NUMERIC SORTABLE $.name as name TEXT SORTABLE");
+	redis_json_index_new( rc, "prjid",  "prj:", 0, "$.ipn AS ipn NUMERIC SORTABLE $.name as name TEXT SORTABLE");
+
+	/* Create default inventory location */
+	
 
 	/* Write init flag to database */
 	db_default.flags = DBINFO_FLAG_INIT;
