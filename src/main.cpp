@@ -15,6 +15,7 @@
 #include <string>
 #include <yder.h>
 #include <db_handle.h>
+#include <plugin_api.h>
 #include <L2DFileDialog.h>
 #include <prjcache.h>
 #include <partcache.h>
@@ -409,6 +410,8 @@ int main( int, char** ){
 	/* Initialize logging */
 	y_init_logs("Pop:In", Y_LOG_MODE_FILE, Y_LOG_LEVEL_DEBUG, "./popin.log", "Pop:In Inventory Management");
 
+	/* Run python */
+	printf( "String from plugin: %s\n", get_string());
 	
 	if( open_db( &db_set, &dbinfo, prjcache, &partcache ) ){ /* Use defaults of localhost and default port */
 		/* Failed to init database connection */

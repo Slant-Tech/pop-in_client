@@ -193,6 +193,7 @@ INC += `pkg-config --cflags glfw3`
 #Library options for each OS
 ifeq ($(OS), Windows)
 INC     += -I/usr/x86_64-w64-mingw/include -I$(LIB_INSTALL_DIR)/include
+LDFLAGS += -lc
 LDFLAGS += -L/usr/x86_64-w64-mingw/lib -L$(LIB_INSTALL_DIR)/lib 
 LIBS     = /usr/x86_64-w64-mingw32/lib/libws2_32.a
 LIBS 	+= /usr/x86_64-w64-mingw32/lib/libglfw3.a 
@@ -205,18 +206,23 @@ else
 
 ifeq ($(OS), web)
 INC     += -I$(LIB_INSTALL_DIR)/include
+LDFLAGS += -lc
 LDFLAGS += -L$(LIB_INSTALL_DIR)/lib 
 else
 ifeq ($(OS), Linux)
 INC      += -I$(LIB_INSTALL_DIR)/linux/include
+INC		 += -I/usr/include/python3.10
+LDFLAGS += -lc
 LDFLAGS   = -lhiredis -ljson-c -lyder -lpthread
 LDFLAGS  += -lGL
 LDFLAGS  += `pkg-config --static --libs glfw3`
+LDFLAGS  += `/usr/bin/python-config --ldflags --embed`
 CXXFLAGS += `pkg-config --cflags glfw3`
 endif
 
 ifeq ($(OS), Darwin)
 INC     += -I$(LIB_INSTALL_DIR)/include
+LDFLAGS += -lc
 LDFLAGS += -framework OpenGL -framework Cocoa -framework IOKit -framework CoreVideo
 LDFLAGS += -L/usr/local/lib -L/opt/local/lib -L/opt/homebrew/lib
 LDFLAGS += -lglfw
