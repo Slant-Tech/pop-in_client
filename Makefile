@@ -18,6 +18,7 @@ CMAKE=cmake
 CC=gcc
 CXX=g++
 LD=ld
+PYTHON_CONFIG=/usr/bin/python-config
 endif
 
 
@@ -28,6 +29,7 @@ CMAKE=cmake
 CC=clang
 CXX=clang++
 LD=clang++
+PYTHON_CONFIG=/usr/local/bin/python3-config
 endif
 
 # Windows cross compilation
@@ -36,6 +38,7 @@ CMAKE=x86_64-w64-mingw32-cmake
 CC=x86_64-w64-mingw32-gcc
 CXX=x86_64-w64-mingw32-g++
 LD=x86_64-w64-mingw32-ld
+PYTHON_CONFIG=/usr/bin/python-config
 endif
 
 endif
@@ -219,7 +222,7 @@ LDFLAGS += -lc
 LDFLAGS   = -lhiredis -ljson-c -lyder -lpthread
 LDFLAGS  += -lGL
 LDFLAGS  += `pkg-config --static --libs glfw3`
-LDFLAGS  += `/usr/local/bin/python3-config --ldflags --embed`
+LDFLAGS  += `$(PYTHON_CONFIG) --ldflags --embed`
 CXXFLAGS += `pkg-config --cflags glfw3`
 endif
 
@@ -230,7 +233,7 @@ LDFLAGS += -lc
 LDFLAGS += -framework OpenGL -framework Cocoa -framework IOKit -framework CoreVideo
 LDFLAGS += -L/usr/local/lib -L/opt/local/lib -L/opt/homebrew/lib
 LDFLAGS += -lglfw -lyder -ljson-c -lhiredis
-LDFLAGS  += `/usr/local/bin/python3-config --ldflags --embed`
+LDFLAGS  += `$(PYTHON_CONFIG) --ldflags --embed`
 endif
 
 endif
