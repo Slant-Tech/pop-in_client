@@ -20,6 +20,7 @@ const wchar_t* python_syspath = L"C:\\Program Files\\Python 3.10";
 //const wchar_t* python_syspath_dynload = L"/usr/lib/python3.10/lib-dynload";
 #else
 const wchar_t* default_plugin_path = L"/usr/share/popin/plugins/";
+const wchar_t* user_syspath = L"~/.local/lib/python3.10";
 const wchar_t* python_syspath = L"/usr/lib/python3.10";
 const wchar_t* python_syspath_sitepack = L"/usr/lib/python3.10/site-packages";
 const wchar_t* python_syspath_dynload = L"/usr/lib/python3.10/lib-dynload";
