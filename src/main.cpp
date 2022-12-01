@@ -183,63 +183,10 @@ static int thread_db_connection( Prjcache* prj_cache, std::vector<Partcache*>* p
 	return 0;
 }
 
-static int thread_ui( class Prjcache* prj_cache, std::vector<Partcache *>* part_cache  ) {
-
+static int thread_ui( GLFWwindow** win, class Prjcache* prj_cache, std::vector<Partcache *>* part_cache  ) {
 	y_log_message( Y_LOG_LEVEL_INFO, "Start thread_ui" );
 
-	/* Setup window */
-	glfwSetErrorCallback(glfw_error_callback);
-	if( !glfwInit() ){
-		return 1;
-	}
-
-	/* Determine GL+GLSL versions. For now, just force GL3.3 */
-	const char* glsl_version = "#version 130";
-	glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
-	glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
-	glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
-	glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE);
-
-	/* Create window with graphics content */
-	GLFWwindow* window = glfwCreateWindow(DEFAULT_ROOT_W, DEFAULT_ROOT_H, "POP:In", NULL, NULL);
-	if( window == NULL ){
-		return 1;
-	}
-
-	glfwMakeContextCurrent(window);
-
-	/* Enable vsync */
-	glfwSwapInterval(1);
-
-	/* Setup ImGui Context */
-	IMGUI_CHECKVERSION();
-	ImGui::CreateContext();
-	ImPlot::CreateContext();
-	ImGuiIO& io = ImGui::GetIO(); (void)io;
-//	io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
-
-	/* Set ImGui color style */
-	ImGui::StyleColorsLight();
-	/* Dark colors */
-//	ImGui::StyleColorsDark();
-	/* Classic colors */
-	//ImGui::StyleColorsClassic();
-	
-	/* Setup Backends */
-	ImGui_ImplGlfw_InitForOpenGL(window, true);
-	ImGui_ImplOpenGL3_Init(glsl_version);
-
-	/* Load fonts if possible  */
-#ifndef _WIN32
-	ImFont* font_hack = io.Fonts->AddFontFromFileTTF( "/usr/share/fonts/TTF/Hack-Regular.ttf", 14.0f);
-#else
-	ImFont* font_hack = io.Fonts->AddFontFromFileTTF( "Hack-Regular.ttf", 14.0f);
-#endif
-	IM_ASSERT( nullptr != font_hack );
-	if( nullptr == font_hack ){
-		y_log_message(Y_LOG_LEVEL_WARNING, "Could not find Hack-Regular.ttf font");
-		io.Fonts->AddFontDefault();
-	}
+	GLFWwindow* window = *win;
 
 	/* Setup colors */
 	ImVec4 clear_color = ImVec4(0.45f, 0.55f, 0.60f, 1.00f);
@@ -421,14 +368,87 @@ int main( int, char** ){
 		y_log_message( Y_LOG_LEVEL_WARNING, "Database connection failed on startup");
 	}
 
+	/* initialize GLFW/OpenGL */
+
+	/* Setup window */
+	glfwSetErrorCallback(glfw_error_callback);
+	if( !glfwInit() ){
+		return 1;
+	}
+
+	/* Determine GL+GLSL versions. For now, just force GL3.3 */
+#if defined(__APPLE__)
+	const char* glsl_version = "#version 150";
+	glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
+	glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 2);
+#else
+	const char* glsl_version = "#version 130";
+	glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
+	glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
+#endif
+	glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
+	glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE);
+
+	/* Create window with graphics content */
+	GLFWwindow* window = glfwCreateWindow(DEFAULT_ROOT_W, DEFAULT_ROOT_H, "POP:In", NULL, NULL);
+	if( window == NULL ){
+		return 1;
+	}
+
+	glfwMakeContextCurrent(window);
+
+	/* Enable vsync */
+	glfwSwapInterval(1);
+
+	/* Setup ImGui Context */
+	IMGUI_CHECKVERSION();
+	ImGui::CreateContext();
+	ImPlot::CreateContext();
+	ImGuiIO& io = ImGui::GetIO(); (void)io;
+//	io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
+
+	/* Set ImGui color style */
+	ImGui::StyleColorsLight();
+	/* Dark colors */
+//	ImGui::StyleColorsDark();
+	/* Classic colors */
+	//ImGui::StyleColorsClassic();
+	
+	/* Setup Backends */
+	ImGui_ImplGlfw_InitForOpenGL(window, true);
+	ImGui_ImplOpenGL3_Init(glsl_version);
+
+	y_log_message( Y_LOG_LEVEL_DEBUG, "Getting font file" );
+	/* Load fonts if possible  */
+#ifndef _WIN32
+	#if defined(__APPLE__)
+		ImFont* font_hack = io.Fonts->AddFontFromFileTTF( "/Users/dylanwadler/Library/Fonts/Hack-Regular.ttf", 14.0f );
+	#else
+		ImFont* font_hack = io.Fonts->AddFontFromFileTTF( "/usr/share/fonts/TTF/Hack-Regular.ttf", 14.0f);
+	#endif
+#else
+	ImFont* font_hack = io.Fonts->AddFontFromFileTTF( "Hack-Regular.ttf", 14.0f);
+#endif
+	IM_ASSERT( nullptr != font_hack );
+	if( nullptr == font_hack ){
+		y_log_message(Y_LOG_LEVEL_WARNING, "Could not find Hack-Regular.ttf font");
+		io.Fonts->AddFontDefault();
+	}
+	y_log_message(Y_LOG_LEVEL_DEBUG, "Found font file" );
+
 	/* Start database connection thread */
 	std::thread db( thread_db_connection, prjcache, &partcache );
 
 	/* Start UI thread */
-	std::thread ui( thread_ui, prjcache, &partcache );
 
+	/* macs don't like having renders in threads, and pretty sure GLFW doesn't
+	 * like it either. Leaving commented out part incase opengl/glfw isn't used
+	 * in the future */
+
+//	std::thread ui( thread_ui, &window, prjcache, &partcache );
+	thread_ui( &window, prjcache, &partcache );
 	/* Join threads */
-	ui.join();
+//	ui.join();
 
 	/* Make sure that if the UI is closed, subsequent threads also close too */
 	run_flag = false;
@@ -500,7 +520,11 @@ static void show_part_select_window( struct dbinfo_t ** info, std::vector< Partc
 		//if( nullptr != info && nullptr != (*info) && cache->size() > 0 ){
 		bool is_selected = false;
 		if( cache->size() > 0 ){
+#if defined(__APPLE__)
+			bool * node_clicked = (bool *)calloc( cache->size(), sizeof( bool ) );
+#else
 			bool node_clicked[cache->size()] = {false};
+#endif
 			if( DB_STAT_DISCONNECTED != db_stat ){
 				for( unsigned int i = 0; i < cache->size(); i++ ){
 					/* Check if item has been clicked */
@@ -1415,7 +1439,11 @@ static void part_info_tab( struct dbinfo_t** info, class Partcache* cache ){
 			
 		if( nullptr != cache ){
 			/* Used for selecting specific item in BOM */
+#if defined(__APPLE__)
+			bool* item_sel = (bool*)calloc( cache->items(), sizeof(bool) );
+#else
 			bool item_sel[ cache->items() ] = {};
+#endif
 			char part_mpn_label[64]; /* May need to change size at some point */
 			struct part_t* part = nullptr;
 			struct part_t* tmp = nullptr;

@@ -19,11 +19,26 @@ const wchar_t* python_syspath = L"C:\\Program Files\\Python 3.10";
 //const wchar_t* python_syspath_sitepack = L"/usr/lib/python3.10/site-packages";
 //const wchar_t* python_syspath_dynload = L"/usr/lib/python3.10/lib-dynload";
 #else
+
+#if __APPLE__
+const wchar_t* default_plugin_path = L"/usr/local/share/popin/plugins/";
+const wchar_t* user_syspath = L"/usr/local/Cellar/python@3.10/3.10.6_2/Frameworks/Python.framework/Versions/3.10/lib/python3.10";
+const wchar_t* python_syspath = L"/usr/local/Cellar/python@3.10/3.10.6_2/Frameworks/Python.framework/Versions/3.10/lib/python310.zip"; 
+const wchar_t* python_syspath_dynload = L"/usr/local/Cellar/python@3.10/3.10.6_2/Frameworks/Python.framework/Versions/3.10/lib/python3.10/lib-dynload"; 
+const wchar_t* python_syspath_sitepack = L"/usr/local/lib/python3.10/site-packages";
+const wchar_t* python_localpath_sitepack = L"/usr/local/lib/python3.10/site-packages";
+const wchar_t* python_localpath_dynload = L"/usr/local/lib/python3.10/lib-dynload";
+#else
+
 const wchar_t* default_plugin_path = L"/usr/share/popin/plugins/";
 const wchar_t* user_syspath = L"~/.local/lib/python3.10";
 const wchar_t* python_syspath = L"/usr/lib/python3.10";
 const wchar_t* python_syspath_sitepack = L"/usr/lib/python3.10/site-packages";
 const wchar_t* python_syspath_dynload = L"/usr/lib/python3.10/lib-dynload";
+const wchar_t* python_localpath_sitepack = L"/usr/local/lib/python3.10/site-packages";
+const wchar_t* python_localpath_dynload = L"/usr/local/lib/python3.10/lib-dynload";
+#endif
+
 #endif
 
 static void append_python_path( PyConfig* config, char* path ){
@@ -41,6 +56,7 @@ static void setup_python_path( PyConfig* config ){
 #ifndef _WIN32
 	PyWideStringList_Append( &(config->module_search_paths), python_syspath_sitepack );
 	PyWideStringList_Append( &(config->module_search_paths), python_syspath_dynload );
+	PyWideStringList_Append( &(config->module_search_paths), default_plugin_path );
 	PyWideStringList_Append( &(config->module_search_paths), user_syspath );
 #endif
 }

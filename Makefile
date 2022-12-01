@@ -1,6 +1,5 @@
 UNAME_S := $(shell uname -s)
-# For checking if using systemd
-INITSYSTEM := $(shell ps --no-headers -o comm 1)
+
 
 # Build for website (WASM)
 ifeq ($(OS), web)
@@ -12,6 +11,8 @@ LD=ld
 else
 # Linux specific options 
 ifeq ($(UNAME_S), Linux)
+# For checking if using systemd
+INITSYSTEM := $(shell ps --no-headers -o comm 1)
 OS=Linux
 CMAKE=cmake
 CC=gcc
@@ -26,7 +27,7 @@ OS=macOS
 CMAKE=cmake
 CC=clang
 CXX=clang++
-LD=ld
+LD=clang++
 endif
 
 # Windows cross compilation
@@ -218,16 +219,18 @@ LDFLAGS += -lc
 LDFLAGS   = -lhiredis -ljson-c -lyder -lpthread
 LDFLAGS  += -lGL
 LDFLAGS  += `pkg-config --static --libs glfw3`
-LDFLAGS  += `/usr/bin/python-config --ldflags --embed`
+LDFLAGS  += `/usr/local/bin/python3-config --ldflags --embed`
 CXXFLAGS += `pkg-config --cflags glfw3`
 endif
 
 ifeq ($(OS), macOS)
+INC		+= -I/usr/local/opt/python@3.10/Frameworks/Python.framework/Versions/3.10/include/python3.10 -I/usr/local/opt/python@3.10/Frameworks/Python.framework/Versions/3.10/include/python3.10
 INC     += -I$(LIB_INSTALL_DIR)/include
 LDFLAGS += -lc
 LDFLAGS += -framework OpenGL -framework Cocoa -framework IOKit -framework CoreVideo
 LDFLAGS += -L/usr/local/lib -L/opt/local/lib -L/opt/homebrew/lib
-LDFLAGS += -lglfw
+LDFLAGS += -lglfw -lyder -ljson-c -lhiredis
+LDFLAGS  += `/usr/local/bin/python3-config --ldflags --embed`
 endif
 
 endif
@@ -277,7 +280,7 @@ CXXSRC		+= $(IMPLOT)/implot_items.cpp
 
 SRC_DIR	 	 = ./src
 CSRC		 = $(wildcard $(SRC_DIR)/*.c)
-ifeq ($(OS), Windows)
+ifneq ($(OS), Linux)
 CSRC        += $(wildcard ./redis/src/*.c)
 endif
 COBJ		 = $(CSRC:.c=.o)
@@ -301,21 +304,29 @@ $(PRGNAME): $(COBJ) $(CXXOBJ) $(LIBYDER_A) $(LIBORCANIA_A) $(LIBHIREDIS_A) $(LIB
 	@echo "Linking $@"
 	$(CXX) -static $(CXXFLAGS) $(LDFLAGS) $^ -o $@
 
-else
+endif
 
 ifeq ($(OS), web)
 all: $(LIBYDER_A) $(LIBHIREDIS_A) $(LIBJSONC_A) $(PRGNAME) 
 $(PRGNAME): $(COBJ) $(CXXOBJ) $(LIBYDER_A) $(LIBORCANIA_A) $(LIBHIREDIS_A) $(LIBS)
 	@echo "Linking $@"
 	$(CXX) $(CXXFLAGS) $(LDFLAGS) $^ -o $@
+endif
 
-else
+ifeq ($(OS), macOS)
+all: $(PRGNAME)
+$(PRGNAME): $(COBJ) $(CXXOBJ) $(LIBS)
+	@echo "Linking $@"
+	$(CXX) $(CXXFLAGS) $(LDFLAGS) $^ -o $@
+
+endif
+
+ifeq ($(OS), Linux)
 all: $(PRGNAME)
 $(PRGNAME): $(COBJ) $(CXXOBJ) ./redis/libredis-wrapper.a
 	-@echo "Linking $@"
 	-@$(CXX) $(CXXFLAGS) $(LDFLAGS) -o $@ $^
 
-endif
 
 endif
 
@@ -323,7 +334,7 @@ ifneq ($(OS), Windows)
 ifneq ($(OS), web )
 ./redis/libredis-wrapper.a: ./redis
 	@echo "Building redis-wrapper"
-	@make -C ./redis all CC=$(CC) CXX=$(CXX) LD=$(LD)
+	@make -C ./redis libredis-wrapper.a CC=$(CC) CXX=$(CXX) LD=$(LD)
 endif
 endif
 

@@ -375,10 +375,11 @@ void new_part_window( bool* show, struct dbinfo_t** info ){
 
 					/* Should break this out into function */
 					mutex_spin_lock_dbinfo();
-#ifndef _WIN32
-					struct dbinfo_ptype_t* tmp = (struct dbinfo_ptype_t*)reallocarray( (*info)->ptypes, (*info)->nptype + 1, sizeof(struct dbinfo_ptype_t) );
-#else
+#if defined(_WIN32) || defined(__APPLE__)
+
 					struct dbinfo_ptype_t* tmp = (struct dbinfo_ptype_t*)realloc( (*info)->ptypes, ((*info)->nptype + 1) *  sizeof(struct dbinfo_ptype_t) );
+#else
+					struct dbinfo_ptype_t* tmp = (struct dbinfo_ptype_t*)reallocarray( (*info)->ptypes, (*info)->nptype + 1, sizeof(struct dbinfo_ptype_t) );
 #endif
 					mutex_unlock_dbinfo();
 					if( nullptr == tmp ){

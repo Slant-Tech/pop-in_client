@@ -358,7 +358,7 @@ void Invcache::display_parts( void ){
 	
 	/* Check if item has been clicked */
 	if( ImGui::IsItemClicked() && !ImGui::IsItemToggledOpen() ){
-		y_log_message(Y_LOG_LEVEL_DEBUG, "Part cache: type %s clicked", type);
+		y_log_message(Y_LOG_LEVEL_DEBUG, "Part cache: type %s clicked", type.c_str());
 	}
 	
 	/* Display parts if node is open */

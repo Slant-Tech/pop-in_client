@@ -289,7 +289,11 @@ static void proj_bom_tab( struct dbinfo_t** info, struct bom_t* bom ){
 			
 		if( nullptr != bom ){
 			/* Used for selecting specific item in BOM */
+#if defined(__APPLE__)
+			bool* item_sel = (bool*) calloc( bom->nitems, sizeof( bool ) );
+#else
 			bool item_sel[ bom->nitems ] = {};
+#endif
 			char line_item_label[64]; /* May need to change size at some point */
 
 			for( int i = 0; i < bom->nitems; i++){
