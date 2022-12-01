@@ -15,9 +15,11 @@
 #ifdef _WIN32
 const wchar_t* default_plugin_path = L"C:\\PopIn\\plugins";
 const wchar_t* python_syspath = L"C:\\Program Files\\Python 3.10";
+//const wchar_t* user_syspath = L"~/.local/lib/python3.10";
+//const wchar_t* python_syspath_sitepack = L"/usr/lib/python3.10/site-packages";
+//const wchar_t* python_syspath_dynload = L"/usr/lib/python3.10/lib-dynload";
 #else
 const wchar_t* default_plugin_path = L"/usr/share/popin/plugins/";
-const wchar_t* user_syspath = L"~/.local/lib/python3.10";
 const wchar_t* python_syspath = L"/usr/lib/python3.10";
 const wchar_t* python_syspath_sitepack = L"/usr/lib/python3.10/site-packages";
 const wchar_t* python_syspath_dynload = L"/usr/lib/python3.10/lib-dynload";
@@ -33,11 +35,13 @@ static void append_python_path( PyConfig* config, char* path ){
 }
 
 static void setup_python_path( PyConfig* config ){
+	PyWideStringList_Append( &(config->module_search_paths), default_plugin_path );
 	PyWideStringList_Append( &(config->module_search_paths), python_syspath );
+#ifndef _WIN32
 	PyWideStringList_Append( &(config->module_search_paths), python_syspath_sitepack );
 	PyWideStringList_Append( &(config->module_search_paths), python_syspath_dynload );
-	PyWideStringList_Append( &(config->module_search_paths), default_plugin_path );
 	PyWideStringList_Append( &(config->module_search_paths), user_syspath );
+#endif
 }
 
 /* Create python interface */

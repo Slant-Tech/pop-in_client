@@ -193,14 +193,16 @@ INC += `pkg-config --cflags glfw3`
 #Library options for each OS
 ifeq ($(OS), Windows)
 INC     += -I/usr/x86_64-w64-mingw/include -I$(LIB_INSTALL_DIR)/include
-LDFLAGS += -lc
-LDFLAGS += -L/usr/x86_64-w64-mingw/lib -L$(LIB_INSTALL_DIR)/lib 
+INC		+= -I/usr/x86_64-w64-mingw32/include/python310
+LDFLAGS += -lmsvcrt
+LDFLAGS += -L/usr/x86_64-w64-mingw32/lib -L/usr/x86_64-w64-mingw32/bin -L$(LIB_INSTALL_DIR)/lib 
 LIBS     = /usr/x86_64-w64-mingw32/lib/libws2_32.a
 LIBS 	+= /usr/x86_64-w64-mingw32/lib/libglfw3.a 
 LIBS    += /usr/x86_64-w64-mingw32/lib/libgdi32.a 
 LIBS    += /usr/x86_64-w64-mingw32/lib/libopengl32.a 
 LIBS    += /usr/x86_64-w64-mingw32/lib/libimm32.a
 LIBS    += /usr/x86_64-w64-mingw32/lib/libjson-c.a
+LIBS    += /usr/x86_64-w64-mingw32/lib/libpython310.dll.a
 #LDFLAGS +=  -ljson-c -lglfw3 -lgdi32 -lopengl32 -limm32
 else
 
