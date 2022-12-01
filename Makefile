@@ -217,8 +217,8 @@ LDFLAGS += -L$(LIB_INSTALL_DIR)/lib
 else
 ifeq ($(OS), Linux)
 INC      += -I$(LIB_INSTALL_DIR)/linux/include
-INC		 += -I/usr/include/python3.10
-LDFLAGS += -lc
+INC		 += `$(PYTHON_CONFIG) --includes`
+LDFLAGS  += -lc
 LDFLAGS   = -lhiredis -ljson-c -lyder -lpthread
 LDFLAGS  += -lGL
 LDFLAGS  += `pkg-config --static --libs glfw3`
@@ -227,8 +227,8 @@ CXXFLAGS += `pkg-config --cflags glfw3`
 endif
 
 ifeq ($(OS), macOS)
-INC		+= -I/usr/local/opt/python@3.10/Frameworks/Python.framework/Versions/3.10/include/python3.10 -I/usr/local/opt/python@3.10/Frameworks/Python.framework/Versions/3.10/include/python3.10
 INC     += -I$(LIB_INSTALL_DIR)/include
+INC		+= `$(PYTHON_CONFIG) --includes`
 LDFLAGS += -lc
 LDFLAGS += -framework OpenGL -framework Cocoa -framework IOKit -framework CoreVideo
 LDFLAGS += -L/usr/local/lib -L/opt/local/lib -L/opt/homebrew/lib
