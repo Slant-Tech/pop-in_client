@@ -412,6 +412,9 @@ int main( int, char** ){
 
 	/* Run python */
 	printf( "String from plugin: %s\n", get_string());
+
+	/* Run digikey test */
+	get_price_breaks();
 	
 	if( open_db( &db_set, &dbinfo, prjcache, &partcache ) ){ /* Use defaults of localhost and default port */
 		/* Failed to init database connection */

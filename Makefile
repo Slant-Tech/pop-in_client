@@ -154,7 +154,7 @@ ifeq ($(OS), Linux)
 LIB_INSTALL_DIR=$(LIB_INSTALL_DIR_BASE)/linux
 endif
 
-ifeq ($(OS), Darwin)
+ifeq ($(OS), macOS)
 LIB_INSTALL_DIR=$(LIB_INSTALL_DIR_BASE)/macos
 endif
 
@@ -220,7 +220,7 @@ LDFLAGS  += `/usr/bin/python-config --ldflags --embed`
 CXXFLAGS += `pkg-config --cflags glfw3`
 endif
 
-ifeq ($(OS), Darwin)
+ifeq ($(OS), macOS)
 INC     += -I$(LIB_INSTALL_DIR)/include
 LDFLAGS += -lc
 LDFLAGS += -framework OpenGL -framework Cocoa -framework IOKit -framework CoreVideo

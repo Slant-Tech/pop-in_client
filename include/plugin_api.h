@@ -7,8 +7,11 @@ extern "C" {
 
 #include <string.h>
 #include <stdint.h>
+#define PY_SSIZE_T_CLEAN
+#include <Python.h>
 
 char* get_string( void );
+void get_price_breaks( void );
 
 #ifdef __cplusplus
 }

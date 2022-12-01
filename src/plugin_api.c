@@ -17,7 +17,10 @@ const wchar_t* default_plugin_path = L"C:\\PopIn\\plugins";
 const wchar_t* python_syspath = L"C:\\Program Files\\Python 3.10";
 #else
 const wchar_t* default_plugin_path = L"/usr/share/popin/plugins/";
+const wchar_t* user_syspath = L"~/.local/lib/python3.10";
 const wchar_t* python_syspath = L"/usr/lib/python3.10";
+const wchar_t* python_syspath_sitepack = L"/usr/lib/python3.10/site-packages";
+const wchar_t* python_syspath_dynload = L"/usr/lib/python3.10/lib-dynload";
 #endif
 
 static void append_python_path( PyConfig* config, char* path ){
@@ -25,19 +28,52 @@ static void append_python_path( PyConfig* config, char* path ){
 	wchar_t wpath[1024] = {0}; /* This may get ugly... */
 	swprintf(wpath, 1024, L"%hs", path);
 	config->module_search_paths_set = 1;
-
+	Py_SetPythonHome(wpath);
 	PyWideStringList_Append( &(config->module_search_paths), wpath );
 }
 
 static void setup_python_path( PyConfig* config ){
 	PyWideStringList_Append( &(config->module_search_paths), python_syspath );
+	PyWideStringList_Append( &(config->module_search_paths), python_syspath_sitepack );
+	PyWideStringList_Append( &(config->module_search_paths), python_syspath_dynload );
 	PyWideStringList_Append( &(config->module_search_paths), default_plugin_path );
+	PyWideStringList_Append( &(config->module_search_paths), user_syspath );
 }
+
+/* Create python interface */
+static int open_python_api( char* path ){
+	PyStatus status;
+	PyConfig config;
+	PyConfig_InitPythonConfig( &config );
+	config.isolated = 1;
+
+	/* Set the paths for the plugins to work properly */
+	setup_python_path( &config );
+	append_python_path( &config, path );
+	
+	/* Start python interface */
+	status = Py_InitializeFromConfig( &config );
+	if( PyStatus_Exception( status ) ){
+		PyConfig_Clear( &config );
+		if( PyStatus_IsExit(status) ){
+			return status.exitcode;
+		}
+		Py_ExitStatusException(status);
+	}
+}
+
+/* Close python interface */
+static int close_python_api( void ){
+	if( Py_FinalizeEx() < 0 ){
+		return 120;
+	}
+}
+
 
 /* Python function wrapper. Calls python function 'funct' from 'file', returns
  * retval. Return value is status of function call; if it succeeded or not.
  * Variable arguments should be PyObjects */
-static int call_python_funct( char** retval, char* path, char* file, char* funct, int nargs, ... ){
+static int call_python_funct( PyObject** retval, char* file, char* funct, int nargs, ... ){
 	va_list args;
 	PyObject *pyfile, *pymodule, *pyfunct;
 	PyObject *pyargs, *pyretval;
@@ -50,28 +86,6 @@ static int call_python_funct( char** retval, char* path, char* file, char* funct
 		y_log_message( Y_LOG_LEVEL_ERROR, "Plugin function not provided" );
 		return -1;
 	}
-	
-	PyStatus status;
-	PyConfig config;
-	PyConfig_InitPythonConfig( &config );
-	config.isolated = 1;
-
-	/* Set the paths for the plugins to work properly */
-	setup_python_path( &config );
-	append_python_path( &config, path );
-
-	status = Py_InitializeFromConfig( &config );
-	if( PyStatus_Exception( status ) ){
-		PyConfig_Clear( &config );
-		if( PyStatus_IsExit(status) ){
-			return status.exitcode;
-		}
-		Py_ExitStatusException(status);
-	}
-
-	/* Start python interface */
-//	Py_Initialize();
-
 
 	/* Get python file */
 	pyfile = PyUnicode_DecodeFSDefault( file );
@@ -97,18 +111,11 @@ static int call_python_funct( char** retval, char* path, char* file, char* funct
 			va_end( args );
 
 			/* Call the function, get the return value */
-			pyretval = PyObject_CallObject( pyfunct, pyargs );
+			*retval = PyObject_CallObject( pyfunct, pyargs );
 			Py_DECREF( pyargs );
 			
-			/* Check return value */
-			if( NULL != pyretval ){
-				PyObject* string = PyUnicode_AsEncodedString( pyretval, "utf-8", "strict");
-				y_log_message( Y_LOG_LEVEL_DEBUG, "Plugin function returned: %s", PyBytes_AsString(string) );
-				*retval = PyBytes_AsString(string);
-				Py_DECREF( pyretval );
-				Py_DECREF( string );
-			}
-			else {
+			/* Check if return value is incorrect */
+			if( NULL == *retval ) {
 				/* Failed to return value */
 				Py_DECREF( pyfunct );
 				Py_DECREF( pymodule );
@@ -134,9 +141,7 @@ static int call_python_funct( char** retval, char* path, char* file, char* funct
 		y_log_message( Y_LOG_LEVEL_ERROR, "Plugin file %s was not able to be loaded", file );
 		return -1;
 	}
-	if( Py_FinalizeEx() < 0 ){
-		return 120;
-	}
+
 	return 0;
 }
 
@@ -145,9 +150,51 @@ char* get_string( void ){
 	const char* test_file = "api_test";
 	const char* test_funct = "test_string";
 
+	PyObject* func_return = NULL;
 	char* retval = NULL;
 
-	call_python_funct( &retval, "plugins", test_file, test_funct, 2, PyUnicode_FromString("apple"), PyUnicode_FromString("taco") );
+	open_python_api("plugins");
+
+	call_python_funct( &func_return, test_file, test_funct, 2, PyUnicode_FromString("apple"), PyUnicode_FromString("taco") );
+	
+	if( NULL != func_return ){
+		PyObject* string = PyUnicode_AsEncodedString( func_return, "utf-8", "strict");
+		retval = PyBytes_AsString(string);
+		Py_DECREF( func_return );
+		Py_DECREF( string );
+	}
+	else {
+		y_log_message( Y_LOG_LEVEL_ERROR, "Issue with return value for plugin" );
+		retval = NULL;
+	}
+
+	close_python_api();
 
 	return retval;
+}
+
+/* Testing digikey api to get price breaks for part */
+void get_price_breaks( void ){
+	/* Use test file */
+	const char* test_file = "plugin_digikey";
+	const char* test_funct = "get_price_breaks";
+
+	PyObject* func_return = NULL;
+
+	open_python_api("plugins/mfg_digikey");
+
+	call_python_funct( &func_return, test_file, test_funct, 1, PyUnicode_FromString("P5555-ND") );
+	
+	if( NULL != func_return && PyTuple_Check(func_return) ){
+		/* Parse return object tuple */
+		Py_ssize_t n = PyTuple_Size( func_return );
+		printf("Size of tuple: %x\n", n);
+		Py_DECREF( func_return );
+	}
+	else {
+		y_log_message( Y_LOG_LEVEL_ERROR, "Issue with return value for plugin" );
+	}
+
+	close_python_api();
+
 }
