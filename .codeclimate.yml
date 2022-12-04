@@ -1,0 +1,11 @@
+version: "2"
+plugins:
+  cppcheck:
+    enabled: true
+    config:
+      check: all
+      project: compile_commands.json
+      platform: unix64
+      includes:
+      - include/
+      - imgui/
