@@ -104,7 +104,7 @@ code_quality_html:
 #    - echo "Not yet implemented"
 
 
-deploy-staging:      # This job runs in the deploy stage.
+deploy-dev:      # This job runs in the deploy stage.
   image: python:latest
   stage: deploy  # It only runs when *both* jobs in the test stage complete successfully.
   rules:
@@ -123,6 +123,26 @@ deploy-staging:      # This job runs in the deploy stage.
   environment:
     name: development
     url: https://${BUCKET_ID}.${BUCKET_ENDPOINT}/dev/${CI_COMMIT_REF_SLUG}
+
+deploy-staging:      # This job runs in the deploy stage.
+  image: python:latest
+  stage: deploy  # It only runs when *both* jobs in the test stage complete successfully.
+  rules:
+    - if: $CI_COMMIT_BRANCH == "dev"
+  dependencies:
+    - "build-linux"
+    - "build-windows"
+  before_script:
+    - pip install awscli # Install the SDK
+    - aws configure set default.endpoint https://${BUCKET_ENDPOINT}
+    - aws configure set default.region fr-par
+  script:
+    - aws s3api put-object --bucket ${BUCKET_ID} --key staging/${CI_COMMIT_REF_SLUG}/windows-bin.zip --body release.zip  --endpoint-url https://${BUCKET_ENDPOINT}
+    - aws s3api put-object --bucket ${BUCKET_ID} --key staging/${CI_COMMIT_REF_SLUG}/linux-bin --body pop --endpoint-url https://${BUCKET_ENDPOINT}
+ 
+  environment:
+    name: staging
+    url: https://${BUCKET_ID}.${BUCKET_ENDPOINT}/staging/${CI_COMMIT_REF_SLUG}
 
 
 deploy-release:      # This job runs in the deploy stage.
