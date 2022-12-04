@@ -361,7 +361,7 @@ int main( int, char** ){
 	printf( "String from plugin: %s\n", get_string());
 
 	/* Run digikey test */
-	get_price_breaks();
+	get_price_breaks(NULL);
 	
 	if( open_db( &db_set, &dbinfo, prjcache, &partcache ) ){ /* Use defaults of localhost and default port */
 		/* Failed to init database connection */

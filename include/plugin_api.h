@@ -9,9 +9,10 @@ extern "C" {
 #include <stdint.h>
 #define PY_SSIZE_T_CLEAN
 #include <Python.h>
+#include <db_handle.h>
 
 char* get_string( void );
-void get_price_breaks( void );
+void get_price_breaks( struct part_t * part );
 
 #ifdef __cplusplus
 }
