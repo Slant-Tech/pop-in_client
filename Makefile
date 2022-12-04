@@ -18,7 +18,7 @@ CMAKE=cmake
 CC=gcc
 CXX=g++
 LD=ld
-PYTHON_CONFIG=/usr/bin/python-config
+PYTHON_CONFIG=$(shell which python3-config)
 endif
 
 
@@ -29,7 +29,7 @@ CMAKE=cmake
 CC=clang
 CXX=clang++
 LD=clang++
-PYTHON_CONFIG=/usr/local/bin/python3-config
+PYTHON_CONFIG=$(shell which python3-config)
 endif
 
 # Windows cross compilation
@@ -38,7 +38,7 @@ CMAKE=x86_64-w64-mingw32-cmake
 CC=x86_64-w64-mingw32-gcc
 CXX=x86_64-w64-mingw32-g++
 LD=x86_64-w64-mingw32-ld
-PYTHON_CONFIG=/usr/bin/python-config
+PYTHON_CONFIG=$(shell which python3-config)
 endif
 
 endif
