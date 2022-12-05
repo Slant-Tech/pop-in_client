@@ -465,7 +465,6 @@ static int parse_json_proj( struct proj_t * prj, struct json_object* restrict jp
 	json_object* jbom_itr;
 	json_object* jkey;
 	json_object* jval;
-	json_object* tmp;
 	
 	jipn       = json_object_object_get( jprj, "ipn" );
 	jpn        = json_object_object_get( jprj, "pn" );
@@ -898,13 +897,16 @@ void free_part_addr_t( struct part_t* part ){
 		
 		/* Free all the strings if not NULL */
 		if( NULL !=  part->type ){
-			memset( part->type, 0, sizeof( part->type ) );
+			memset( part->type, 0, strnlen( part->type, 1024 ) );
+			free( part->type );
 		}
 		if( NULL != part->mfg ){
-			memset( part->mfg, 0, sizeof( part->mfg ) );
+			memset( part->mfg, 0, strnlen( part->mfg, 1024 ) );
+			free( part->mfg);
 		}
 		if( NULL != part->mpn ){
-			memset( part->mpn, 0, sizeof( part->mpn ) );
+			memset( part->mpn, 0, strnlen( part->mpn, 1024 ) );
+			free( part->mpn);
 		}
 
 		if( NULL != part->info ){
@@ -1095,30 +1097,30 @@ void free_dbinfo_t( struct dbinfo_t* db ){
 		db->version.major = 0;
 		db->version.minor = 0;
 		db->version.patch = 0;
-	}
-	if( NULL != db->ptypes ){
-		for( unsigned int i = 0; i < db->nptype; i++ ){
-			if( NULL != db->ptypes[i].name ){
-				free( db->ptypes[i].name);
-				db->ptypes[i].name = NULL;
-				db->ptypes[i].npart = 0;
+		if( NULL != db->ptypes ){
+			for( unsigned int i = 0; i < db->nptype; i++ ){
+				if( NULL != db->ptypes[i].name ){
+					free( db->ptypes[i].name);
+					db->ptypes[i].name = NULL;
+					db->ptypes[i].npart = 0;
+				}
 			}
+			free( db->ptypes );
 		}
-		free( db->ptypes );
-	}
-	db->nptype = 0;
+		db->nptype = 0;
 
-	if( NULL != db->invs ){
-		for( unsigned int i = 0; i < db->ninv; i++ ){
-			if( NULL != db->invs[i].name ){
-				free( db->invs[i].name);
-				db->invs[i].name = NULL;
-				db->invs[i].loc = 0;
+		if( NULL != db->invs ){
+			for( unsigned int i = 0; i < db->ninv; i++ ){
+				if( NULL != db->invs[i].name ){
+					free( db->invs[i].name);
+					db->invs[i].name = NULL;
+					db->invs[i].loc = 0;
+				}
 			}
+			free( db->invs );
 		}
-		free( db->invs );
+		db->ninv = 0;
 	}
-	db->ninv = 0;
 }
 
 /* Write part to database */
@@ -2006,6 +2008,7 @@ struct part_t* get_part_from_ipn( const char* type, unsigned int ipn ){
 	}
 	else {
 		y_log_message(Y_LOG_LEVEL_ERROR, "Could not get part for %ld", ipn);
+		free_part_t( part );
 		part = NULL;
 	}
 
@@ -2508,7 +2511,8 @@ struct proj_t* get_latest_proj_from_ipn( unsigned int ipn ){
 
 	if( parse_err != json_tokener_success ){
 		y_log_message( Y_LOG_LEVEL_ERROR, "Issue while parsing database response for project. Error number: %d", parse_err );
-
+		free_proj_t( prj );
+		prj = NULL;
 		return NULL;
 	}
 
@@ -2638,7 +2642,7 @@ static int write_dbinfo( struct dbinfo_t* db ){
 	if( db->nptype != 0 ){
 		for( unsigned int i = 0; i < db->nptype; i++ ){
 			ptype_itr = json_object_new_object();	
-			if( NULL == inv_itr ){
+			if( NULL == ptype_itr ){
 				y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate part type iterator json object " );
 //				json_object_put(invs);
 //				json_object_put(ptypes);
@@ -2683,7 +2687,7 @@ static int write_dbinfo( struct dbinfo_t* db ){
 	/* Cleanup json object */
 	json_object_put( dbinfo_root );
 
-	return 0;
+	return retval;
 }
 
 /* Write database information; read modify write  */
@@ -2747,7 +2751,7 @@ unsigned int dbinfo_get_ptype_index( struct dbinfo_t** info, const char* type ){
 	y_log_message(Y_LOG_LEVEL_DEBUG, "Part type to search: %s", type );
 	for( unsigned int i = 0; i < (*info)->nptype; i++){
 		y_log_message(Y_LOG_LEVEL_DEBUG, "dbinfo ptype[%u]:%s", i, (*info)->ptypes[i].name );
-		if( !strncmp( (*info)->ptypes[i].name, type, sizeof( type ) ) ){
+		if( !strncmp( (*info)->ptypes[i].name, type, strnlen( type, 1024 ) ) ){
 			y_log_message( Y_LOG_LEVEL_DEBUG, "Found matching part type" );
 			index = i;
 		}

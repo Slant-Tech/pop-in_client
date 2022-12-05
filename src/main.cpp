@@ -481,14 +481,17 @@ int main( int, char** ){
 
 static void show_part_select_window( struct dbinfo_t ** info, std::vector< Partcache*>* cache, int* selected ){
 	
-	int open_action = -1;
-	ImGui::Text("Parts");
-
 	const float TEXT_BASE_WIDTH = ImGui::CalcTextSize("A").x;
 
+	/* Following does nothing; was copied from example code, forget what it was
+	 * for or where it came from. Should pend deletion at some point, unless
+	 * determined to be useful in some way */
+#if 0
+	int open_action = -1;
 	if( open_action != -1 ){
 		ImGui::SetNextItemOpen(open_action != 0);
 	}
+#endif
 
 	/* Flags for Table */
 	static ImGuiTableFlags flags = ImGuiTableFlags_BordersV | \
@@ -499,6 +502,8 @@ static void show_part_select_window( struct dbinfo_t ** info, std::vector< Partc
 								   ImGuiTreeNodeFlags_OpenOnArrow | \
 								   ImGuiTreeNodeFlags_OpenOnDoubleClick | \
 								   ImGuiTreeNodeFlags_SpanFullWidth;
+
+	ImGui::Text("Parts");
 
 	/* Set colums, items in table */
 	if( ImGui::BeginTable("parts", 2, flags)){
@@ -518,7 +523,7 @@ static void show_part_select_window( struct dbinfo_t ** info, std::vector< Partc
 		ImGui::TableNextColumn();
 //		mutex_spin_lock_dbinfo();
 		//if( nullptr != info && nullptr != (*info) && cache->size() > 0 ){
-		bool is_selected = false;
+//		bool is_selected = false;
 		if( cache->size() > 0 ){
 #if defined(__APPLE__)
 			bool * node_clicked = (bool *)calloc( cache->size(), sizeof( bool ) );
@@ -638,7 +643,7 @@ static void new_proj_window( struct dbinfo_t** info ){
 
 			/* Get info from database */
 			subprjs = search_proj_name( subprj_name.c_str(), &nsubprj_strs );
-			printf("Number of items returned: %d\n", nsubprj_strs);
+			printf("Number of items returned: %u\n", nsubprj_strs);
 
 			if( nullptr == subprjs ){
 				y_log_message( Y_LOG_LEVEL_INFO, "Could not find related subproject names in database" );
@@ -691,7 +696,7 @@ static void new_proj_window( struct dbinfo_t** info ){
 
 				nsubprj++;
 				printf("nboms in project: %u\n", nsubprj);
-				printf("Subproject ipn appended at %d: bom:%u:%s\n", nsubprj,  subprj_ipns.back(), subprj_versions.back().c_str());
+				printf("Subproject ipn appended at %u: bom:%u:%s\n", nsubprj,  subprj_ipns.back(), subprj_versions.back().c_str());
 
 			}
 			/* Free strings if already allocated */
@@ -734,7 +739,7 @@ static void new_proj_window( struct dbinfo_t** info ){
 
 			/* Get info from database */
 			boms = search_bom_name( bom_name.c_str(), &nbom_strs );
-			printf("Number of items returned: %d\n", nbom_strs);
+			printf("Number of items returned: %u\n", nbom_strs);
 
 			if( nullptr == boms ){
 				y_log_message( Y_LOG_LEVEL_INFO, "Could not find related bom names in database" );
@@ -787,7 +792,7 @@ static void new_proj_window( struct dbinfo_t** info ){
 
 				nboms++;
 				printf("nboms in project: %u\n", nboms);
-				printf("BOM ipn appended at %d: bom:%u:%s\n", nboms,  bom_ipns.back(), bom_versions.back().c_str());
+				printf("BOM ipn appended at %u: bom:%u:%s\n", nboms,  bom_ipns.back(), bom_versions.back().c_str());
 
 			}
 			/* Free strings if already allocated */
@@ -851,7 +856,7 @@ static void new_proj_window( struct dbinfo_t** info ){
 			strcpy( prj->pn, pn );
 			printf("String length pn: %d\n", strnlen(pn, sizeof(pn)));
 			printf("String length prj->pn: %d\n", strlen(prj->pn));
-			printf("Sizeof pn: %d\n", sizeof(prj->pn) );
+			printf("Sizeof pn: %u\n", sizeof(prj->pn) );
 
 			prj->name = (char *)calloc( strnlen(name, sizeof(name)) + 1, sizeof(char) );
 			strcpy( prj->name, name );
@@ -1210,7 +1215,7 @@ static void db_settings_window( struct db_settings_t * set ){
 
 			/* Clear out previous setting */
 			if( NULL != set->hostname ){
-				memset( set->hostname, 0, sizeof( set->hostname ) );
+				memset( set->hostname, 0, strnlen( set->hostname, 1024 ) );
 				set->hostname = NULL;
 			}
 
@@ -1568,7 +1573,7 @@ static void part_analytic_tab( class Partcache* cache ){
 }
 
 static void part_data_window( struct dbinfo_t** info,  std::vector< Partcache*>* cache, int index ){
-	static part_t* p = nullptr;
+//	static part_t* p = nullptr;
 	static class Partcache* selected = (*cache)[index];
 	/* Show BOM/Information View */
 	ImGuiTabBarFlags tabbar_flags = ImGuiTabBarFlags_None;

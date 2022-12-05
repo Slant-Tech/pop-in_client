@@ -48,7 +48,7 @@ static void append_python_path(  char* path ){
 //	Py_SetPythonHome(wpath);
 
 	PyObject* syspath = PySys_GetObject("path");
-	Py_ssize_t n = PyList_Size( syspath );
+//	Py_ssize_t n = PyList_Size( syspath );
 
 	/* Append the path */
 //	PyWideStringList_Append( syspath, wpath );
@@ -144,7 +144,7 @@ static int close_python_api( void ){
 static int call_python_funct( PyObject** retval, char* file, char* funct, int nargs, ... ){
 	va_list args;
 	PyObject *pyfile, *pymodule, *pyfunct;
-	PyObject *pyargs, *pyretval;
+	PyObject *pyargs;
 
 	if( NULL == file ){
 		y_log_message( Y_LOG_LEVEL_ERROR, "Plugin file is not valid");

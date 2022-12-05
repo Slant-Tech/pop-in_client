@@ -108,7 +108,7 @@ int Partcache::_remove( unsigned int index ){
 
 /* Constructor; make sure cache is created for specific size; don't allocate
  * memory, but ensure each item is NULL */
-Partcache::Partcache( unsigned int size, std::string init_type ){
+Partcache::Partcache( unsigned int size, std::string& init_type ){
 	while( !cmtx.try_lock() );
 	/* save the type */
 	type = init_type;
@@ -159,9 +159,9 @@ int Partcache::update( struct dbinfo_t** info ){
 		/* At this point, the selected part can be updated to be the correct one
 		 * based off of what was previously selected before */
 
-		unsigned int npart = 0;
 
 		if( nullptr != (*info) ){
+			unsigned int npart = 0;
 			for( unsigned int i = 0; i < (*info)->nptype; i++){
 				if( !strncmp( type.c_str(), (*info)->ptypes[i].name, type.size() ) ){
 					npart = (*info)->ptypes[i].npart;
@@ -309,8 +309,8 @@ int Partcache::select_ptr( struct part_t* p ){
 	}
 	if( selected_idx == (unsigned int)-1){
 		y_log_message( Y_LOG_LEVEL_ERROR, "Could not find selected index from part pointer" );
-		return -1;
 		cmtx.unlock();
+		return -1;
 	}
 
 #if 0
@@ -359,7 +359,7 @@ void Partcache::display_parts( bool* clicked ){
 	ImGui::TableNextRow();
 	ImGui::TableNextColumn();
 
-	bool open = ImGui::TreeNodeEx(type.c_str(), node_flags);
+	//bool open = ImGui::TreeNodeEx(type.c_str(), node_flags);
 	
 	/* Check if item has been clicked */
 	if( ImGui::IsItemClicked() ){

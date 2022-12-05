@@ -521,10 +521,10 @@ void edit_part_window( bool* show, struct part_t* part_in, struct dbinfo_t** inf
     static std::vector<unsigned int> inv_amount;
 
 	/* Buffers for text input. Can also be used for santizing inputs */
-	static char quantity[128] = {};
-	static char type[256] = {};
-	static char mfg[512] = {};
-	static char mpn[512] = {};
+	static char quantity[128] = {0};
+	static char type[256] = {0};
+	static char mfg[512] = {0};
+	static char mpn[512] = {0};
 	static int selection_idx = -1;
 	const char* status_options[7] = {
 			"Unknown",
@@ -816,6 +816,7 @@ void edit_part_window( bool* show, struct part_t* part_in, struct dbinfo_t** inf
 					y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate memory for part mpn");
 					free_part_t( part );
 					*show = false;
+					err_flg  = -1;
 				}
 				strncpy( part->mpn, mpn, 511 );
 
@@ -824,6 +825,7 @@ void edit_part_window( bool* show, struct part_t* part_in, struct dbinfo_t** inf
 					y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate memory for part mfg");
 					free_part_t( part );
 					*show = false;
+					err_flg  = -1;
 				}
 				strncpy( part->mfg, mfg, 511 );
 
@@ -832,6 +834,7 @@ void edit_part_window( bool* show, struct part_t* part_in, struct dbinfo_t** inf
 					y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate memory for part type");
 					free_part_t( part );
 					*show = false;
+					err_flg  = -1;
 				}
 				strncpy( part->type, type, 256 );
 
@@ -845,6 +848,7 @@ void edit_part_window( bool* show, struct part_t* part_in, struct dbinfo_t** inf
 					y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate memory for info array in new part");
 					free_part_t( part );
 					*show = false;
+					err_flg  = -1;
 				}
 				/* copy data over */
 				for( unsigned int i = 0; i < part->info_len; i++ ){
@@ -853,6 +857,7 @@ void edit_part_window( bool* show, struct part_t* part_in, struct dbinfo_t** inf
 						y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate memory for info key in new part");
 						free_part_t( part );
 						*show = false;
+						err_flg  = -1;
 					}
 					strncpy(part->info[i].key, info_key[i].c_str(), info_key[i].size() );
 					
@@ -861,6 +866,7 @@ void edit_part_window( bool* show, struct part_t* part_in, struct dbinfo_t** inf
 						y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate memory for info val in new part");
 						free_part_t( part );
 						*show = false;
+						err_flg  = -1;
 					}
 					strncpy(part->info[i].val, info_val[i].c_str(), info_val[i].size() );
 				}
@@ -872,6 +878,7 @@ void edit_part_window( bool* show, struct part_t* part_in, struct dbinfo_t** inf
 					y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate memory for price array in new part");
 					free_part_t( part );
 					*show = false;
+					err_flg = -1;	
 				}
 				/* copy data over */
 				for( unsigned int i = 0; i < part->price_len; i++ ){
@@ -886,6 +893,7 @@ void edit_part_window( bool* show, struct part_t* part_in, struct dbinfo_t** inf
 					y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate memory for distributor array in new part");
 					free_part_t( part );
 					*show = false;
+					err_flg = -1;
 				}
 				/* copy data over */
 				for( unsigned int i = 0; i < part->dist_len; i++ ){
@@ -894,6 +902,7 @@ void edit_part_window( bool* show, struct part_t* part_in, struct dbinfo_t** inf
 						y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate memory for distributor name in new part");
 						free_part_t( part );
 						*show = false;
+						err_flg = -1;
 					}
 					strncpy(part->dist[i].name, dist_name[i].c_str(), dist_name[i].size() );
 					
@@ -902,6 +911,7 @@ void edit_part_window( bool* show, struct part_t* part_in, struct dbinfo_t** inf
 						y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate memory for distributor part number in new part");
 						free_part_t( part );
 						*show = false;
+						err_flg = -1;
 					}
 					strncpy(part->dist[i].pn, dist_pn[i].c_str(), dist_pn[i].size() );
 				}
@@ -912,6 +922,7 @@ void edit_part_window( bool* show, struct part_t* part_in, struct dbinfo_t** inf
 					y_log_message( Y_LOG_LEVEL_ERROR, "Could not allocate memory for price array in new part");
 					free_part_t( part );
 					*show = false;
+					err_flg = -1;
 				}
 				/* copy data over */
 				for( unsigned int i = 0; i < part->inv_len; i++ ){
@@ -933,6 +944,7 @@ void edit_part_window( bool* show, struct part_t* part_in, struct dbinfo_t** inf
 				if( nullptr == ptype ){
 					/* Type doesn't exist in database, something wrong happened */
 					y_log_message(Y_LOG_LEVEL_INFO, "Type: %s not found in database. Adding type to database", type);
+					err_flg = -1;
 				}
 				if( !err_flg ) {
 
