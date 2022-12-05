@@ -108,7 +108,7 @@ int Invcache::_remove( unsigned int index ){
 
 /* Constructor; make sure cache is created for specific size; don't allocate
  * memory, but ensure each item is NULL */
-Invcache::Invcache( unsigned int size, std::string& init_type ){
+Invcache::Invcache( unsigned int size, std::string init_type ){
 	cmtx.lock();
 	/* save the type */
 	type = init_type;

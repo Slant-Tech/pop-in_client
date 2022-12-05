@@ -38,7 +38,7 @@ class Partcache {
 	public:
 		std::string type;
 
-		Partcache( unsigned int size, std::string& init_type );
+		Partcache( unsigned int size, std::string init_type );
 		~Partcache();
 		unsigned int items(void);
 		int update( struct dbinfo_t** info );

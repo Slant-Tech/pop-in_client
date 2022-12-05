@@ -108,7 +108,7 @@ int Partcache::_remove( unsigned int index ){
 
 /* Constructor; make sure cache is created for specific size; don't allocate
  * memory, but ensure each item is NULL */
-Partcache::Partcache( unsigned int size, std::string& init_type ){
+Partcache::Partcache( unsigned int size, std::string init_type ){
 	while( !cmtx.try_lock() );
 	/* save the type */
 	type = init_type;
