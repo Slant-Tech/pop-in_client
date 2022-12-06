@@ -56,6 +56,9 @@ class Partcache {
 		struct part_t* get_selected( void );
 		void display_parts( bool* clicked );
 
+		bool getmutex( bool blocking );
+		void releasemutex( void );
+
 };
 
 #endif

@@ -898,15 +898,12 @@ void free_part_addr_t( struct part_t* part ){
 		/* Free all the strings if not NULL */
 		if( NULL !=  part->type ){
 			memset( part->type, 0, strnlen( part->type, 1024 ) );
-			free( part->type );
 		}
 		if( NULL != part->mfg ){
 			memset( part->mfg, 0, strnlen( part->mfg, 1024 ) );
-			free( part->mfg);
 		}
 		if( NULL != part->mpn ){
 			memset( part->mpn, 0, strnlen( part->mpn, 1024 ) );
-			free( part->mpn);
 		}
 
 		if( NULL != part->info ){

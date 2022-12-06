@@ -48,6 +48,8 @@ struct db_settings_t {
 static struct db_settings_t db_set = {NULL, 0};
 static struct dbinfo_t* dbinfo = nullptr;
 
+static std::mutex partvec_mtx;
+
 static void glfw_error_callback(int error, const char* description){
 	y_log_message(Y_LOG_LEVEL_ERROR, "GLFW Error %d: %s", error, description);
 }
@@ -133,25 +135,34 @@ static int thread_db_connection( Prjcache* prj_cache, std::vector<Partcache*>* p
 					/* Update caches */
 					prj_cache->update( &dbinfo );
 
+
+					partvec_mtx.lock();
 					/* Ensure that the vector is the correct size for the part types */
 					if( dbinfo->nptype > part_cache->size() ){
+						/* Lock partcache */
+						printf("Locked by resize\n");
+
 						/* Data is out of date, critical to update */
 						mutex_spin_lock_dbinfo();
 						/* Fix the size */
 						unsigned int old_size = part_cache->size();
 
-						part_cache->assign(dbinfo->nptype, nullptr);
 						for( unsigned int i = old_size; i < part_cache->size(); i++){
-							(*part_cache)[i] = new Partcache(dbinfo->ptypes[i].npart, dbinfo->ptypes[i].name);
+							y_log_message( Y_LOG_LEVEL_DEBUG, "Creating cache index %u", i );
+							Partcache* tmp_cache = new Partcache(dbinfo->ptypes[i].npart, dbinfo->ptypes[i].name);
+							part_cache->push_back( tmp_cache );
+							tmp_cache = nullptr; /* transfer ownership to the vector */
 							if( (*part_cache)[i]->update( &dbinfo ) ){
 								y_log_message( Y_LOG_LEVEL_ERROR,"Could not update part cache: %s", (*part_cache)[i]->type.c_str()); 
 							}
 						}
 						/* Unlock dbinfo */
 						mutex_unlock_dbinfo();
+						
 						y_log_message( Y_LOG_LEVEL_DEBUG, "Resized partcache to %d", dbinfo->nptype);
 					}
 					else if( dbinfo->nptype < part_cache->size() ){
+						printf("Locked by resize\n");
 						/* Data is out of date, critical to update */
 						mutex_spin_lock_dbinfo();
 						unsigned int old_size = part_cache->size();
@@ -163,13 +174,17 @@ static int thread_db_connection( Prjcache* prj_cache, std::vector<Partcache*>* p
 						/* Unlock dbinfo */
 						mutex_unlock_dbinfo();
 					}
-					for( unsigned int i = 0; i < part_cache->size() ; i++ ){
-						if( nullptr != (*part_cache)[i] ){
-							if( (*part_cache)[i]->update( &dbinfo ) ){
-								y_log_message( Y_LOG_LEVEL_ERROR,"Could not update part cache: %s", (*part_cache)[i]->type.c_str()); 
+					else {
+						for( unsigned int i = 0; i < part_cache->size() ; i++ ){
+							printf("Locked by update\n");
+							if( nullptr != (*part_cache)[i] ){
+								if( (*part_cache)[i]->update( &dbinfo ) ){
+									y_log_message( Y_LOG_LEVEL_ERROR,"Could not update part cache: %s", (*part_cache)[i]->type.c_str()); 
+								}
 							}
 						}
 					}
+					partvec_mtx.unlock();
 				}
 			}
 		}
@@ -1574,7 +1589,7 @@ static void part_analytic_tab( class Partcache* cache ){
 
 static void part_data_window( struct dbinfo_t** info,  std::vector< Partcache*>* cache, int index ){
 //	static part_t* p = nullptr;
-	static class Partcache* selected = (*cache)[index];
+	static class Partcache* selected = ( cache == nullptr || (*cache)[index] == nullptr ) ? nullptr : (*cache)[index];
 	/* Show BOM/Information View */
 	ImGuiTabBarFlags tabbar_flags = ImGuiTabBarFlags_None;
 
@@ -1602,6 +1617,9 @@ static void show_part_view( struct dbinfo_t** info,  std::vector< Partcache*>* c
 	static int selected_cache = 0;
 
 	if( ImGui::BeginTable("view_split", 2, table_flags) ){
+		
+		partvec_mtx.lock();	
+		printf("locked by part view\n");
 		ImGui::TableNextRow();
 
 		ImGui::TableSetColumnIndex(0);
@@ -1623,6 +1641,8 @@ static void show_part_view( struct dbinfo_t** info,  std::vector< Partcache*>* c
 
 		ImGui::EndChild();
 		ImGui::EndTable();	
+
+		partvec_mtx.unlock();	
 	}
 
 }
