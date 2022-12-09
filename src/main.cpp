@@ -33,6 +33,9 @@
 #include <unistd.h>
 #endif
 
+/* Font */
+#include <hack.h>
+
 /* Project display state machine */
 #define PRJDISP_IDLE  		0
 #define PRJDISP_DISPLAYING  1
@@ -435,6 +438,7 @@ int main( int, char** ){
 
 	y_log_message( Y_LOG_LEVEL_DEBUG, "Getting font file" );
 	/* Load fonts if possible  */
+#if 0
 #ifndef _WIN32
 	#if defined(__APPLE__)
 		ImFont* font_hack = io.Fonts->AddFontFromFileTTF( "/Users/dylanwadler/Library/Fonts/Hack-Regular.ttf", 14.0f );
@@ -450,7 +454,9 @@ int main( int, char** ){
 		io.Fonts->AddFontDefault();
 	}
 	y_log_message(Y_LOG_LEVEL_DEBUG, "Found font file" );
+#endif
 
+	ImFont* font = io.Fonts->AddFontFromMemoryCompressedBase85TTF(HackRegular_compressed_data_base85, 14.0f );
 	/* Start database connection thread */
 	std::thread db( thread_db_connection, prjcache, &partcache );
 
