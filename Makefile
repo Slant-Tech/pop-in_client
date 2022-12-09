@@ -1,6 +1,5 @@
 UNAME_S := $(shell uname -s)
-# For checking if using systemd
-INITSYSTEM := $(shell ps --no-headers -o comm 1)
+
 
 # Build for website (WASM)
 ifeq ($(OS), web)
@@ -12,11 +11,14 @@ LD=ld
 else
 # Linux specific options 
 ifeq ($(UNAME_S), Linux)
+# For checking if using systemd
+INITSYSTEM := $(shell ps --no-headers -o comm 1)
 OS=Linux
 CMAKE=cmake
 CC=gcc
 CXX=g++
 LD=ld
+PYTHON_CONFIG=$(shell which python3-config)
 endif
 
 
@@ -26,7 +28,8 @@ OS=macOS
 CMAKE=cmake
 CC=clang
 CXX=clang++
-LD=ld
+LD=clang++
+PYTHON_CONFIG=$(shell which python3-config)
 endif
 
 # Windows cross compilation
@@ -35,6 +38,7 @@ CMAKE=x86_64-w64-mingw32-cmake
 CC=x86_64-w64-mingw32-gcc
 CXX=x86_64-w64-mingw32-g++
 LD=x86_64-w64-mingw32-ld
+PYTHON_CONFIG=$(shell which python3-config)
 endif
 
 endif
@@ -154,7 +158,7 @@ ifeq ($(OS), Linux)
 LIB_INSTALL_DIR=$(LIB_INSTALL_DIR_BASE)/linux
 endif
 
-ifeq ($(OS), Darwin)
+ifeq ($(OS), macOS)
 LIB_INSTALL_DIR=$(LIB_INSTALL_DIR_BASE)/macos
 endif
 
@@ -193,33 +197,43 @@ INC += `pkg-config --cflags glfw3`
 #Library options for each OS
 ifeq ($(OS), Windows)
 INC     += -I/usr/x86_64-w64-mingw/include -I$(LIB_INSTALL_DIR)/include
-LDFLAGS += -L/usr/x86_64-w64-mingw/lib -L$(LIB_INSTALL_DIR)/lib 
+INC		+= -I/usr/x86_64-w64-mingw32/include/python310
+LDFLAGS += -lmsvcrt
+LDFLAGS += -L/usr/x86_64-w64-mingw32/lib -L/usr/x86_64-w64-mingw32/bin -L$(LIB_INSTALL_DIR)/lib 
 LIBS     = /usr/x86_64-w64-mingw32/lib/libws2_32.a
 LIBS 	+= /usr/x86_64-w64-mingw32/lib/libglfw3.a 
 LIBS    += /usr/x86_64-w64-mingw32/lib/libgdi32.a 
 LIBS    += /usr/x86_64-w64-mingw32/lib/libopengl32.a 
 LIBS    += /usr/x86_64-w64-mingw32/lib/libimm32.a
 LIBS    += /usr/x86_64-w64-mingw32/lib/libjson-c.a
+LIBS    += /usr/x86_64-w64-mingw32/lib/libpython310.dll.a
 #LDFLAGS +=  -ljson-c -lglfw3 -lgdi32 -lopengl32 -limm32
 else
 
 ifeq ($(OS), web)
 INC     += -I$(LIB_INSTALL_DIR)/include
+LDFLAGS += -lc
 LDFLAGS += -L$(LIB_INSTALL_DIR)/lib 
 else
 ifeq ($(OS), Linux)
 INC      += -I$(LIB_INSTALL_DIR)/linux/include
+INC		 += `$(PYTHON_CONFIG) --includes`
+LDFLAGS  += -lc
 LDFLAGS   = -lhiredis -ljson-c -lyder -lpthread
 LDFLAGS  += -lGL
 LDFLAGS  += `pkg-config --static --libs glfw3`
+LDFLAGS  += `$(PYTHON_CONFIG) --ldflags --embed`
 CXXFLAGS += `pkg-config --cflags glfw3`
 endif
 
-ifeq ($(OS), Darwin)
+ifeq ($(OS), macOS)
 INC     += -I$(LIB_INSTALL_DIR)/include
+INC		+= `$(PYTHON_CONFIG) --includes`
+LDFLAGS += -lc
 LDFLAGS += -framework OpenGL -framework Cocoa -framework IOKit -framework CoreVideo
 LDFLAGS += -L/usr/local/lib -L/opt/local/lib -L/opt/homebrew/lib
-LDFLAGS += -lglfw
+LDFLAGS += -lglfw -lyder -ljson-c -lhiredis
+LDFLAGS  += `$(PYTHON_CONFIG) --ldflags --embed`
 endif
 
 endif
@@ -269,7 +283,7 @@ CXXSRC		+= $(IMPLOT)/implot_items.cpp
 
 SRC_DIR	 	 = ./src
 CSRC		 = $(wildcard $(SRC_DIR)/*.c)
-ifeq ($(OS), Windows)
+ifneq ($(OS), Linux)
 CSRC        += $(wildcard ./redis/src/*.c)
 endif
 COBJ		 = $(CSRC:.c=.o)
@@ -279,35 +293,35 @@ CXXSRC		+= $(wildcard $(SRC_DIR)/*.cpp)
 CXXOBJ		 = $(CXXSRC:.cpp=.o)
 CXXDEP		 = $(CXXOBJ:.o=.d)
 
-# Package for output files
-ifeq ($(OS), Windows)
-release: $(LIBYDER_A) $(LIBORCANIA_A) $(LIBHIREDIS_A) $(PRGNAME) 
-	mkdir -p release
-	cp $(PRGNAME) ./release
-	cp /usr/share/fonts/TTF/Hack-Regular.ttf ./release
-endif
-
 ifeq ($(OS), Windows)
 all: libyder libhiredis $(PRGNAME) 
 $(PRGNAME): $(COBJ) $(CXXOBJ) $(LIBYDER_A) $(LIBORCANIA_A) $(LIBHIREDIS_A) $(LIBS)
 	@echo "Linking $@"
 	$(CXX) -static $(CXXFLAGS) $(LDFLAGS) $^ -o $@
 
-else
+endif
 
 ifeq ($(OS), web)
 all: $(LIBYDER_A) $(LIBHIREDIS_A) $(LIBJSONC_A) $(PRGNAME) 
 $(PRGNAME): $(COBJ) $(CXXOBJ) $(LIBYDER_A) $(LIBORCANIA_A) $(LIBHIREDIS_A) $(LIBS)
 	@echo "Linking $@"
 	$(CXX) $(CXXFLAGS) $(LDFLAGS) $^ -o $@
+endif
 
-else
+ifeq ($(OS), macOS)
+all: $(PRGNAME)
+$(PRGNAME): $(COBJ) $(CXXOBJ) $(LIBS)
+	@echo "Linking $@"
+	$(CXX) $(CXXFLAGS) $(LDFLAGS) $^ -o $@
+
+endif
+
+ifeq ($(OS), Linux)
 all: $(PRGNAME)
 $(PRGNAME): $(COBJ) $(CXXOBJ) ./redis/libredis-wrapper.a
 	-@echo "Linking $@"
 	-@$(CXX) $(CXXFLAGS) $(LDFLAGS) -o $@ $^
 
-endif
 
 endif
 
@@ -315,7 +329,7 @@ ifneq ($(OS), Windows)
 ifneq ($(OS), web )
 ./redis/libredis-wrapper.a: ./redis
 	@echo "Building redis-wrapper"
-	@make -C ./redis all CC=$(CC) CXX=$(CXX) LD=$(LD)
+	@make -C ./redis libredis-wrapper.a CC=$(CC) CXX=$(CXX) LD=$(LD)
 endif
 endif
 

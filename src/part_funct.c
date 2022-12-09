@@ -152,8 +152,6 @@ double get_optimal_part_cost( struct part_t * p, unsigned int q ){
  * against (q) */
 double get_exact_part_cost( struct part_t * p, unsigned int q ){
 	double retval = 0.0;
-	double price_tmp_exact = 0.0;
-	double price_tmp_break = 0.0;
 
 	/* Check if part is valid */
 	if( NULL == p ){
@@ -193,7 +191,7 @@ double get_exact_part_cost( struct part_t * p, unsigned int q ){
 		 * determine if cost is higher or lower than previous price break */
 		else if( q < p->price[i].quantity ){
 			/* Calculate cost */
-			retval = price_tmp_exact = p->price[i-1].price * (double)q;
+			retval = p->price[i-1].price * (double)q;
 		}
 	}
 

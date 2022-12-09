@@ -41,15 +41,15 @@ void show_project_view( int * db_stat, struct dbinfo_t** info, bool show_all_pro
 
 
 static void show_project_select_window( int* db_stat, bool show_all_projects, class Prjcache* cache ){
-	
-	int open_action = -1;
-	ImGui::Text("Projects");
 
 	const float TEXT_BASE_WIDTH = ImGui::CalcTextSize("A").x;
 
+#if 0
+	int open_action = -1;
 	if( open_action != -1 ){
 		ImGui::SetNextItemOpen(open_action != 0);
 	}
+#endif
 
 	/* Flags for Table */
 	static ImGuiTableFlags flags = ImGuiTableFlags_BordersV | \
@@ -60,6 +60,8 @@ static void show_project_select_window( int* db_stat, bool show_all_projects, cl
 								   ImGuiTreeNodeFlags_OpenOnArrow | \
 								   ImGuiTreeNodeFlags_OpenOnDoubleClick | \
 								   ImGuiTreeNodeFlags_SpanFullWidth;
+
+	ImGui::Text("Projects");
 
 	/* Set colums, items in table */
 	if( ImGui::BeginTable("projects", 4, flags)){
@@ -174,7 +176,7 @@ static void proj_info_tab( struct dbinfo_t** info, struct proj_t* prj, int* bom_
 
 		for( unsigned int i = 0; i < (unsigned int)pstat_total; i++ ){
 			part_status_count[i] = get_num_proj_partstatus( prj, (enum part_status_t)i  );
-			printf("Part status count for %s: %u\n", part_status_str[i], part_status_count[i] );
+			printf("Part status count for %s: %d\n", part_status_str[i], part_status_count[i] );
 		}
 
 		last_nunits = nunits;
@@ -289,7 +291,11 @@ static void proj_bom_tab( struct dbinfo_t** info, struct bom_t* bom ){
 			
 		if( nullptr != bom ){
 			/* Used for selecting specific item in BOM */
+#if defined(__APPLE__)
+			bool* item_sel = (bool*) calloc( bom->nitems, sizeof( bool ) );
+#else
 			bool item_sel[ bom->nitems ] = {};
+#endif
 			char line_item_label[64]; /* May need to change size at some point */
 
 			for( int i = 0; i < bom->nitems; i++){

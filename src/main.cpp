@@ -15,6 +15,7 @@
 #include <string>
 #include <yder.h>
 #include <db_handle.h>
+#include <plugin_api.h>
 #include <L2DFileDialog.h>
 #include <prjcache.h>
 #include <partcache.h>
@@ -32,6 +33,9 @@
 #include <unistd.h>
 #endif
 
+/* Font */
+#include <hack.h>
+
 /* Project display state machine */
 #define PRJDISP_IDLE  		0
 #define PRJDISP_DISPLAYING  1
@@ -46,6 +50,8 @@ struct db_settings_t {
 
 static struct db_settings_t db_set = {NULL, 0};
 static struct dbinfo_t* dbinfo = nullptr;
+
+static std::mutex partvec_mtx;
 
 static void glfw_error_callback(int error, const char* description){
 	y_log_message(Y_LOG_LEVEL_ERROR, "GLFW Error %d: %s", error, description);
@@ -132,25 +138,34 @@ static int thread_db_connection( Prjcache* prj_cache, std::vector<Partcache*>* p
 					/* Update caches */
 					prj_cache->update( &dbinfo );
 
+
+					partvec_mtx.lock();
 					/* Ensure that the vector is the correct size for the part types */
 					if( dbinfo->nptype > part_cache->size() ){
+						/* Lock partcache */
+						printf("Locked by resize\n");
+
 						/* Data is out of date, critical to update */
 						mutex_spin_lock_dbinfo();
 						/* Fix the size */
 						unsigned int old_size = part_cache->size();
 
-						part_cache->assign(dbinfo->nptype, nullptr);
 						for( unsigned int i = old_size; i < part_cache->size(); i++){
-							(*part_cache)[i] = new Partcache(dbinfo->ptypes[i].npart, dbinfo->ptypes[i].name);
+							y_log_message( Y_LOG_LEVEL_DEBUG, "Creating cache index %u", i );
+							Partcache* tmp_cache = new Partcache(dbinfo->ptypes[i].npart, dbinfo->ptypes[i].name);
+							part_cache->push_back( tmp_cache );
+							tmp_cache = nullptr; /* transfer ownership to the vector */
 							if( (*part_cache)[i]->update( &dbinfo ) ){
 								y_log_message( Y_LOG_LEVEL_ERROR,"Could not update part cache: %s", (*part_cache)[i]->type.c_str()); 
 							}
 						}
 						/* Unlock dbinfo */
 						mutex_unlock_dbinfo();
+						
 						y_log_message( Y_LOG_LEVEL_DEBUG, "Resized partcache to %d", dbinfo->nptype);
 					}
 					else if( dbinfo->nptype < part_cache->size() ){
+						printf("Locked by resize\n");
 						/* Data is out of date, critical to update */
 						mutex_spin_lock_dbinfo();
 						unsigned int old_size = part_cache->size();
@@ -162,13 +177,17 @@ static int thread_db_connection( Prjcache* prj_cache, std::vector<Partcache*>* p
 						/* Unlock dbinfo */
 						mutex_unlock_dbinfo();
 					}
-					for( unsigned int i = 0; i < part_cache->size() ; i++ ){
-						if( nullptr != (*part_cache)[i] ){
-							if( (*part_cache)[i]->update( &dbinfo ) ){
-								y_log_message( Y_LOG_LEVEL_ERROR,"Could not update part cache: %s", (*part_cache)[i]->type.c_str()); 
+					else {
+						for( unsigned int i = 0; i < part_cache->size() ; i++ ){
+							printf("Locked by update\n");
+							if( nullptr != (*part_cache)[i] ){
+								if( (*part_cache)[i]->update( &dbinfo ) ){
+									y_log_message( Y_LOG_LEVEL_ERROR,"Could not update part cache: %s", (*part_cache)[i]->type.c_str()); 
+								}
 							}
 						}
 					}
+					partvec_mtx.unlock();
 				}
 			}
 		}
@@ -182,63 +201,10 @@ static int thread_db_connection( Prjcache* prj_cache, std::vector<Partcache*>* p
 	return 0;
 }
 
-static int thread_ui( class Prjcache* prj_cache, std::vector<Partcache *>* part_cache  ) {
-
+static int thread_ui( GLFWwindow** win, class Prjcache* prj_cache, std::vector<Partcache *>* part_cache  ) {
 	y_log_message( Y_LOG_LEVEL_INFO, "Start thread_ui" );
 
-	/* Setup window */
-	glfwSetErrorCallback(glfw_error_callback);
-	if( !glfwInit() ){
-		return 1;
-	}
-
-	/* Determine GL+GLSL versions. For now, just force GL3.3 */
-	const char* glsl_version = "#version 130";
-	glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
-	glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
-	glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
-	glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE);
-
-	/* Create window with graphics content */
-	GLFWwindow* window = glfwCreateWindow(DEFAULT_ROOT_W, DEFAULT_ROOT_H, "POP:In", NULL, NULL);
-	if( window == NULL ){
-		return 1;
-	}
-
-	glfwMakeContextCurrent(window);
-
-	/* Enable vsync */
-	glfwSwapInterval(1);
-
-	/* Setup ImGui Context */
-	IMGUI_CHECKVERSION();
-	ImGui::CreateContext();
-	ImPlot::CreateContext();
-	ImGuiIO& io = ImGui::GetIO(); (void)io;
-//	io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
-
-	/* Set ImGui color style */
-	ImGui::StyleColorsLight();
-	/* Dark colors */
-//	ImGui::StyleColorsDark();
-	/* Classic colors */
-	//ImGui::StyleColorsClassic();
-	
-	/* Setup Backends */
-	ImGui_ImplGlfw_InitForOpenGL(window, true);
-	ImGui_ImplOpenGL3_Init(glsl_version);
-
-	/* Load fonts if possible  */
-#ifndef _WIN32
-	ImFont* font_hack = io.Fonts->AddFontFromFileTTF( "/usr/share/fonts/TTF/Hack-Regular.ttf", 14.0f);
-#else
-	ImFont* font_hack = io.Fonts->AddFontFromFileTTF( "Hack-Regular.ttf", 14.0f);
-#endif
-	IM_ASSERT( nullptr != font_hack );
-	if( nullptr == font_hack ){
-		y_log_message(Y_LOG_LEVEL_WARNING, "Could not find Hack-Regular.ttf font");
-		io.Fonts->AddFontDefault();
-	}
+	GLFWwindow* window = *win;
 
 	/* Setup colors */
 	ImVec4 clear_color = ImVec4(0.45f, 0.55f, 0.60f, 1.00f);
@@ -409,20 +375,101 @@ int main( int, char** ){
 	/* Initialize logging */
 	y_init_logs("Pop:In", Y_LOG_MODE_FILE, Y_LOG_LEVEL_DEBUG, "./popin.log", "Pop:In Inventory Management");
 
+	/* Run python */
+	printf( "String from plugin: %s\n", get_string());
+
+	/* Run digikey test */
+	get_price_breaks(NULL);
 	
 	if( open_db( &db_set, &dbinfo, prjcache, &partcache ) ){ /* Use defaults of localhost and default port */
 		/* Failed to init database connection */
 		y_log_message( Y_LOG_LEVEL_WARNING, "Database connection failed on startup");
 	}
 
+	/* initialize GLFW/OpenGL */
+
+	/* Setup window */
+	glfwSetErrorCallback(glfw_error_callback);
+	if( !glfwInit() ){
+		return 1;
+	}
+
+	/* Determine GL+GLSL versions. For now, just force GL3.3 */
+#if defined(__APPLE__)
+	const char* glsl_version = "#version 150";
+	glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
+	glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 2);
+#else
+	const char* glsl_version = "#version 130";
+	glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
+	glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
+#endif
+	glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
+	glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE);
+
+	/* Create window with graphics content */
+	GLFWwindow* window = glfwCreateWindow(DEFAULT_ROOT_W, DEFAULT_ROOT_H, "POP:In", NULL, NULL);
+	if( window == NULL ){
+		return 1;
+	}
+
+	glfwMakeContextCurrent(window);
+
+	/* Enable vsync */
+	glfwSwapInterval(1);
+
+	/* Setup ImGui Context */
+	IMGUI_CHECKVERSION();
+	ImGui::CreateContext();
+	ImPlot::CreateContext();
+	ImGuiIO& io = ImGui::GetIO(); (void)io;
+//	io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
+
+	/* Set ImGui color style */
+	ImGui::StyleColorsLight();
+	/* Dark colors */
+//	ImGui::StyleColorsDark();
+	/* Classic colors */
+	//ImGui::StyleColorsClassic();
+	
+	/* Setup Backends */
+	ImGui_ImplGlfw_InitForOpenGL(window, true);
+	ImGui_ImplOpenGL3_Init(glsl_version);
+
+	y_log_message( Y_LOG_LEVEL_DEBUG, "Getting font file" );
+	/* Load fonts if possible  */
+#if 0
+#ifndef _WIN32
+	#if defined(__APPLE__)
+		ImFont* font_hack = io.Fonts->AddFontFromFileTTF( "/Users/dylanwadler/Library/Fonts/Hack-Regular.ttf", 14.0f );
+	#else
+		ImFont* font_hack = io.Fonts->AddFontFromFileTTF( "/usr/share/fonts/TTF/Hack-Regular.ttf", 14.0f);
+	#endif
+#else
+	ImFont* font_hack = io.Fonts->AddFontFromFileTTF( "Hack-Regular.ttf", 14.0f);
+#endif
+	IM_ASSERT( nullptr != font_hack );
+	if( nullptr == font_hack ){
+		y_log_message(Y_LOG_LEVEL_WARNING, "Could not find Hack-Regular.ttf font");
+		io.Fonts->AddFontDefault();
+	}
+	y_log_message(Y_LOG_LEVEL_DEBUG, "Found font file" );
+#endif
+
+	ImFont* font = io.Fonts->AddFontFromMemoryCompressedBase85TTF(HackRegular_compressed_data_base85, 14.0f );
 	/* Start database connection thread */
 	std::thread db( thread_db_connection, prjcache, &partcache );
 
 	/* Start UI thread */
-	std::thread ui( thread_ui, prjcache, &partcache );
 
+	/* macs don't like having renders in threads, and pretty sure GLFW doesn't
+	 * like it either. Leaving commented out part incase opengl/glfw isn't used
+	 * in the future */
+
+//	std::thread ui( thread_ui, &window, prjcache, &partcache );
+	thread_ui( &window, prjcache, &partcache );
 	/* Join threads */
-	ui.join();
+//	ui.join();
 
 	/* Make sure that if the UI is closed, subsequent threads also close too */
 	run_flag = false;
@@ -455,14 +502,17 @@ int main( int, char** ){
 
 static void show_part_select_window( struct dbinfo_t ** info, std::vector< Partcache*>* cache, int* selected ){
 	
-	int open_action = -1;
-	ImGui::Text("Parts");
-
 	const float TEXT_BASE_WIDTH = ImGui::CalcTextSize("A").x;
 
+	/* Following does nothing; was copied from example code, forget what it was
+	 * for or where it came from. Should pend deletion at some point, unless
+	 * determined to be useful in some way */
+#if 0
+	int open_action = -1;
 	if( open_action != -1 ){
 		ImGui::SetNextItemOpen(open_action != 0);
 	}
+#endif
 
 	/* Flags for Table */
 	static ImGuiTableFlags flags = ImGuiTableFlags_BordersV | \
@@ -473,6 +523,8 @@ static void show_part_select_window( struct dbinfo_t ** info, std::vector< Partc
 								   ImGuiTreeNodeFlags_OpenOnArrow | \
 								   ImGuiTreeNodeFlags_OpenOnDoubleClick | \
 								   ImGuiTreeNodeFlags_SpanFullWidth;
+
+	ImGui::Text("Parts");
 
 	/* Set colums, items in table */
 	if( ImGui::BeginTable("parts", 2, flags)){
@@ -492,9 +544,13 @@ static void show_part_select_window( struct dbinfo_t ** info, std::vector< Partc
 		ImGui::TableNextColumn();
 //		mutex_spin_lock_dbinfo();
 		//if( nullptr != info && nullptr != (*info) && cache->size() > 0 ){
-		bool is_selected = false;
+//		bool is_selected = false;
 		if( cache->size() > 0 ){
+#if defined(__APPLE__)
+			bool * node_clicked = (bool *)calloc( cache->size(), sizeof( bool ) );
+#else
 			bool node_clicked[cache->size()] = {false};
+#endif
 			if( DB_STAT_DISCONNECTED != db_stat ){
 				for( unsigned int i = 0; i < cache->size(); i++ ){
 					/* Check if item has been clicked */
@@ -608,7 +664,7 @@ static void new_proj_window( struct dbinfo_t** info ){
 
 			/* Get info from database */
 			subprjs = search_proj_name( subprj_name.c_str(), &nsubprj_strs );
-			printf("Number of items returned: %d\n", nsubprj_strs);
+			printf("Number of items returned: %u\n", nsubprj_strs);
 
 			if( nullptr == subprjs ){
 				y_log_message( Y_LOG_LEVEL_INFO, "Could not find related subproject names in database" );
@@ -661,7 +717,7 @@ static void new_proj_window( struct dbinfo_t** info ){
 
 				nsubprj++;
 				printf("nboms in project: %u\n", nsubprj);
-				printf("Subproject ipn appended at %d: bom:%u:%s\n", nsubprj,  subprj_ipns.back(), subprj_versions.back().c_str());
+				printf("Subproject ipn appended at %u: bom:%u:%s\n", nsubprj,  subprj_ipns.back(), subprj_versions.back().c_str());
 
 			}
 			/* Free strings if already allocated */
@@ -704,7 +760,7 @@ static void new_proj_window( struct dbinfo_t** info ){
 
 			/* Get info from database */
 			boms = search_bom_name( bom_name.c_str(), &nbom_strs );
-			printf("Number of items returned: %d\n", nbom_strs);
+			printf("Number of items returned: %u\n", nbom_strs);
 
 			if( nullptr == boms ){
 				y_log_message( Y_LOG_LEVEL_INFO, "Could not find related bom names in database" );
@@ -757,7 +813,7 @@ static void new_proj_window( struct dbinfo_t** info ){
 
 				nboms++;
 				printf("nboms in project: %u\n", nboms);
-				printf("BOM ipn appended at %d: bom:%u:%s\n", nboms,  bom_ipns.back(), bom_versions.back().c_str());
+				printf("BOM ipn appended at %u: bom:%u:%s\n", nboms,  bom_ipns.back(), bom_versions.back().c_str());
 
 			}
 			/* Free strings if already allocated */
@@ -821,7 +877,7 @@ static void new_proj_window( struct dbinfo_t** info ){
 			strcpy( prj->pn, pn );
 			printf("String length pn: %d\n", strnlen(pn, sizeof(pn)));
 			printf("String length prj->pn: %d\n", strlen(prj->pn));
-			printf("Sizeof pn: %d\n", sizeof(prj->pn) );
+			printf("Sizeof pn: %u\n", sizeof(prj->pn) );
 
 			prj->name = (char *)calloc( strnlen(name, sizeof(name)) + 1, sizeof(char) );
 			strcpy( prj->name, name );
@@ -1180,7 +1236,7 @@ static void db_settings_window( struct db_settings_t * set ){
 
 			/* Clear out previous setting */
 			if( NULL != set->hostname ){
-				memset( set->hostname, 0, sizeof( set->hostname ) );
+				memset( set->hostname, 0, strnlen( set->hostname, 1024 ) );
 				set->hostname = NULL;
 			}
 
@@ -1409,7 +1465,11 @@ static void part_info_tab( struct dbinfo_t** info, class Partcache* cache ){
 			
 		if( nullptr != cache ){
 			/* Used for selecting specific item in BOM */
+#if defined(__APPLE__)
+			bool* item_sel = (bool*)calloc( cache->items(), sizeof(bool) );
+#else
 			bool item_sel[ cache->items() ] = {};
+#endif
 			char part_mpn_label[64]; /* May need to change size at some point */
 			struct part_t* part = nullptr;
 			struct part_t* tmp = nullptr;
@@ -1534,8 +1594,8 @@ static void part_analytic_tab( class Partcache* cache ){
 }
 
 static void part_data_window( struct dbinfo_t** info,  std::vector< Partcache*>* cache, int index ){
-	static part_t* p = nullptr;
-	static class Partcache* selected = (*cache)[index];
+//	static part_t* p = nullptr;
+	static class Partcache* selected = ( cache == nullptr || (*cache)[index] == nullptr ) ? nullptr : (*cache)[index];
 	/* Show BOM/Information View */
 	ImGuiTabBarFlags tabbar_flags = ImGuiTabBarFlags_None;
 
@@ -1563,6 +1623,9 @@ static void show_part_view( struct dbinfo_t** info,  std::vector< Partcache*>* c
 	static int selected_cache = 0;
 
 	if( ImGui::BeginTable("view_split", 2, table_flags) ){
+		
+		partvec_mtx.lock();	
+		printf("locked by part view\n");
 		ImGui::TableNextRow();
 
 		ImGui::TableSetColumnIndex(0);
@@ -1584,6 +1647,8 @@ static void show_part_view( struct dbinfo_t** info,  std::vector< Partcache*>* c
 
 		ImGui::EndChild();
 		ImGui::EndTable();	
+
+		partvec_mtx.unlock();	
 	}
 
 }

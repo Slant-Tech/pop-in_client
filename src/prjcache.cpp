@@ -162,10 +162,9 @@ int Prjcache::update( struct dbinfo_t** info ){
 	/* At this point, the selected project can be updated to be the correct one
 	 * based off of what was previously selected before */
 
-	unsigned int nprj = 0;
 
 	if( nullptr != (*info) ){
-
+		unsigned int nprj = 0;
 		nprj = (*info)->nprj;
 		y_log_message(Y_LOG_LEVEL_INFO, "%u Projects found in database", nprj);
 
@@ -303,8 +302,8 @@ int Prjcache::select_ptr( struct proj_t* p ){
 	}
 	if( selected_idx == (unsigned int)-1){
 		y_log_message( Y_LOG_LEVEL_ERROR, "Could not find selected index from project pointer" );
-		return -1;
 		cmtx.unlock();
+		return -1;
 	}
 
 #if 0

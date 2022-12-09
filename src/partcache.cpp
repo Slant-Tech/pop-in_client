@@ -109,36 +109,34 @@ int Partcache::_remove( unsigned int index ){
 /* Constructor; make sure cache is created for specific size; don't allocate
  * memory, but ensure each item is NULL */
 Partcache::Partcache( unsigned int size, std::string init_type ){
-	while( !cmtx.try_lock() );
+	const std::lock_guard<std::mutex> lock(cmtx);
 	/* save the type */
 	type = init_type;
 
 	cache.assign(size, nullptr);
 	selected = nullptr;
-	cmtx.unlock();
-	y_log_message(Y_LOG_LEVEL_DEBUG, "Created part cache");
+	y_log_message(Y_LOG_LEVEL_DEBUG, "Created part cache for %s", type.c_str());
 }
 
 /* Destructor; check for non null pointers, and clear them out */
 Partcache::~Partcache(){
-	while( !cmtx.try_lock() );
+	const std::lock_guard<std::mutex> lock(cmtx);
 	_clean();
-	cmtx.unlock();
 	y_log_message(Y_LOG_LEVEL_DEBUG, "Freed memory for part cache");
 }
 
 /* Return number of items in cache */
 unsigned int Partcache::items(void){
 	unsigned int len = 0;
-	while( !cmtx.try_lock() );
+	const std::lock_guard<std::mutex> lock(cmtx);
 	len = cache.size();	
-	cmtx.unlock();
 	return len;
 }
 
 /* Update part cache from database */
 int Partcache::update( struct dbinfo_t** info ){
-	if( cmtx.try_lock() ){
+	const std::lock_guard<std::mutex> lock(cmtx);
+//	if( cmtx.try_lock() ){
 		/* Save current selected part index to use later */
 		unsigned int selected_idx = (unsigned int)-1;
 		/* Look through cache to find where pointer matches in vector */
@@ -152,16 +150,16 @@ int Partcache::update( struct dbinfo_t** info ){
 			}
 			if( selected_idx == (unsigned int)-1){
 				y_log_message( Y_LOG_LEVEL_WARNING, "Could not find selected index from part pointer during update. Could mean that selected part is a subpart." );
-				cmtx.unlock();
+//				cmtx.unlock();
 				return -1;
 			}
 		}
 		/* At this point, the selected part can be updated to be the correct one
 		 * based off of what was previously selected before */
 
-		unsigned int npart = 0;
 
 		if( nullptr != (*info) ){
+			unsigned int npart = 0;
 			for( unsigned int i = 0; i < (*info)->nptype; i++){
 				if( !strncmp( type.c_str(), (*info)->ptypes[i].name, type.size() ) ){
 					npart = (*info)->ptypes[i].npart;
@@ -170,7 +168,7 @@ int Partcache::update( struct dbinfo_t** info ){
 				}
 			}
 			if( npart == 0 ){
-				cmtx.unlock();
+//				cmtx.unlock();
 				y_log_message(Y_LOG_LEVEL_WARNING, "No parts found for this (%s) part type", type.c_str());
 				return -1;
 			}
@@ -191,20 +189,19 @@ int Partcache::update( struct dbinfo_t** info ){
 			}
 		}
 
-		cmtx.unlock();
-	}
-	else {
-		y_log_message(Y_LOG_LEVEL_ERROR, "Could not lock mutex on update");
-	}
+//		cmtx.unlock();
+//	}
+//	else {
+//		y_log_message(Y_LOG_LEVEL_ERROR, "Could not lock mutex on update");
+//	}
 	return 0;
 }
 
 int Partcache::write( struct part_t * p, unsigned int index ){
+	const std::lock_guard<std::mutex> lock(cmtx);
 	int retval = -1;
 	/* Check if in bounds first */
-	while( !cmtx.try_lock() );
 	retval = _write( p, index );
-	cmtx.unlock();
 	return retval;
 }
 
@@ -212,18 +209,16 @@ int Partcache::write( struct part_t * p, unsigned int index ){
  * sideeffects if data is not copied. Will attempt without copying data first */
 struct part_t* Partcache::read( unsigned int index ){
 	struct part_t * p = nullptr;
-	while( !cmtx.try_lock() );
+	const std::lock_guard<std::mutex> lock(cmtx);
 	p = _read( index );
-	cmtx.unlock();
 	return p;
 }
 
 /* Add new item to cache at specified index */
 int Partcache::insert( struct part_t* p, unsigned int index ){
 	int retval = -1;
-	while( !cmtx.try_lock() );
+	const std::lock_guard<std::mutex> lock(cmtx);
 	retval = _insert( p, index );	
-	cmtx.unlock();
 	return retval;
 }
 
@@ -231,39 +226,35 @@ int Partcache::insert( struct part_t* p, unsigned int index ){
  * a specific part number */
 int Partcache::insert_ipn( unsigned int ipn, unsigned int index ){
 	int retval = -1;
-	while( !cmtx.try_lock() );
+	const std::lock_guard<std::mutex> lock(cmtx);
 	retval = _insert_ipn( ipn, index );
-	cmtx.unlock();
 	return retval;
 }
 
 int Partcache::append( struct part_t* p ){
 	int retval = -1;
-	while( !cmtx.try_lock() );
+	const std::lock_guard<std::mutex> lock(cmtx);
 	retval = _append(p);
-	cmtx.unlock();
 	return retval;
 }
 
 int Partcache::append_ipn( unsigned int ipn ){
 	int retval = -1;
-	while( !cmtx.try_lock() );
+	const std::lock_guard<std::mutex> lock(cmtx);
 	retval = _append_ipn( ipn );
-	cmtx.unlock();
 	return retval;
 }
 
 int Partcache::remove( unsigned int index ){
 	int retval = -1;
-	while( !cmtx.try_lock() );
+	const std::lock_guard<std::mutex> lock(cmtx);
 	retval = _remove(index);
-	cmtx.unlock();
 	return retval;
 }
 
 /* Select from index or pointer */
 int Partcache::select( unsigned int index ){
-	while( !cmtx.try_lock() );
+	const std::lock_guard<std::mutex> lock(cmtx);
 
 	/* Clear out selected poitner */
 	if( nullptr != selected ){
@@ -273,7 +264,6 @@ int Partcache::select( unsigned int index ){
 	if( index > cache.size() ){
 		y_log_message( Y_LOG_LEVEL_ERROR, "Project selection index %d is outside of bounds of cache", index );
 		selected = nullptr;
-		cmtx.unlock();
 		return -1;
 	}
 	else {
@@ -291,14 +281,13 @@ int Partcache::select( unsigned int index ){
 #else 
 		selected = cache[index];
 #endif
-		cmtx.unlock();
 		return 0;
 	}
 }
 
 int Partcache::select_ptr( struct part_t* p ){
 	unsigned int selected_idx = (unsigned int)-1;
-	while( !cmtx.try_lock() );
+	const std::lock_guard<std::mutex> lock(cmtx);
 	/* Look through cache to find where pointer matches in vector */
 	for( unsigned int i = 0; i < cache.size(); i++ ){
 		if( p == cache[i] ){
@@ -310,7 +299,6 @@ int Partcache::select_ptr( struct part_t* p ){
 	if( selected_idx == (unsigned int)-1){
 		y_log_message( Y_LOG_LEVEL_ERROR, "Could not find selected index from part pointer" );
 		return -1;
-		cmtx.unlock();
 	}
 
 #if 0
@@ -327,21 +315,18 @@ int Partcache::select_ptr( struct part_t* p ){
 #else
 	selected = cache[selected_idx];
 #endif
-	cmtx.unlock();
 	return 0;
 }
 
 struct part_t* Partcache::get_selected( void ){
 	struct part_t* p;
-	while( !cmtx.try_lock() );
+	const std::lock_guard<std::mutex> lock(cmtx);
 	p = selected;
-	cmtx.unlock();
 	return p;
 }
 
 void Partcache::display_parts( bool* clicked ){
-
-	cmtx.lock();
+//	const std::lock_guard<std::mutex> lock(cmtx);
 
 //	ImGuiTreeNodeFlags node_flags = ImGuiTreeNodeFlags_OpenOnArrow | \
 									ImGuiTreeNodeFlags_OpenOnDoubleClick | \
@@ -358,6 +343,8 @@ void Partcache::display_parts( bool* clicked ){
 	/* Cache header */
 	ImGui::TableNextRow();
 	ImGui::TableNextColumn();
+
+	printf("type: %s\n", type.c_str());
 
 	bool open = ImGui::TreeNodeEx(type.c_str(), node_flags);
 	
@@ -387,7 +374,6 @@ void Partcache::display_parts( bool* clicked ){
 	}
 
 #endif
-	cmtx.unlock();
 }
 
 void Partcache::_DisplayNode( struct part_t* node ){
@@ -445,7 +431,18 @@ void Partcache::_DisplayNode( struct part_t* node ){
 
 	ImGui::TableNextColumn();
 	ImGui::Text("%d", total);
-
-
 }
 
+bool Partcache::getmutex( bool blocking ) {
+	if( !blocking ){
+		return cmtx.try_lock();
+	}
+	else {
+		cmtx.lock();
+	}
+	return true;
+}
+
+void Partcache::releasemutex( void ){
+	cmtx.unlock();
+}
