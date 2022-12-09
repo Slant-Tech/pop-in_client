@@ -65,12 +65,10 @@ build-windows:       # This job runs in the build stage, which runs first.
     - make clean-lib
     - make OS=Windows release
     - echo "Compile complete."
-    - echo "Archiving release folder"
-    - zip release.zip release
   artifacts:
     name: "windows-bin"
     paths:
-      - release.zip
+      - pop.exe
 
 code_quality:
   image: docker:20.10.16
@@ -120,7 +118,7 @@ deploy-dev:      # This job runs in the deploy stage.
     - aws configure set default.endpoint https://${BUCKET_ENDPOINT}
     - aws configure set default.region fr-par
   script:
-    - aws s3api put-object --bucket ${BUCKET_ID} --key dev/${CI_COMMIT_REF_SLUG}/windows-bin.zip --body release.zip  --endpoint-url https://${BUCKET_ENDPOINT}
+    - aws s3api put-object --bucket ${BUCKET_ID} --key dev/${CI_COMMIT_REF_SLUG}/windows-bin --body release.zip  --endpoint-url https://${BUCKET_ENDPOINT}
     - aws s3api put-object --bucket ${BUCKET_ID} --key dev/${CI_COMMIT_REF_SLUG}/linux-bin --body pop --endpoint-url https://${BUCKET_ENDPOINT}
  
   environment:
@@ -140,7 +138,7 @@ deploy-staging:      # This job runs in the deploy stage.
     - aws configure set default.endpoint https://${BUCKET_ENDPOINT}
     - aws configure set default.region fr-par
   script:
-    - aws s3api put-object --bucket ${BUCKET_ID} --key staging/windows-bin.zip --body release.zip  --endpoint-url https://${BUCKET_ENDPOINT}
+    - aws s3api put-object --bucket ${BUCKET_ID} --key staging/windows-bin --body pop.exe  --endpoint-url https://${BUCKET_ENDPOINT}
     - aws s3api put-object --bucket ${BUCKET_ID} --key staging/linux-bin --body pop --endpoint-url https://${BUCKET_ENDPOINT}
  
   environment:
@@ -161,7 +159,7 @@ deploy-release:      # This job runs in the deploy stage.
     - aws configure set default.endpoint https://${BUCKET_ENDPOINT}
     - aws configure set default.region fr-par
   script:
-    - aws s3api put-object --bucket ${BUCKET_ID} --key release/${CI_COMMIT_REF_SLUG}/windows-bin.zip --body release.zip --endpoint-url https://${BUCKET_ENDPOINT}
+    - aws s3api put-object --bucket ${BUCKET_ID} --key release/${CI_COMMIT_REF_SLUG}/windows-bin --body pop.exe --endpoint-url https://${BUCKET_ENDPOINT}
     - aws s3api put-object --bucket ${BUCKET_ID} --key release/${CI_COMMIT_REF_SLUG}/linux-bin --body pop --endpoint-url https://${BUCKET_ENDPOINT}
   environment:
     name: production

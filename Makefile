@@ -293,14 +293,6 @@ CXXSRC		+= $(wildcard $(SRC_DIR)/*.cpp)
 CXXOBJ		 = $(CXXSRC:.cpp=.o)
 CXXDEP		 = $(CXXOBJ:.o=.d)
 
-# Package for output files
-ifeq ($(OS), Windows)
-release: $(LIBYDER_A) $(LIBORCANIA_A) $(LIBHIREDIS_A) $(PRGNAME) 
-	mkdir -p release
-	cp $(PRGNAME) ./release
-	cp /usr/share/fonts/TTF/Hack-Regular.ttf ./release
-endif
-
 ifeq ($(OS), Windows)
 all: libyder libhiredis $(PRGNAME) 
 $(PRGNAME): $(COBJ) $(CXXOBJ) $(LIBYDER_A) $(LIBORCANIA_A) $(LIBHIREDIS_A) $(LIBS)
