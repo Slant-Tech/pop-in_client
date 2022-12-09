@@ -146,7 +146,7 @@ deploy-dev:      # This job runs in the deploy stage.
     - aws configure set default.endpoint https://${BUCKET_ENDPOINT}
     - aws configure set default.region fr-par
   script:
-    - aws s3api put-object --bucket ${BUCKET_ID} --key dev/${CI_COMMIT_REF_SLUG}/windows-bin --body release.zip  --endpoint-url https://${BUCKET_ENDPOINT}
+    - aws s3api put-object --bucket ${BUCKET_ID} --key dev/${CI_COMMIT_REF_SLUG}/windows-bin --body pop.exe  --endpoint-url https://${BUCKET_ENDPOINT}
     - aws s3api put-object --bucket ${BUCKET_ID} --key dev/${CI_COMMIT_REF_SLUG}/linux-bin --body pop --endpoint-url https://${BUCKET_ENDPOINT}
  
   environment:
