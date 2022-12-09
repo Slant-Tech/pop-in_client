@@ -33,6 +33,20 @@ stages:          # List of stages for jobs, and their order of execution
   - release
 
 build-linux:       # This job runs in the build stage, which runs first
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_PIPELINE_SOURCE != "merge_request_event"
+      changes:
+        - src/*.c
+        - src/*.cpp
+        - include/*.h
+        - redis
+        - imgui
+        - imgui-filedialog
+        - implot
+        - libs
+        - .gitmodules
+        - .gitlab-ci.yml
   tags:
     - docker
   image: gitlab.slant.tech:5050/docker-images/popin_build
@@ -52,6 +66,20 @@ build-linux:       # This job runs in the build stage, which runs first
       - ./pop
 
 build-windows:       # This job runs in the build stage, which runs first.
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_PIPELINE_SOURCE != "merge_request_event"
+      changes:
+        - src/*.c
+        - src/*.cpp
+        - include/*.h
+        - redis
+        - imgui
+        - imgui-filedialog
+        - implot
+        - libs
+        - .gitmodules
+        - .gitlab-ci.yml
   tags:
     - docker
   image: gitlab.slant.tech:5050/docker-images/popin_build
