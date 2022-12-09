@@ -63,7 +63,7 @@ build-windows:       # This job runs in the build stage, which runs first.
     - echo "Compiling the code..."
     - make clean
     - make clean-lib
-    - make OS=Windows release
+    - make OS=Windows all
     - echo "Compile complete."
   artifacts:
     name: "windows-bin"
