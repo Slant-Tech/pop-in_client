@@ -1,3 +1,9 @@
+/*
+ * 	SPDX-FileCopyrightText: 2022 Slant Tech, Dylan Wadler <dwadler@slant.tech>
+ *  
+ * 	SPDX-License-Identifier: GPL-3.0-or-later
+ */
+
 #include <stdlib.h>
 #include <string.h>
 #include <part_funct.h>

@@ -1,3 +1,7 @@
+# 	SPDX-FileCopyrightText: 2022 Slant Tech, Dylan Wadler <dwadler@slant.tech>
+#  
+# 	SPDX-License-Identifier: GPL-3.0-or-later
+
 # This file is a template, and might need editing before it works on your project.
 # This is a sample GitLab CI/CD configuration file that should run without any modifications.
 # It demonstrates a basic 3 stage CI/CD pipeline. Instead of real tests or scripts,
@@ -129,6 +133,16 @@ code_quality_html:
 #  script:
 #    - echo "Not yet implemented"
 
+# Test license compliance 
+reuse-compliance:
+  stage: test
+  tags:
+    - docker
+  image: 
+    name: fsfe/reuse:latest
+    entrypoint: [""]
+  script:
+    - reuse lint
 
 deploy-dev:      # This job runs in the deploy stage.
   image: python:latest

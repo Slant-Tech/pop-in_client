@@ -1,3 +1,7 @@
+# 	SPDX-FileCopyrightText: 2022 Slant Tech, Dylan Wadler <dwadler@slant.tech>
+#  
+# 	SPDX-License-Identifier: GPL-3.0-or-later
+
 *.d
 *.o
 imgui.ini
@@ -17,3 +21,7 @@ libs/yder/build
 libs/orcania/build
 plugins/__pycache__
 plugins/**/__pycache__
+plugins/mfg_digikey/cache-sandbox/
+plugins/mfg_digikey/cache-production/
+redis-server.old/
+apply.sh

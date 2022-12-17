@@ -1,3 +1,9 @@
+<!--
+	SPDX-FileCopyrightText: 2022 Slant Tech, Dylan Wadler <dwadler@slant.tech>
+ 
+	SPDX-License-Identifier: GFDL-1.3-or-later
+-->
+
 # Manual Database Setup
 
 After setting up the docker container with docker-compose, there are a few required data structures 

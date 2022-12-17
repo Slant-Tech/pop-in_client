@@ -1,3 +1,9 @@
+/*
+ * 	SPDX-FileCopyrightText: 2022 Slant Tech, Dylan Wadler <dwadler@slant.tech>
+ *  
+ * 	SPDX-License-Identifier: GPL-3.0-or-later
+ */
+
 // File: '/usr/share/fonts/TTF/Hack-Regular.ttf' (309408 bytes)
 // Exported using binary_to_compressed_c.cpp
 static const char HackRegular_compressed_data_base85[243650+1] =
